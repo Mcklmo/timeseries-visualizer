@@ -1,0 +1,363 @@
+# Activity Visualiser — Architecture Spec
+
+> **Audience:** an implementing coding agent (or human) working from an empty Vite project.
+> **Status:** design locked, not yet implemented.
+> **Scope of v1:** running only, metric units only, TCX file input, stacked synced charts, statistic reference lines.
+
+---
+
+## 1. Purpose
+
+A web UI in the spirit of Intervals.ICU / Garmin Connect: load a single running activity and inspect several metrics as **vertically stacked, time-synced line charts** sharing one x-axis (elapsed time or distance). The user toggles which metrics are shown, and toggles **max / avg / median** horizontal reference lines per metric.
+
+**Explicit non-goals for v1:** cycling, swimming, imperial units, multi-activity comparison, persistence, auth, tests, server-side anything.
+
+---
+
+## 2. Constraints that shape the design
+
+| Constraint | Consequence |
+| --- | --- |
+| API will replace TCX later | All input goes through an `ActivitySource` port; adapters are injected via React context. No component ever imports the TCX parser. |
+| Cycling/swimming come later | Metrics are declared in a **registry**, not hardcoded into components. `Activity.sport` exists from day one. |
+| Metric only | SI units are stored internally; conversion happens **only** in display formatters. Nothing else changes if imperial is ever added. |
+| Recharts | `syncId` gives synced tooltip/crosshair for free, but **not** synced zoom — zoom must be a controlled `XAxis domain` fed identically to every panel. |
+| ≥4 simultaneous charts | Rendering cost matters. Downsample for display, memoize aggressively, never recompute stats on hover. |
+
+---
+
+## 3. Layer diagram
+
+```mermaid
+flowchart TB
+  subgraph UI["4 · UI Layer (React + Recharts)"]
+    App[App]
+    Ctl[ControlPanel<br/>x-axis mode · metric toggles · max-avg-median checkboxes]
+    Stack[ChartStack<br/>shared syncId + shared x-domain]
+    Panel["MetricPanel xN<br/>LineChart + ReferenceLine per active stat"]
+    Brush[BrushControl<br/>bottom panel only · writes zoom domain]
+    App --> Ctl
+    App --> Stack
+    Stack --> Panel
+    Stack --> Brush
+  end
+
+  subgraph STATE["3 · State & Derivation"]
+    AC[ActivityContext<br/>activity · status · error]
+    VC[ChartViewContext<br/>xMode · zoomDomain · enabledMetrics · enabledStats]
+    REG[metricRegistry<br/>id · label · unit · color · accessor · format · invert · aggStrategy]
+    STATS[useMetricStats<br/>memoized max-avg-median]
+  end
+
+  subgraph DOMAIN["2 · Domain Pipeline (pure, framework-free)"]
+    NORM[normalizeActivity]
+    DERIVE[buildDistanceAxis · deriveSpeed · detectPauses · smooth]
+    MODEL[(Activity<br/>samples: t s · d m · speed m/s · hr bpm · cadence spm · power W · altitude m)]
+    NORM --> DERIVE --> MODEL
+  end
+
+  subgraph DATA["1 · Ports & Adapters (DI boundary)"]
+    PORT{{"ActivitySource port<br/>load ref → Promise Activity"}}
+    TCX[TcxActivitySource<br/>BUILD NOW]
+    API[HttpActivitySource<br/>FUTURE — do not build]
+    MOCK[MockActivitySource<br/>dev fixtures]
+    TCX -.implements.-> PORT
+    API -.implements.-> PORT
+    MOCK -.implements.-> PORT
+  end
+
+  FILE[/TCX file upload/] --> TCX
+  TCX --> NORM
+  MODEL --> AC
+  AC --> STATS
+  REG --> STATS
+  REG --> Panel
+  STATS --> Panel
+  VC --> Panel
+  VC --> Stack
+  Ctl --> VC
+  Brush --> VC
+  PORT -.injected via ActivitySourceProvider.-> AC
+```
+
+**Dependency rule:** arrows point inward-to-outward only. `domain/` imports nothing from `ui/`, `data/`, or React. `data/` imports `domain/` types only. Violating this breaks the future API swap.
+
+---
+
+## 4. Folder scaffold
+
+```
+src/
+  main.jsx
+  App.jsx
+  app/
+    providers.jsx            # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
+  data/
+    ActivitySource.js        # port: JSDoc typedef + createActivitySource contract
+    tcx/
+      TcxActivitySource.js   # implements port; DOMParser based
+      parseTcx.js            # XML -> RawTrackpoint[]; pure, no domain logic
+    http/
+      HttpActivitySource.js  # STUB ONLY — throws 'not implemented'
+    mock/
+      MockActivitySource.js  # returns fixtures/sample-run.json
+  domain/
+    types.js                 # Activity, Sample, RawTrackpoint typedefs
+    normalizeActivity.js     # RawTrackpoint[] -> Activity  (the pipeline entry point)
+    deriveSpeed.js
+    buildDistanceAxis.js
+    detectPauses.js
+    smooth.js                # centred rolling mean, window in samples
+    downsample.js            # LTTB for display; domain stays full-resolution
+    units.js                 # SI conversions + formatters (mm:ss, km, bpm...)
+  stats/
+    aggregate.js             # max / avg / median, strategy-aware
+    useMetricStats.js        # memoized hook over activity + registry
+  metrics/
+    metricRegistry.js        # THE extension point — see §6
+  state/
+    ActivityContext.jsx
+    ChartViewContext.jsx
+  ui/
+    ChartStack.jsx
+    MetricPanel.jsx
+    ControlPanel.jsx
+    MetricToggle.jsx
+    StatCheckboxes.jsx
+    XAxisModeSwitch.jsx
+    FileDropZone.jsx
+    SyncedTooltip.jsx
+    EmptyState.jsx
+    ErrorState.jsx
+  styles/
+    tokens.css
+    global.css
+fixtures/
+  sample-run.tcx
+```
+
+---
+
+## 5. Core contracts
+
+Types are given as TypeScript for precision. If the project stays JavaScript, express these as JSDoc `@typedef` in `domain/types.js` — the shapes are binding either way.
+
+```ts
+type Sport = 'running';                      // union grows later
+type MetricId = 'pace' | 'heartRate' | 'cadence' | 'power' | 'altitude';
+type StatKind = 'max' | 'avg' | 'median';
+type XAxisMode = 'time' | 'distance';
+
+/** One normalized sample. SI units, always. */
+interface Sample {
+  t: number;            // seconds since activity start (monotonic, gap-aware)
+  d: number;            // cumulative metres (monotonic, non-decreasing)
+  speed?: number;       // m/s   — pace is derived at display time
+  heartRate?: number;   // bpm
+  cadence?: number;     // steps per minute (NOT strides — see §8)
+  power?: number;       // watts
+  altitude?: number;    // metres
+  moving: boolean;      // false inside a detected pause
+}
+
+interface Activity {
+  id: string;
+  sport: Sport;
+  startTime: Date;
+  totalTime: number;            // s, elapsed
+  totalMovingTime: number;      // s
+  totalDistance: number;        // m
+  samples: Sample[];            // full resolution
+  availableMetrics: MetricId[]; // drives which panels can render
+}
+
+/** Untouched adapter output. Adapters do no interpretation beyond field mapping. */
+interface RawTrackpoint {
+  time: Date;
+  distanceMeters?: number;
+  altitudeMeters?: number;
+  heartRateBpm?: number;
+  cadenceSpm?: number;          // already doubled if source was strides
+  watts?: number;
+  speedMps?: number;
+  lat?: number;
+  lon?: number;
+}
+
+/** THE dependency-injection boundary. */
+interface ActivitySource {
+  readonly kind: 'tcx' | 'http' | 'mock';
+  load(ref: ActivityRef): Promise<Activity>;
+}
+
+type ActivityRef =
+  | { type: 'file'; file: File }
+  | { type: 'id'; id: string };
+```
+
+`ActivitySourceProvider` takes a source instance as a prop and publishes it on context. Swapping to the API later is:
+
+```jsx
+<ActivitySourceProvider source={new HttpActivitySource(baseUrl)}>
+```
+
+No other file changes.
+
+---
+
+## 6. Metric registry — the extension point
+
+Adding elevation, or later cycling's `leftRightBalance`, must mean **adding one object here** and nothing else.
+
+```js
+// metrics/metricRegistry.js
+export const metricRegistry = {
+  pace: {
+    id: 'pace',
+    label: 'Pace',
+    unit: 'min/km',
+    color: 'var(--metric-pace)',
+    accessor: (s) => (s.speed && s.speed > 0.3 ? 1000 / s.speed : null), // s per km
+    format: formatPace,          // 287 -> '4:47'
+    invertAxis: true,            // faster reads higher
+    aggStrategy: 'weightedPace', // see below
+    domainPadding: 0.08,
+    sports: ['running', 'cycling'],
+  },
+  heartRate: { id:'heartRate', label:'Heart rate', unit:'bpm', accessor:(s)=>s.heartRate ?? null,
+               format:(v)=>Math.round(v), invertAxis:false, aggStrategy:'timeWeighted', sports:['running','cycling'] },
+  cadence:   { id:'cadence',   label:'Cadence',   unit:'spm', accessor:(s)=>s.cadence ?? null,
+               format:(v)=>Math.round(v), aggStrategy:'movingOnly', sports:['running'] },
+  power:     { id:'power',     label:'Power',     unit:'W',   accessor:(s)=>s.power ?? null,
+               format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling'] },
+  altitude:  { id:'altitude',  label:'Elevation', unit:'m',   accessor:(s)=>s.altitude ?? null,
+               format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling'] },
+};
+
+export const metricOrder = ['pace', 'heartRate', 'power', 'cadence', 'altitude'];
+```
+
+**Aggregation strategies** (`stats/aggregate.js`):
+
+- `timeWeighted` — mean weighted by the duration each sample represents. Sampling is often irregular; a naive array mean silently over-weights dense sections.
+- `movingOnly` — same, but excludes `moving === false` samples. Correct for cadence: standing still is not 0 spm, it's *no data*.
+- `weightedPace` — **average pace = totalMovingTime ÷ totalDistance.** Never the mean of instantaneous paces; that is mathematically wrong and will visibly disagree with every other app the user owns.
+- Median for all strategies: computed over moving samples only, un-weighted, on the raw (unsmoothed) series.
+
+Stats are computed over the **whole activity**, not the zoom window. Keep this fixed; reference lines that drift as the user brushes are disorienting. If a "stats follow zoom" toggle is wanted later, add it explicitly in `ChartViewContext`.
+
+---
+
+## 7. Rendering rules
+
+**ChartStack**
+- One `MetricPanel` per id in `metricOrder` that is both in `activity.availableMetrics` and in `viewState.enabledMetrics`.
+- Every panel gets the identical `syncId="activity"`, the same `XAxis dataKey`, and the same controlled `domain={zoomDomain}`.
+- `XAxis` is `type="number"` with `dataKey` = `t` or `d` depending on `xMode`. **Never use category axis** — sampling is irregular and category spacing would lie about time.
+- Only the bottom panel renders `XAxis` ticks and the `Brush`; upper panels set `hide` on their axis but keep identical `domain` and left `YAxis` width so the plot areas align pixel-for-pixel. Fixed `yAxisWidth` token, not `auto`.
+- Panel heights: first panel ~200px, subsequent ~140px. Whole stack scrolls with the page; do not nest scroll areas.
+
+**MetricPanel**
+- `<LineChart>` with `dot={false}`, `isAnimationActive={false}` (animation on 10k points is a jank generator), `connectNulls={false}` so sensor dropouts render as gaps rather than invented straight lines.
+- For each enabled `StatKind`, render a `<ReferenceLine y={value}>` with a right-aligned label `` `${label} ${format(value)} ${unit}` ``. Dash patterns distinguish kinds: max `4 4`, avg solid-thin, median `2 3`.
+- `invertAxis: true` → `<YAxis reversed />` plus reversed domain calculation.
+
+**Tooltip**
+- One shared `SyncedTooltip` component used by all panels so the hovered sample reads identically everywhere. Header shows both elapsed time *and* distance regardless of `xMode` — users think in both.
+
+**Downsampling**
+- Below ~2,000 samples, render raw. Above, run LTTB (largest-triangle-three-buckets) to ~1,500 points **for display only**, keyed on the current zoom domain so zooming reveals real detail. Stats always use the full-resolution series.
+
+---
+
+## 8. TCX parsing notes (these cost real debugging time)
+
+- Namespace: `http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2`. Use `getElementsByTagNameNS` or strip namespaces — plain `getElementsByTagName` fails inconsistently across browsers on namespaced docs.
+- Structure: `TrainingCenterDatabase > Activities > Activity > Lap+ > Track+ > Trackpoint+`. Flatten all laps into one sample array; keep lap boundary times aside for a possible future lap overlay.
+- **Running cadence lives in `Extensions > TPX > RunCadence` and is in strides per minute — multiply by 2 to get steps per minute.** The plain `<Cadence>` element is the bike field; ignore it when `Activity Sport="Running"`.
+- Power: `Extensions > TPX > Watts`. Often absent — that is normal, not an error.
+- Speed: `Extensions > TPX > Speed` in m/s when present. When absent, derive from distance/time deltas, then smooth (5–15 s window) or the pace chart will be unreadable noise.
+- `<DistanceMeters>` can be missing, non-monotonic, or reset. `buildDistanceAxis` must enforce monotonicity: clamp any decrease to the previous value, and fall back to haversine over lat/lon if distance is absent entirely.
+- Trackpoints with only a `<Time>` and nothing else are common. Drop them before normalization.
+- Pause detection: gap between consecutive timestamps > 10 s, or speed < 0.3 m/s sustained over > 10 s → mark `moving: false`. Keep the samples; do not delete them, or elapsed-time x-axis breaks.
+
+Parsing is synchronous for now. If files exceed ~20k trackpoints, move `TcxActivitySource` into a Web Worker — the port boundary makes that change invisible to everything above it.
+
+---
+
+## 9. Visual tokens
+
+The chart *is* the interface, so the chrome stays quiet and the ink stays loud. Dark neutral ground, one hue per metric, everything else greyscale.
+
+```css
+/* styles/tokens.css */
+:root {
+  --bg:            #12151a;
+  --panel:         #171b22;
+  --grid:          #232935;
+  --text:          #e6e9ef;
+  --text-dim:      #8b93a3;
+  --stat-line:     #6f7889;
+
+  --metric-pace:      #4cc9f0;
+  --metric-heartrate: #ef476f;
+  --metric-power:     #ffd166;
+  --metric-cadence:   #06d6a0;
+  --metric-altitude:  #9b8cff;
+
+  --panel-gap: 4px;      /* tight — panels must read as one instrument */
+  --y-axis-width: 56px;  /* FIXED, shared by all panels for alignment */
+  --radius: 6px;
+  --font-ui:   system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+}
+```
+
+Numerals — axis ticks, tooltip values, reference-line labels, stat readouts — all use `--font-data` with tabular figures so digits don't jitter as values change under the cursor. Labels and controls use `--font-ui`. Metric hue is used consistently for that metric's line, its panel title, and its toggle chip; reference lines stay neutral grey so they never compete with the data.
+
+Quality floor: visible keyboard focus rings, all toggles reachable by keyboard, `prefers-reduced-motion` respected (there is almost no motion to begin with), layout collapses to a single column below 720px with panel heights reduced ~25%.
+
+---
+
+## 10. State shape
+
+```js
+// ChartViewContext
+{
+  xMode: 'time',                          // 'time' | 'distance'
+  zoomDomain: ['dataMin', 'dataMax'],     // Recharts domain, controlled
+  enabledMetrics: ['pace','heartRate','cadence','power'],
+  enabledStats: { pace:['avg'], heartRate:['avg','max'], cadence:[], power:[] },
+  hoverIndex: null,                       // optional: for external readouts
+}
+
+// ActivityContext
+{ activity: Activity|null, status: 'idle'|'loading'|'ready'|'error', error: Error|null, load(ref) }
+```
+
+`enabledStats` is per-metric on purpose: "avg heart rate" and "avg pace" are independently interesting, and a global stat toggle would clutter every panel at once.
+
+---
+
+## 11. Build order
+
+1. `domain/types.js`, `domain/units.js` — types and formatters first; everything else references them.
+2. `data/ActivitySource.js` + `MockActivitySource` + a JSON fixture. **Build the whole UI against the mock**, so the parser is never on the critical path.
+3. `metrics/metricRegistry.js`, `stats/aggregate.js`, `stats/useMetricStats.js`.
+4. `state/*`, `app/providers.jsx`.
+5. `ui/MetricPanel.jsx` → `ui/ChartStack.jsx` with hardcoded enabled metrics. Verify axis alignment and `syncId` crosshair across 4 panels before adding controls.
+6. `ui/ControlPanel.jsx`, toggles, stat checkboxes, x-axis mode switch.
+7. `Brush` + controlled `zoomDomain` across all panels.
+8. `data/tcx/parseTcx.js` + `TcxActivitySource`, then swap the provider from mock to TCX. Test with a real Garmin export containing pauses and at least one missing metric.
+9. `domain/downsample.js` once a long activity (>2 h) feels sluggish.
+
+**Definition of done for v1:** drop a TCX file, see ≥4 aligned synced panels, switch x-axis between elapsed time and distance, toggle any metric on/off, toggle max/avg/median lines per metric, brush-zoom all panels together, and have average pace match what Garmin Connect reports for the same file.
+
+---
+
+## 12. Known future seams (build for, don't build)
+
+- **Cycling/swimming:** add to the `Sport` union; add `sports: [...]` filtering in the registry; swimming needs a `lengths`-based x-axis mode, which is why `xMode` is already an enum rather than a boolean.
+- **API source:** implement `HttpActivitySource.load({type:'id'})`, swap the provider. If the API returns already-normalized samples, the adapter skips `normalizeActivity` — that is the adapter's call, not the UI's.
+- **Multi-activity overlay:** `ActivityContext` becomes a list; `MetricPanel` renders N `<Line>` per panel. The registry and stats layer need no change.
+- **Laps:** parser already sees lap boundaries; surface them as `ReferenceArea` bands.
