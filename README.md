@@ -19,11 +19,13 @@ today:
 - State layer (`ActivityContext`, `ChartViewContext`, `AppProviders`) is built and tested.
 - `ChartStack` / `MetricPanel` / `SyncedTooltip` render synced, aligned charts against the
   mock activity, verified against real rendered Recharts SVG output.
+- `ControlPanel` and its children (`MetricToggle`, `StatCheckboxes`, `XAxisModeSwitch`) drive
+  metric visibility, per-metric stat lines, and x-axis mode — also verified against real
+  rendered Recharts SVG output, not just context state.
 - `App.jsx` is still the default Vite starter page — it is **not yet wired** to the chart
-  stack. `ControlPanel` and its children (`MetricToggle`, `StatCheckboxes`,
-  `XAxisModeSwitch`), `FileDropZone`, `EmptyState`, `ErrorState`, TCX parsing
-  (`data/tcx/`), the HTTP source stub, and `downsample.js` are all placeholder files
-  (`// TODO: see ARCHITECTURE.md`) — not implemented yet.
+  stack or control panel. `FileDropZone`, `EmptyState`, `ErrorState`, TCX parsing
+  (`data/tcx/`), the HTTP source stub, `Brush`/zoom, and `downsample.js` are all placeholder
+  files (`// TODO: see ARCHITECTURE.md`) or unbuilt — not implemented yet.
 
 Check the checklist at the top of [ARCHITECTURE.md](ARCHITECTURE.md#0-implementation-progress)
 for the up-to-date build status.
@@ -65,7 +67,7 @@ src/
   stats/      # max/avg/median aggregation, strategy-aware, memoized hook
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
-  ui/         # ChartStack, MetricPanel, SyncedTooltip, + stubbed control components
+  ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch
 fixtures/
   sample-run.json   # activity used by MockActivitySource in dev/tests
 ```
