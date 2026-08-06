@@ -1,8 +1,29 @@
 # Activity Visualiser — Architecture Spec
 
 > **Audience:** an implementing coding agent (or human) working from an empty Vite project.
-> **Status:** design locked, not yet implemented.
+> **Status:** implementation in progress — see checklist below.
 > **Scope of v1:** running only, metric units only, TCX file input, stacked synced charts, statistic reference lines.
+
+---
+
+## 0. Implementation progress
+
+Kept in sync after each feature lands — see build order in §11.
+
+- [x] Test infra: vitest + React Testing Library, jsdom, `ResizeObserver` stub for Recharts
+- [x] `domain/types.js` — JSDoc typedefs (Sample, Activity, RawTrackpoint)
+- [x] `domain/units.js` — `formatPace`, `formatDuration`, `formatDistanceKm`, `mpsToSecPerKm` (TDD)
+- [x] `stats/aggregate.js` — avg/max/median per `aggStrategy` (TDD). **Verified early:** avg pace = `totalMovingTime / totalDistance`, proven against a hand-computed case to differ from naive mean-of-instantaneous-pace by ~18%. `max` is invertAxis-aware (pace's "max" = fastest, i.e. numeric min).
+- [ ] `data/ActivitySource.js` port + `fixtures/sample-run.json` + `MockActivitySource` (TDD)
+- [ ] `metrics/metricRegistry.js`
+- [ ] `stats/useMetricStats.js` (TDD memoized hook)
+- [ ] `state/ActivityContext.jsx`, `ChartViewContext.jsx`, `app/providers.jsx` (TDD)
+- [ ] `ui/MetricPanel.jsx` + `ui/ChartStack.jsx` hardcoded metrics; verify axis alignment & synced crosshair
+- [ ] `ui/ControlPanel.jsx` + `MetricToggle` + `StatCheckboxes` + `XAxisModeSwitch` (TDD)
+- [ ] `Brush` + controlled `zoomDomain` wired across all panels
+- [ ] `App.jsx` wired end-to-end against `MockActivitySource`; visually verified in dev server
+- [ ] **Blocked on user input:** real Garmin TCX export + its reported avg pace, needed before building `data/tcx/parseTcx.js` + `TcxActivitySource` and doing the real (not synthetic) Garmin cross-check
+- [ ] `domain/downsample.js` (LTTB) — deferred until a long activity is actually sluggish
 
 ---
 
