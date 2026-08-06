@@ -20,7 +20,12 @@ function initialState() {
 export function ChartViewProvider({ children }) {
   const [state, setState] = useState(initialState)
 
-  const setXMode = useCallback((xMode) => setState((s) => ({ ...s, xMode })), [])
+  // A numeric zoomDomain is meaningless across modes (seconds vs metres), so
+  // switching axes resets zoom rather than silently misreading stale bounds.
+  const setXMode = useCallback(
+    (xMode) => setState((s) => ({ ...s, xMode, zoomDomain: initialState().zoomDomain })),
+    [],
+  )
   const setZoomDomain = useCallback((zoomDomain) => setState((s) => ({ ...s, zoomDomain })), [])
   const setHoverIndex = useCallback((hoverIndex) => setState((s) => ({ ...s, hoverIndex })), [])
 

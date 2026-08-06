@@ -54,6 +54,18 @@ describe('ChartViewContext', () => {
     expect(screen.getByText('zoomDomain:[10,20]')).toBeInTheDocument()
   })
 
+  it('setXMode resets zoomDomain to the full range', async () => {
+    // A numeric zoomDomain from one mode (e.g. seconds) is meaningless in
+    // the other (metres) — carrying it across would silently misclip the
+    // axis, so switching modes resets zoom instead.
+    const user = userEvent.setup()
+    renderProbe()
+    await user.click(screen.getByText('setZoomDomain'))
+    expect(screen.getByText('zoomDomain:[10,20]')).toBeInTheDocument()
+    await user.click(screen.getByText('setXMode'))
+    expect(screen.getByText('zoomDomain:["dataMin","dataMax"]')).toBeInTheDocument()
+  })
+
   it('toggleMetric removes an enabled metric, then re-adds it on a second toggle', async () => {
     const user = userEvent.setup()
     renderProbe()

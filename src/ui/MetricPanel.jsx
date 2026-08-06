@@ -4,6 +4,7 @@
 // tooltip/crosshair stays in sync across the whole stack.
 import { useMemo } from 'react'
 import {
+  Brush,
   CartesianGrid,
   Line,
   LineChart,
@@ -22,8 +23,19 @@ const Y_AXIS_WIDTH = 56 // matches --y-axis-width token; fixed so panels align
 
 const STAT_ORDER = ['max', 'avg', 'median']
 const STAT_DASH = { max: '4 4', avg: undefined, median: '2 3' }
+const BRUSH_HEIGHT = 24
 
-export function MetricPanel({ activity, metricId, xMode, zoomDomain, enabledStats, showXAxis, height }) {
+export function MetricPanel({
+  activity,
+  metricId,
+  xMode,
+  zoomDomain,
+  enabledStats,
+  showXAxis,
+  showBrush,
+  onZoomChange,
+  height,
+}) {
   const metric = metricRegistry[metricId]
   const stats = useMetricStats(activity, metricId)
   const xKey = xMode === 'distance' ? 'd' : 't'
@@ -32,6 +44,19 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, enabledStat
     () => activity.samples.map((s) => ({ t: s.t, d: s.d, [metricId]: metric.accessor(s) })),
     [activity.samples, metricId, metric],
   )
+
+  // Recharts' <Brush> tracks its own selected index range independently of
+  // our zoomDomain (it drives what 'dataMin'/'dataMax' resolve to for every
+  // synced panel). Left uncontrolled, that index range survives an xMode
+  // switch even after zoomDomain resets, silently re-narrowing the "full"
+  // domain to whatever was last brushed. Deriving indices from zoomDomain
+  // keeps the two in lockstep.
+  const lastIndex = data.length - 1
+  const [zoomStart, zoomEnd] = zoomDomain
+  const startFound = zoomStart === 'dataMin' ? -1 : data.findIndex((s) => s[xKey] === zoomStart)
+  const endFound = zoomEnd === 'dataMax' ? -1 : data.findIndex((s) => s[xKey] === zoomEnd)
+  const brushStartIndex = startFound === -1 ? 0 : startFound
+  const brushEndIndex = endFound === -1 ? lastIndex : endFound
 
   return (
     <div className="metric-panel" style={{ height }}>
@@ -61,6 +86,19 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, enabledStat
             isAnimationActive={false}
             connectNulls={false}
           />
+          {showBrush && (
+            <Brush
+              dataKey={xKey}
+              height={BRUSH_HEIGHT}
+              stroke="var(--stat-line)"
+              travellerWidth={8}
+              startIndex={brushStartIndex}
+              endIndex={brushEndIndex}
+              onChange={({ startIndex, endIndex }) => {
+                onZoomChange?.([data[startIndex][xKey], data[endIndex][xKey]])
+              }}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

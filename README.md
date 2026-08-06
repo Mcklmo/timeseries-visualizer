@@ -22,10 +22,15 @@ today:
 - `ControlPanel` and its children (`MetricToggle`, `StatCheckboxes`, `XAxisModeSwitch`) drive
   metric visibility, per-metric stat lines, and x-axis mode — also verified against real
   rendered Recharts SVG output, not just context state.
+- The bottom panel of `ChartStack` renders a `Brush` wired to a shared, controlled
+  `zoomDomain` — dragging it zooms/pans every panel in sync, and switching x-axis mode resets
+  the zoom (a numeric range in seconds is meaningless once re-read as metres). Verified by
+  simulating a real Recharts drag against rendered SVG output, not just calling the state
+  setter directly.
 - `App.jsx` is still the default Vite starter page — it is **not yet wired** to the chart
   stack or control panel. `FileDropZone`, `EmptyState`, `ErrorState`, TCX parsing
-  (`data/tcx/`), the HTTP source stub, `Brush`/zoom, and `downsample.js` are all placeholder
-  files (`// TODO: see ARCHITECTURE.md`) or unbuilt — not implemented yet.
+  (`data/tcx/`), the HTTP source stub, and `downsample.js` are all placeholder files
+  (`// TODO: see ARCHITECTURE.md`) or unbuilt — not implemented yet.
 
 Check the checklist at the top of [ARCHITECTURE.md](ARCHITECTURE.md#0-implementation-progress)
 for the up-to-date build status.

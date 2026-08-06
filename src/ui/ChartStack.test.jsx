@@ -40,6 +40,36 @@ function ToggleMetric({ metricId }) {
   return <button onClick={() => toggleMetric(metricId)}>toggle-{metricId}</button>
 }
 
+function SwitchXMode({ mode }) {
+  const { setXMode } = useChartView()
+  return <button onClick={() => setXMode(mode)}>switch-x-{mode}</button>
+}
+
+// Drags a recharts <Brush> traveller by simulating the real mouse sequence
+// it listens for (mousedown on the traveller, mousemove/mouseup on window).
+// jsdom's MouseEvent only honors `clientX` — `pageX` is a getter that just
+// returns `clientX` (no scroll-offset support) — so the delta must be passed
+// as `clientX` or Brush's internal drag math silently sees no movement.
+function dragBrushEndTraveller(panel, deltaX) {
+  const travellers = [...panel.querySelectorAll('.recharts-brush-traveller')]
+  const endTraveller = travellers[1]
+  const startX = Number(endTraveller.querySelector('rect').getAttribute('x'))
+  fireEvent.mouseDown(endTraveller, { clientX: startX, clientY: 0 })
+  fireEvent.mouseMove(window, { clientX: startX + deltaX, clientY: 0 })
+  fireEvent.mouseUp(window)
+}
+
+function linePointCount(panel) {
+  const d = panel.querySelector('.recharts-line .recharts-curve').getAttribute('d')
+  return [...d.matchAll(/[ML]/g)].length
+}
+
+function tickLabels(panel) {
+  return [...panel.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan')].map(
+    (el) => el.textContent,
+  )
+}
+
 async function renderStack({ activity = fixtureActivity, extra = null } = {}) {
   const utils = render(
     <AppProviders source={makeSource(activity)}>
@@ -89,12 +119,15 @@ describe('ChartStack', () => {
     expect(colors).toEqual([metricRegistry.heartRate.color, metricRegistry.altitude.color])
   })
 
-  it('gives the first panel more height than the rest', async () => {
+  it('gives the first panel more height than the rest, and the bottom panel extra room for the brush', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
     const heights = panels.map((p) => p.style.height)
     expect(heights[0]).toBe('200px')
-    expect(heights.slice(1)).toEqual(['140px', '140px', '140px'])
+    expect(heights.slice(1, -1)).toEqual(['140px', '140px'])
+    // Bottom panel (altitude) hosts the Brush, which needs its own space so
+    // it doesn't eat into the plot area's usual height.
+    expect(heights.at(-1)).toBe('170px')
   })
 
   it('shows x-axis tick labels only on the bottom panel', async () => {
@@ -142,5 +175,48 @@ describe('ChartStack', () => {
       p.querySelector('.recharts-line .recharts-curve').getAttribute('stroke'),
     )
     expect(colors).not.toContain(metricRegistry.cadence.color)
+  })
+
+  it('renders a Brush control only on the bottom panel', async () => {
+    const { container } = await renderStack()
+    const panels = [...container.querySelectorAll('.metric-panel')]
+    const brushCounts = panels.map((p) => p.querySelectorAll('.recharts-brush').length)
+    expect(brushCounts.slice(0, -1)).toEqual([0, 0, 0])
+    expect(brushCounts.at(-1)).toBe(1)
+  })
+
+  it('dragging the brush narrows the x-domain identically across every panel', async () => {
+    const { container } = await renderStack()
+    const panels = [...container.querySelectorAll('.metric-panel')]
+    expect(panels.map(linePointCount)).toEqual([5, 5, 5, 5])
+
+    dragBrushEndTraveller(panels.at(-1), -300)
+
+    await waitFor(() => {
+      // Recharts drops samples outside the XAxis domain from the line path
+      // entirely rather than clamping them, so a narrower domain shows up
+      // as fewer points — and all four panels must drop to the exact same
+      // count, since they share one controlled zoomDomain.
+      const counts = panels.map(linePointCount)
+      expect(counts.every((c) => c < 5)).toBe(true)
+      expect(new Set(counts).size).toBe(1)
+    })
+  })
+
+  it('resets the zoom to the full domain when the x-axis mode switches', async () => {
+    const { container } = await renderStack({ extra: <SwitchXMode mode="distance" /> })
+    const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
+
+    dragBrushEndTraveller(bottomPanel(), -300)
+    await waitFor(() => expect(Number(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
+
+    fireEvent.click(screen.getByText('switch-x-distance'))
+
+    // A stale numeric zoomDomain left over from time mode (e.g. [0, 20])
+    // would misread as a distance domain and clip the distance axis to
+    // 0–20m instead of the full 0–200m track — resetting on mode switch
+    // avoids that silent bug.
+    await waitFor(() => expect(tickLabels(bottomPanel())).toEqual(['0', '50', '100', '150', '200']))
+    await waitFor(() => expect(linePointCount(bottomPanel())).toBe(5))
   })
 })
