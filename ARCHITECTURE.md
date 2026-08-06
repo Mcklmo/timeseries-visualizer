@@ -17,7 +17,10 @@ Kept in sync after each feature lands — see build order in §11.
 - [x] `data/ActivitySource.js` port + `fixtures/sample-run.json` + `MockActivitySource` (TDD)
 - [x] `metrics/metricRegistry.js`
 - [x] `stats/useMetricStats.js` (TDD memoized hook)
-- [ ] `state/ActivityContext.jsx`, `ChartViewContext.jsx`, `app/providers.jsx` (TDD)
+- [x] `data/ActivitySource.js` — `ActivitySourceProvider`/`useActivitySource` DI context (TDD). **Fixed along the way:** `@testing-library/react`'s auto-cleanup needs a global `afterEach`, which this project doesn't have (`globals: false`); without it, DOM leaked across tests in the same file. `setupTests.js` now calls `afterEach(cleanup)` explicitly — applies to all future test files, not just this one.
+- [x] `state/ActivityContext.jsx` — `activity`/`status`/`error`/`load(ref)`, backed by the injected `ActivitySource` (TDD)
+- [x] `state/ChartViewContext.jsx` — `xMode`/`zoomDomain`/`enabledMetrics`/`enabledStats`/`hoverIndex` + setters (TDD). `enabledMetrics` is always re-sorted to canonical `metricOrder` on toggle, regardless of toggle sequence, so anything iterating it directly gets a stable order.
+- [x] `app/providers.jsx` — `AppProviders({ source, children })` composing all three (TDD)
 - [ ] `ui/MetricPanel.jsx` + `ui/ChartStack.jsx` hardcoded metrics; verify axis alignment & synced crosshair
 - [ ] `ui/ControlPanel.jsx` + `MetricToggle` + `StatCheckboxes` + `XAxisModeSwitch` (TDD)
 - [ ] `Brush` + controlled `zoomDomain` wired across all panels
