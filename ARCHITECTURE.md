@@ -14,9 +14,9 @@ Kept in sync after each feature lands — see build order in §11.
 - [x] `domain/types.js` — JSDoc typedefs (Sample, Activity, RawTrackpoint)
 - [x] `domain/units.js` — `formatPace`, `formatDuration`, `formatDistanceKm`, `mpsToSecPerKm` (TDD)
 - [x] `stats/aggregate.js` — avg/max/median per `aggStrategy` (TDD). **Verified early:** avg pace = `totalMovingTime / totalDistance`, proven against a hand-computed case to differ from naive mean-of-instantaneous-pace by ~18%. `max` is invertAxis-aware (pace's "max" = fastest, i.e. numeric min).
-- [ ] `data/ActivitySource.js` port + `fixtures/sample-run.json` + `MockActivitySource` (TDD)
-- [ ] `metrics/metricRegistry.js`
-- [ ] `stats/useMetricStats.js` (TDD memoized hook)
+- [x] `data/ActivitySource.js` port + `fixtures/sample-run.json` + `MockActivitySource` (TDD)
+- [x] `metrics/metricRegistry.js`
+- [x] `stats/useMetricStats.js` (TDD memoized hook)
 - [ ] `state/ActivityContext.jsx`, `ChartViewContext.jsx`, `app/providers.jsx` (TDD)
 - [ ] `ui/MetricPanel.jsx` + `ui/ChartStack.jsx` hardcoded metrics; verify axis alignment & synced crosshair
 - [ ] `ui/ControlPanel.jsx` + `MetricToggle` + `StatCheckboxes` + `XAxisModeSwitch` (TDD)
