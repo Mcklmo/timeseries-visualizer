@@ -2,7 +2,7 @@
 
 > **Audience:** an implementing coding agent (or human) working from an empty Vite project.
 > **Status:** implementation in progress — see checklist below.
-> **Scope of v1:** running only, metric units only, TCX file input, stacked synced charts, statistic reference lines.
+> **Scope of v1:** running and cycling, metric units only, TCX/FIT file input, stacked synced charts, statistic reference lines.
 
 ---
 
@@ -35,6 +35,7 @@ Kept in sync after each feature lands — see build order in §11.
 - [x] **Real Garmin cross-check, unblocked** — user supplied a real 30-minute Garmin TCX export (`fixtures/activity_23870166877.tcx`, 1801 trackpoints, ~1 Hz) plus its Garmin-reported stats (`fixtures/activity_23870166877-meta.json`): 4.71 km, 30:00, avg pace 6:22/km. A dedicated integration test (`TcxActivitySource.realGarminFixture.test.js`) parses the real file end-to-end and asserts computed avg pace against Garmin's reported value — **matches to the second** (computed 6:22.06/km vs. reported 6:22/km), the strongest evidence yet that the `weightedPace` strategy (§6) is correct, not just internally consistent. This file also has no `<Watts>` anywhere, which incidentally covers the "at least one missing metric" case §11 step 8 asked for — `availableMetrics` correctly omits `power` and `ControlPanel` renders no toggle for it. It has **no gaps or sub-0.3 m/s stretches** (checked with a one-off script before writing tests), so `detectPauses`'s two trigger paths are verified only by synthetic unit tests, not against this real file — worth re-running the cross-check if a Garmin export containing an actual pause becomes available.
 - [x] `App.jsx` composition root now dispatches by `ActivityRef` shape instead of injecting a single adapter instance: a `{type:'file'}` ref (drag-drop or browse) goes to `TcxActivitySource`, a `{type:'id'}` ref (the "Load sample activity" button) still goes to `MockActivitySource`. Both concrete adapters are instantiated in exactly one place (`App.jsx`); no other file imports either. This is a small deviation from §5's "swap the source instance, nothing else changes" framing — that framing assumed one adapter per app, but the sample-activity convenience button needs the mock fixture to keep working *alongside* real parsing, not instead of it. `App.test.jsx`'s file-drop test now exercises a real (small, hand-built) TCX string end-to-end and asserts the resulting `availableMetrics` to prove it went through the real parser, not the fixture.
 - [x] `data/fit/parseFit.js` + `data/fit/FitActivitySource.js` (TDD) — FIT (binary) parsing via `@garmin/fitsdk` (official Garmin package, zero runtime deps, pure ESM) added to recover Stryd running power, which Garmin Connect's FIT→TCX exporter silently drops (the existing `activity_23870166877.tcx` fixture has no `<Watts>` anywhere despite the run being recorded with a Stryd pod). **Non-obvious finding, verified at the byte level against the user's real FIT export (`fixtures/23870166877_ACTIVITY.fit`):** the `record` message definitions in this file don't include the standard power field at all — power exists *only* as a developer field, tied to a `developer_data_id` message whose `application_id` (`18fb2cf0-1a4b-430d-ad66-988c847421f4`) is Stryd's registered FIT app id. `@garmin/fitsdk` keys `record.developerFields` by a sequential `key` assigned during decode, not by `fieldDefinitionNumber` — resolving the right key requires matching `fieldDescriptionMesgs` by `nativeMesgNum === 20 && nativeFieldNum === 7` (i.e. "mirrors record's standard power field") first. A generic/naive FIT reader that only knows the standard profile would reproduce the exact same "no power" bug the TCX export has. See §8 for the rest of the FIT-specific parsing notes this uncovered (cadence doubling parity, semicircle lat/lon conversion, decode error shape). `parseFit` is `async` (unlike sync `parseTcx`) because `@garmin/fitsdk` (~1.3 MB, almost all of it the FIT field/message profile table) is dynamically imported *inside* it, keeping that weight out of the eager bundle for TCX-only users; `FitActivitySource` imports it normally since the file itself is tiny. `App.jsx`'s composition-root dispatcher now routes a dropped/browsed file to `FitActivitySource` or `TcxActivitySource` by extension (`.fit` vs `.tcx`) rather than always going to TCX. **Real Garmin FIT cross-check:** `FitActivitySource.realGarminFixture.test.js` parses the same 1801-trackpoint, 30-minute activity as the existing TCX cross-check test and matches it on distance/duration/avg pace — but where that TCX test asserts `power` is *absent* from `availableMetrics`, this one asserts the inverse: `availableMetrics` *does* contain `'power'` (avg 224 W, sane 85–270 W range), which is the actual proof the recovery works end-to-end, not just that the file parses.
+- [x] **Cycling support** — widened `Sport` to `'running'|'cycling'` and wired the previously-dead `metricRegistry[id].sports` filtering into `ControlPanel`/`ChartStack` (via a new `isMetricForSport()` helper) — that field existed since the registry was first built but nothing read it until now. `parseTcx`/`parseFit` now resolve the file's actual sport (TCX `Sport="Biking"`, FIT `sessionMesgs[0].sport === 'cycling'`) instead of hard-rejecting anything but running; both branch cadence handling on it (TCX: plain top-level `<Cadence>` instead of `TPX>RunCadence`; FIT: `record.cadence` passed through undoubled) since the running-specific strides→steps doubling would silently corrupt a bike file's cadence otherwise — see §8. New `speed` metric (km/h, `metrics/metricRegistry.js`) replaces `pace` for cycling activities (`pace.sports` narrowed to `['running']`, `speed.sports` is `['cycling']`) — average speed uses `movingOnly` rather than `weightedPace`, since (unlike pace) average speed *is* the time-weighted mean of instantaneous speed by definition, so the reciprocal-avoidance strategy pace needs doesn't apply. Deliberately reuses `--metric-pace` as `speed`'s line color rather than adding a new CSS token, since the two are mutually exclusive per activity and never render together. `cadence.unit` became the registry's first sport-dependent field (`(sport) => sport==='cycling'?'rpm':'spm'`), resolved via a new `metricUnit()` helper everywhere `metric.unit` used to be read directly (`MetricPanel`'s `StatLabels`/`Tooltip`, `SyncedTooltip`) — both now take a `sport` prop threaded down from `activity.sport`. `normalizeActivity`'s `availableMetricsOf` stays sport-agnostic by design (per its existing comment) — it flags both `'pace'` and `'speed'` as available whenever sample speed data exists; sport-based visibility is entirely a UI-layer concern.
 - [ ] `domain/downsample.js` (LTTB) — deferred until a long activity is actually sluggish
 
 ---
@@ -43,7 +44,7 @@ Kept in sync after each feature lands — see build order in §11.
 
 A web UI in the spirit of Intervals.ICU / Garmin Connect: load a single running activity and inspect several metrics as **vertically stacked, time-synced line charts** sharing one x-axis (elapsed time or distance). The user toggles which metrics are shown, and toggles **max / avg / median** horizontal reference lines per metric.
 
-**Explicit non-goals for v1:** cycling, swimming, imperial units, multi-activity comparison, persistence, auth, tests, server-side anything.
+**Explicit non-goals for v1:** swimming, imperial units, multi-activity comparison, persistence, auth, tests, server-side anything.
 
 ---
 
@@ -52,7 +53,7 @@ A web UI in the spirit of Intervals.ICU / Garmin Connect: load a single running 
 | Constraint | Consequence |
 | --- | --- |
 | API will replace TCX later | All input goes through an `ActivitySource` port; adapters are injected via React context. No component ever imports the TCX parser. |
-| Cycling/swimming come later | Metrics are declared in a **registry**, not hardcoded into components. `Activity.sport` exists from day one. |
+| Swimming may come later | Metrics are declared in a **registry**, not hardcoded into components. `Activity.sport` exists from day one — cycling already uses this (§6). |
 | Metric only | SI units are stored internally; conversion happens **only** in display formatters. Nothing else changes if imperial is ever added. |
 | Recharts | `syncId` gives synced tooltip/crosshair for free, but **not** synced zoom — zoom must be a controlled `XAxis domain` fed identically to every panel. |
 | ≥4 simultaneous charts | Rendering cost matters. Downsample for display, memoize aggressively, never recompute stats on hover. |
@@ -179,8 +180,8 @@ fixtures/
 Types are given as TypeScript for precision. If the project stays JavaScript, express these as JSDoc `@typedef` in `domain/types.js` — the shapes are binding either way.
 
 ```ts
-type Sport = 'running';                      // union grows later
-type MetricId = 'pace' | 'heartRate' | 'cadence' | 'power' | 'altitude';
+type Sport = 'running' | 'cycling';           // union grows later (swimming, ...)
+type MetricId = 'pace' | 'speed' | 'heartRate' | 'cadence' | 'power' | 'altitude';
 type StatKind = 'max' | 'avg' | 'median';
 type XAxisMode = 'time' | 'distance';
 
@@ -188,9 +189,9 @@ type XAxisMode = 'time' | 'distance';
 interface Sample {
   t: number;            // seconds since activity start (monotonic, gap-aware)
   d: number;            // cumulative metres (monotonic, non-decreasing)
-  speed?: number;       // m/s   — pace is derived at display time
+  speed?: number;       // m/s   — pace/speed are derived at display time
   heartRate?: number;   // bpm
-  cadence?: number;     // steps per minute (NOT strides — see §8)
+  cadence?: number;     // steps/min for running (NOT strides), pedal rpm for cycling — see §8
   power?: number;       // watts
   altitude?: number;    // metres
   moving: boolean;      // false inside a detected pause
@@ -213,7 +214,7 @@ interface RawTrackpoint {
   distanceMeters?: number;
   altitudeMeters?: number;
   heartRateBpm?: number;
-  cadenceSpm?: number;          // already doubled if source was strides
+  cadenceSpm?: number;          // running: already doubled if source was strides. cycling: pedal rpm, undoubled
   watts?: number;
   speedMps?: number;
   lat?: number;
@@ -243,7 +244,7 @@ No other file changes.
 
 ## 6. Metric registry — the extension point
 
-Adding elevation, or later cycling's `leftRightBalance`, must mean **adding one object here** and nothing else.
+Adding elevation, or later swimming's stroke rate, must mean **adding one object here** and nothing else. `unit` may be a plain string or a `(sport) => string` function when it varies by sport (cadence: spm vs rpm) — resolve it via `metricUnit(metric, sport)`, never `metric.unit` directly. Per-metric `sports: [...]` gates which activities offer that metric at all — filtered in via `isMetricForSport()` at both `ControlPanel` and `ChartStack`.
 
 ```js
 // metrics/metricRegistry.js
@@ -258,19 +259,31 @@ export const metricRegistry = {
     invertAxis: true,            // faster reads higher
     aggStrategy: 'weightedPace', // see below
     domainPadding: 0.08,
-    sports: ['running', 'cycling'],
+    sports: ['running'],
+  },
+  speed: {
+    id: 'speed',
+    label: 'Speed',
+    unit: 'km/h',
+    color: 'var(--metric-pace)', // shares pace's hue — the two never render together
+    accessor: (s) => (s.speed != null ? mpsToKmh(s.speed) : null),
+    format: formatSpeedKmh,      // 28.42 -> '28.4'
+    invertAxis: false,
+    aggStrategy: 'movingOnly',   // avg speed IS the time-weighted mean by definition; movingOnly just excludes pauses
+    domainPadding: 0.08,
+    sports: ['cycling'],
   },
   heartRate: { id:'heartRate', label:'Heart rate', unit:'bpm', accessor:(s)=>s.heartRate ?? null,
                format:(v)=>Math.round(v), invertAxis:false, aggStrategy:'timeWeighted', sports:['running','cycling'] },
-  cadence:   { id:'cadence',   label:'Cadence',   unit:'spm', accessor:(s)=>s.cadence ?? null,
-               format:(v)=>Math.round(v), aggStrategy:'movingOnly', sports:['running'] },
+  cadence:   { id:'cadence',   label:'Cadence',   unit:(sport)=>(sport==='cycling'?'rpm':'spm'), accessor:(s)=>s.cadence ?? null,
+               format:(v)=>Math.round(v), aggStrategy:'movingOnly', sports:['running','cycling'] },
   power:     { id:'power',     label:'Power',     unit:'W',   accessor:(s)=>s.power ?? null,
                format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling'] },
   altitude:  { id:'altitude',  label:'Elevation', unit:'m',   accessor:(s)=>s.altitude ?? null,
                format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling'] },
 };
 
-export const metricOrder = ['pace', 'heartRate', 'power', 'cadence', 'altitude'];
+export const metricOrder = ['pace', 'speed', 'heartRate', 'power', 'cadence', 'altitude'];
 ```
 
 **Aggregation strategies** (`stats/aggregate.js`):
@@ -312,7 +325,8 @@ Stats are computed over the **whole activity**, not the zoom window. Keep this f
 
 - Namespace: `http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2`. Use `getElementsByTagNameNS` or strip namespaces — plain `getElementsByTagName` fails inconsistently across browsers on namespaced docs.
 - Structure: `TrainingCenterDatabase > Activities > Activity > Lap+ > Track+ > Trackpoint+`. Flatten all laps into one sample array; keep lap boundary times aside for a possible future lap overlay.
-- **Running cadence lives in `Extensions > TPX > RunCadence` and is in strides per minute — multiply by 2 to get steps per minute.** The plain `<Cadence>` element is the bike field; ignore it when `Activity Sport="Running"`.
+- **Running cadence lives in `Extensions > TPX > RunCadence` and is in strides per minute — multiply by 2 to get steps per minute.** The plain top-level `<Cadence>` element is the *cycling* field instead — already pedal rpm, no doubling. `parseTcx` branches on the resolved `sport` (`Activity Sport="Running"` → `RunCadence`×2, `Sport="Biking"` → plain `<Cadence>`) rather than reading both.
+- `Activity Sport` maps `"Running"` → `'running'`, `"Biking"` → `'cycling'`; anything else (e.g. `"Other"`) is rejected with a user-facing error, same as an unparseable file.
 - Power: `Extensions > TPX > Watts`. Often absent — that is normal, not an error. (Garmin Connect's FIT→TCX export drops power even when the original FIT file has it via a developer field — see FIT notes below.)
 - Speed: `Extensions > TPX > Speed` in m/s when present. When absent, derive from distance/time deltas, then smooth (5–15 s window) or the pace chart will be unreadable noise.
 - `<DistanceMeters>` can be missing, non-monotonic, or reset. `buildDistanceAxis` must enforce monotonicity: clamp any decrease to the previous value, and fall back to haversine over lat/lon if distance is absent entirely.
@@ -326,7 +340,7 @@ Parsing is synchronous for now. If files exceed ~20k trackpoints, move `TcxActiv
 Decoded with `@garmin/fitsdk` (official Garmin package, zero runtime deps, pure ESM — `Stream.fromArrayBuffer(buffer)` + `new Decoder(stream).read()`, no options object needed since the useful defaults — `applyScaleAndOffset`, `convertTypesToStrings`, `convertDateTimesToDates`, etc. — are already `true`).
 
 - **Power is frequently only a *developer field*, not the standard `record` field.** A Stryd pod's FIT export declares power via a `field_description` message (`native_mesg_num: 20` i.e. `record`, `native_field_num: 7`, the standard power field it mirrors), tied to a `developer_data_id` message whose `application_id` is Stryd's registered FIT app id (`18fb2cf0-1a4b-430d-ad66-988c847421f4`). The decoder does **not** merge developer field values into the record object by name — each decoded `record` message's `developerFields` object is keyed by a sequential `key` assigned during decode (visible on `fieldDescriptionMesgs[].key`), not by `fieldDefinitionNumber`. Resolve the key once per file by matching `fieldDescriptionMesgs` on `nativeMesgNum === 20 && nativeFieldNum === 7`, then read `record.developerFields[thatKey]`. Check the standard `record.power` field first regardless, so a power meter that populates field 7 natively still works without going through developer-field resolution.
-- **Running cadence is per-leg, exactly like TCX's `RunCadence` — multiply `record.cadence` by 2 to get steps per minute.** Verified against a real export: `sessionMesgs[0].avgCadence`/`avgRunningCadence` matched the raw per-record `cadence` mean before doubling.
+- **Running cadence is per-leg, exactly like TCX's `RunCadence` — multiply `record.cadence` by 2 to get steps per minute.** Verified against a real export: `sessionMesgs[0].avgCadence`/`avgRunningCadence` matched the raw per-record `cadence` mean before doubling. Cycling cadence (`sessionMesgs[0].sport === 'cycling'`) is already pedal rpm — `record.cadence` passes through undoubled. Sport comes from `sessionMesgs[0].sport`, already resolved to a string (`'running'`/`'cycling'`) by the SDK; missing session data defaults to `'running'` rather than blocking.
 - `positionLat`/`positionLong` are raw semicircle integers — the SDK does not auto-convert these despite converting everything else. Multiply by `180 / 2**31` to get degrees.
 - `record.enhancedAltitude`/`enhancedSpeed` are already scaled by the decoder; prefer them over the plain `altitude`/`speed` fields (only present on older/lower-resolution devices).
 - A non-FIT/garbage buffer does not throw synchronously — `decoder.read()` returns `{ messages: {}, errors: [Error(...)] }`. `parseFit` checks `errors.length` itself, mirroring how `parseTcx` throws a friendly message on invalid XML.
@@ -406,7 +420,7 @@ Quality floor: visible keyboard focus rings, all toggles reachable by keyboard, 
 
 ## 12. Known future seams (build for, don't build)
 
-- **Cycling/swimming:** add to the `Sport` union; add `sports: [...]` filtering in the registry; swimming needs a `lengths`-based x-axis mode, which is why `xMode` is already an enum rather than a boolean.
+- **Swimming:** add to the `Sport` union; add `sports: [...]` filtering in the registry (cycling already does exactly this — see §6); swimming needs a `lengths`-based x-axis mode, which is why `xMode` is already an enum rather than a boolean.
 - **API source:** implement `HttpActivitySource.load({type:'id'})`, swap the provider. If the API returns already-normalized samples, the adapter skips `normalizeActivity` — that is the adapter's call, not the UI's.
 - **Multi-activity overlay:** `ActivityContext` becomes a list; `MetricPanel` renders N `<Line>` per panel. The registry and stats layer need no change.
 - **Laps:** parser already sees lap boundaries; surface them as `ReferenceArea` bands.

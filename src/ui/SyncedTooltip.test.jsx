@@ -41,4 +41,18 @@ describe('SyncedTooltip', () => {
     const { getByText } = render(<SyncedTooltip active={true} payload={gapPayload} metric={metricRegistry.heartRate} />)
     expect(getByText('Heart rate: – bpm', { exact: false })).toBeInTheDocument()
   })
+
+  it("resolves cadence's unit from the sport prop: spm for running, rpm for cycling", () => {
+    const cadencePoint = { t: 0, d: 0, cadence: 90 }
+    const cadencePayload = [{ value: 90, dataKey: 'cadence', payload: cadencePoint }]
+    const { getByText: getRunning } = render(
+      <SyncedTooltip active={true} payload={cadencePayload} metric={metricRegistry.cadence} sport="running" />,
+    )
+    expect(getRunning('Cadence: 90 spm', { exact: false })).toBeInTheDocument()
+
+    const { getByText: getCycling } = render(
+      <SyncedTooltip active={true} payload={cadencePayload} metric={metricRegistry.cadence} sport="cycling" />,
+    )
+    expect(getCycling('Cadence: 90 rpm', { exact: false })).toBeInTheDocument()
+  })
 })

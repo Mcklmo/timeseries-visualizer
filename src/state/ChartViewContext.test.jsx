@@ -80,14 +80,22 @@ describe('ChartViewContext', () => {
     const user = userEvent.setup()
     renderProbe()
     await user.click(screen.getByText('toggleHrMax'))
-    expect(screen.getByText('enabledStats:{"pace":["avg"],"heartRate":["avg","max"],"power":["avg"],"cadence":["avg"],"altitude":["avg"]}')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'enabledStats:{"pace":["avg"],"speed":["avg"],"heartRate":["avg","max"],"power":["avg"],"cadence":["avg"],"altitude":["avg"]}',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('toggleStat removes a stat that is already enabled', async () => {
     const user = userEvent.setup()
     renderProbe()
     await user.click(screen.getByText('togglePaceAvg'))
-    expect(screen.getByText('enabledStats:{"pace":[],"heartRate":["avg"],"power":["avg"],"cadence":["avg"],"altitude":["avg"]}')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'enabledStats:{"pace":[],"speed":["avg"],"heartRate":["avg"],"power":["avg"],"cadence":["avg"],"altitude":["avg"]}',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('setHoverIndex publishes the hovered sample index', async () => {

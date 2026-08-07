@@ -1,12 +1,13 @@
 # Activity Visualiser
 
 A web UI, in the spirit of Intervals.ICU / Garmin Connect, for inspecting a single running
-activity as vertically stacked, time-synced charts (pace, heart rate, cadence, power,
-elevation) sharing one x-axis — elapsed time or distance.
+or cycling activity as vertically stacked, time-synced charts (pace/speed, heart rate,
+cadence, power, elevation) sharing one x-axis — elapsed time or distance.
 
-v1 scope is intentionally narrow: running only, metric units only, single activity, no
-persistence, no auth. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design spec,
-build order, and rationale — this README is the practical "how do I run/build this" doc.
+v1 scope is intentionally narrow: running and cycling only, metric units only, single
+activity, no persistence, no auth. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full
+design spec, build order, and rationale — this README is the practical "how do I run/build
+this" doc.
 
 ## Status
 
@@ -167,5 +168,5 @@ path, though (see step 9 below).
 
 If you're picking this up (human or agent), read
 [ARCHITECTURE.md](ARCHITECTURE.md) first — §11 gives the build order, §0 tracks what's
-done, and §12 lists seams that are deliberately designed for but not yet built (cycling
-support, multi-activity overlay, laps).
+done, and §12 lists seams that are deliberately designed for but not yet built
+(multi-activity overlay, laps).

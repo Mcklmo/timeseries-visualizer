@@ -161,6 +161,26 @@ describe('MetricPanel', () => {
     expect(container.textContent).toContain('AVG 135 bpm')
   })
 
+  it("resolves cadence's unit from the activity's sport: spm for running, rpm for cycling", () => {
+    const { container: runningContainer } = renderPanel({ metricId: 'cadence', enabledStats: ['avg'] })
+    expect(runningContainer.textContent).toContain('spm')
+    expect(runningContainer.textContent).not.toContain('rpm')
+
+    const { container: cyclingContainer } = render(
+      <MetricPanel
+        activity={{ ...activity, sport: 'cycling' }}
+        metricId="cadence"
+        xMode="time"
+        zoomDomain={['dataMin', 'dataMax']}
+        enabledStats={['avg']}
+        showXAxis={true}
+        height={200}
+      />,
+    )
+    expect(cyclingContainer.textContent).toContain('rpm')
+    expect(cyclingContainer.textContent).not.toContain('spm')
+  })
+
   it('keeps stat labels a minimum distance apart even when their values are pixels apart', () => {
     // avg and median land within a couple of bpm of each other here, which
     // would put their labels almost on top of one another without decluttering.

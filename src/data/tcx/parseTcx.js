@@ -5,6 +5,8 @@
 const TCX_NS = 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2'
 const ACTIVITY_EXT_NS = 'http://www.garmin.com/xmlschemas/ActivityExtension/v2'
 
+const SPORT_BY_TCX_ATTR = { Running: 'running', Biking: 'cycling' }
+
 function firstChildNS(parent, ns, localName) {
   return parent.getElementsByTagNameNS(ns, localName)[0] ?? null
 }
@@ -20,7 +22,7 @@ function numberOfNS(parent, ns, localName) {
   return text == null ? null : Number(text)
 }
 
-function parseTrackpoint(tpEl) {
+function parseTrackpoint(tpEl, sport) {
   const timeText = textOfNS(tpEl, TCX_NS, 'Time')
   const time = timeText ? new Date(timeText) : null
 
@@ -34,19 +36,20 @@ function parseTrackpoint(tpEl) {
   const lat = positionEl ? numberOfNS(positionEl, TCX_NS, 'LatitudeDegrees') : null
   const lon = positionEl ? numberOfNS(positionEl, TCX_NS, 'LongitudeDegrees') : null
 
-  // Running cadence lives in Extensions > TPX > RunCadence, in strides/min —
-  // double it for steps/min. The plain top-level <Cadence> is the cycling
-  // field; ignore it here since v1 is running-only.
-  let cadenceSpm = null
-  let speedMps = null
-  let watts = null
   const extensionsEl = firstChildNS(tpEl, TCX_NS, 'Extensions')
   const tpxEl = extensionsEl ? firstChildNS(extensionsEl, ACTIVITY_EXT_NS, 'TPX') : null
-  if (tpxEl) {
-    const runCadence = numberOfNS(tpxEl, ACTIVITY_EXT_NS, 'RunCadence')
+  const speedMps = tpxEl ? numberOfNS(tpxEl, ACTIVITY_EXT_NS, 'Speed') : null
+  const watts = tpxEl ? numberOfNS(tpxEl, ACTIVITY_EXT_NS, 'Watts') : null
+
+  // Running cadence lives in Extensions > TPX > RunCadence, in strides/min —
+  // double it for steps/min. Cycling cadence lives in the plain top-level
+  // <Cadence> element instead, already in pedal rpm — no doubling.
+  let cadenceSpm = null
+  if (sport === 'cycling') {
+    cadenceSpm = numberOfNS(tpEl, TCX_NS, 'Cadence')
+  } else {
+    const runCadence = tpxEl ? numberOfNS(tpxEl, ACTIVITY_EXT_NS, 'RunCadence') : null
     cadenceSpm = runCadence == null ? null : runCadence * 2
-    speedMps = numberOfNS(tpxEl, ACTIVITY_EXT_NS, 'Speed')
-    watts = numberOfNS(tpxEl, ACTIVITY_EXT_NS, 'Watts')
   }
 
   return { time, distanceMeters, altitudeMeters, heartRateBpm, cadenceSpm, watts, speedMps, lat, lon }
@@ -68,19 +71,20 @@ export function parseTcx(xmlText) {
   }
 
   const sportAttr = activityEl.getAttribute('Sport')
-  if (sportAttr !== 'Running') {
-    throw new Error(`Only running activities are supported right now (this file is "${sportAttr ?? 'unknown'}")`)
+  const sport = SPORT_BY_TCX_ATTR[sportAttr]
+  if (!sport) {
+    throw new Error(`Only running and cycling activities are supported right now (this file is "${sportAttr ?? 'unknown'}")`)
   }
 
   const id = textOfNS(activityEl, TCX_NS, 'Id') ?? `tcx-${Date.now()}`
 
   const trackpoints = Array.from(activityEl.getElementsByTagNameNS(TCX_NS, 'Trackpoint'))
-    .map(parseTrackpoint)
+    .map((tpEl) => parseTrackpoint(tpEl, sport))
     .filter((tp) => tp.time != null) // a trackpoint with no timestamp can't be placed on any axis
 
   if (trackpoints.length === 0) {
     throw new Error("That TCX file doesn't contain any trackpoints")
   }
 
-  return { id, sport: 'running', trackpoints }
+  return { id, sport, trackpoints }
 }

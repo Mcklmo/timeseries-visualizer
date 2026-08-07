@@ -2,7 +2,7 @@
 // ARCHITECTURE.md §3 layer diagram and §11 build order step 6. Reads
 // activity.availableMetrics so it never offers a control for a metric the
 // loaded activity has no data for.
-import { metricOrder } from '../metrics/metricRegistry.js'
+import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { MetricToggle } from './MetricToggle.jsx'
 import { StatCheckboxes } from './StatCheckboxes.jsx'
@@ -13,7 +13,9 @@ export function ControlPanel() {
 
   if (!activity) return null
 
-  const visibleMetrics = metricOrder.filter((id) => activity.availableMetrics.includes(id))
+  const visibleMetrics = metricOrder.filter(
+    (id) => activity.availableMetrics.includes(id) && isMetricForSport(id, activity.sport),
+  )
 
   return (
     <div className="control-panel">

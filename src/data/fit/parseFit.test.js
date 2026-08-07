@@ -93,6 +93,12 @@ describe('parseFit', () => {
     expect(result.trackpoints[0].cadenceSpm).toBe(170)
   })
 
+  it('resolves a cycling session sport and passes cadence through undoubled (already pedal rpm)', async () => {
+    const result = await parseFit(fit({ sport: 'cycling', records: [fullRecord] }))
+    expect(result.sport).toBe('cycling')
+    expect(result.trackpoints[0].cadenceSpm).toBe(85)
+  })
+
   it('leaves watts null when there is no power field at all (normal — most files lack a power meter)', async () => {
     const result = await parseFit(fit({ records: [fullRecord] }))
     expect(result.trackpoints[0].watts).toBeNull()
@@ -127,8 +133,8 @@ describe('parseFit', () => {
     expect(result.sport).toBe('running')
   })
 
-  it('throws a clear error for a non-running activity', async () => {
-    await expect(parseFit(fit({ sport: 'cycling', records: [fullRecord] }))).rejects.toThrow(/running/i)
+  it('throws a clear error for an unsupported sport', async () => {
+    await expect(parseFit(fit({ sport: 'swimming', records: [fullRecord] }))).rejects.toThrow(/running.*cycling/i)
   })
 
   it('throws a clear error for invalid/non-FIT input', async () => {

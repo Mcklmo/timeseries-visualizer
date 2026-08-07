@@ -41,6 +41,18 @@ const fullTrackpoint = `
     </Extensions>
   </Trackpoint>`
 
+const bikeTrackpoint = `
+  <Trackpoint>
+    <Time>2026-01-01T00:00:00.000Z</Time>
+    <DistanceMeters>0.0</DistanceMeters>
+    <Cadence>85</Cadence>
+    <Extensions>
+      <ns3:TPX>
+        <ns3:Speed>8.2</ns3:Speed>
+      </ns3:TPX>
+    </Extensions>
+  </Trackpoint>`
+
 describe('parseTcx', () => {
   it('extracts id, sport, and field-mapped trackpoints', () => {
     const result = parseTcx(tcx({ trackpointsXml: fullTrackpoint }))
@@ -60,6 +72,28 @@ describe('parseTcx', () => {
 
   it('doubles RunCadence (strides/min) into steps/min', () => {
     const result = parseTcx(tcx({ trackpointsXml: fullTrackpoint }))
+    expect(result.trackpoints[0].cadenceSpm).toBe(170)
+  })
+
+  it('resolves Sport="Biking" to the cycling sport', () => {
+    const result = parseTcx(tcx({ sport: 'Biking', trackpointsXml: bikeTrackpoint }))
+    expect(result.sport).toBe('cycling')
+  })
+
+  it('reads the plain top-level Cadence element undoubled for cycling (pedal rpm, not strides)', () => {
+    const result = parseTcx(tcx({ sport: 'Biking', trackpointsXml: bikeTrackpoint }))
+    expect(result.trackpoints[0].cadenceSpm).toBe(85)
+  })
+
+  it('prefers RunCadence over a stray top-level Cadence element for a running activity', () => {
+    const both = `
+      <Trackpoint>
+        <Time>2026-01-01T00:00:00.000Z</Time>
+        <DistanceMeters>0.0</DistanceMeters>
+        <Cadence>60</Cadence>
+        <Extensions><ns3:TPX><ns3:RunCadence>85</ns3:RunCadence></ns3:TPX></Extensions>
+      </Trackpoint>`
+    const result = parseTcx(tcx({ sport: 'Running', trackpointsXml: both }))
     expect(result.trackpoints[0].cadenceSpm).toBe(170)
   })
 
@@ -108,8 +142,8 @@ describe('parseTcx', () => {
     expect(result.trackpoints).toHaveLength(1)
   })
 
-  it('throws a clear error for a non-running activity', () => {
-    expect(() => parseTcx(tcx({ sport: 'Biking', trackpointsXml: fullTrackpoint }))).toThrow(/running/i)
+  it('throws a clear error for an unsupported sport', () => {
+    expect(() => parseTcx(tcx({ sport: 'Other', trackpointsXml: fullTrackpoint }))).toThrow(/running.*cycling/i)
   })
 
   it('throws a clear error for invalid XML', () => {

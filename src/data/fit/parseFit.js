@@ -26,17 +26,18 @@ function findPowerDevFieldKey(fieldDescriptionMesgs) {
   return byName?.key ?? null
 }
 
-function parseTrackpoint(record, powerKey) {
+function parseTrackpoint(record, powerKey, sport) {
   const time = record.timestamp ?? null
 
   // Standard field checked first so a non-Stryd power meter that *does*
   // populate field 7 natively still works.
   const watts = record.power ?? (powerKey != null ? (record.developerFields?.[powerKey] ?? null) : null)
 
-  // FIT's record.cadence is per-leg (strides/min), same as TCX's RunCadence
-  // — double it for steps/min. Verified against this fixture's
-  // session.avgCadence (84) vs. the raw per-record mean (83.75).
-  const cadenceSpm = record.cadence != null ? record.cadence * 2 : null
+  // FIT's record.cadence is per-leg (strides/min) for running, same as TCX's
+  // RunCadence — double it for steps/min. Verified against this fixture's
+  // session.avgCadence (84) vs. the raw per-record mean (83.75). For cycling,
+  // record.cadence is already pedal rpm — no doubling.
+  const cadenceSpm = record.cadence == null ? null : sport === 'cycling' ? record.cadence : record.cadence * 2
 
   // positionLat/positionLong are raw semicircle integers; the SDK does not
   // auto-convert these. 2^31 semicircles = 180 degrees.
@@ -69,18 +70,19 @@ export async function parseFit(buffer) {
     throw new Error("Couldn't read that file — it isn't a valid FIT file")
   }
 
-  // Absent session data isn't blocked on — v1 is running-only regardless,
-  // same scope TCX parsing already assumes, and FIT doesn't require a
-  // session message to have valid records.
-  const sport = messages.sessionMesgs?.[0]?.sport
-  if (sport != null && sport !== 'running') {
-    throw new Error(`Only running activities are supported right now (this file is "${sport}")`)
+  // Absent session data defaults to running rather than blocking — FIT
+  // doesn't require a session message to have valid records, and running is
+  // the far more common case among files that omit it.
+  const rawSport = messages.sessionMesgs?.[0]?.sport
+  const sport = rawSport == null ? 'running' : rawSport
+  if (sport !== 'running' && sport !== 'cycling') {
+    throw new Error(`Only running and cycling activities are supported right now (this file is "${sport}")`)
   }
 
   const powerKey = findPowerDevFieldKey(messages.fieldDescriptionMesgs ?? [])
 
   const trackpoints = messages.recordMesgs
-    .map((record) => parseTrackpoint(record, powerKey))
+    .map((record) => parseTrackpoint(record, powerKey, sport))
     .filter((tp) => tp.time != null) // a trackpoint with no timestamp can't be placed on any axis
 
   if (trackpoints.length === 0) {
@@ -92,5 +94,5 @@ export async function parseFit(buffer) {
   // missing <Id>) is enough.
   const id = `fit-${Date.now()}`
 
-  return { id, sport: 'running', trackpoints }
+  return { id, sport, trackpoints }
 }

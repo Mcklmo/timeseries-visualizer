@@ -62,7 +62,18 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3, heartRateBpm: 125 }),
     ]
     const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
-    expect(activity.availableMetrics).toEqual(['pace', 'heartRate'])
+    expect(activity.availableMetrics).toEqual(['pace', 'speed', 'heartRate'])
+  })
+
+  it('flags both pace and speed as available whenever speed data exists, regardless of sport', () => {
+    // availableMetrics stays sport-agnostic by design — sport-based
+    // visibility (pace for running, speed for cycling) is a UI-layer concern.
+    const trackpoints = [
+      tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3 }),
+      tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3 }),
+    ]
+    const activity = normalizeActivity({ id: 'a1', sport: 'cycling', trackpoints })
+    expect(activity.availableMetrics).toEqual(['pace', 'speed'])
   })
 
   it('omits a metric entirely when no trackpoint has it (e.g. no power meter)', () => {

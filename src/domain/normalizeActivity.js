@@ -33,7 +33,10 @@ function movingTimeOf(samples) {
 /** @param {import('./types.js').Sample[]} samples @returns {import('./types.js').MetricId[]} */
 function availableMetricsOf(samples) {
   const ids = []
-  if (samples.some((s) => s.speed != null)) ids.push('pace')
+  if (samples.some((s) => s.speed != null)) {
+    ids.push('pace')
+    ids.push('speed')
+  }
   if (samples.some((s) => s.heartRate != null)) ids.push('heartRate')
   if (samples.some((s) => s.power != null)) ids.push('power')
   if (samples.some((s) => s.cadence != null)) ids.push('cadence')

@@ -6,7 +6,7 @@ import { FileDropZone } from './FileDropZone.jsx'
 export function EmptyState({ onFileSelected, onLoadSample }) {
   return (
     <div className="empty-state">
-      <h2>Load a run</h2>
+      <h2>Load an activity</h2>
       <FileDropZone onFileSelected={onFileSelected} />
       <p className="empty-state-or">or</p>
       <button type="button" onClick={onLoadSample}>

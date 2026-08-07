@@ -2,14 +2,15 @@
 
 ## What it is
 
-Activity Visualiser is a web app for inspecting a single running activity in
-detail. You drop in a workout file exported from a GPS watch (a Garmin `.tcx`
-export) and the app turns it into a set of synchronized, scrollable charts —
-pace, heart rate, cadence, power, and elevation — all sharing one timeline.
+Activity Visualiser is a web app for inspecting a single running or cycling
+activity in detail. You drop in a workout file exported from a GPS watch (a
+Garmin `.tcx` or `.fit` export) and the app turns it into a set of
+synchronized, scrollable charts — pace/speed, heart rate, cadence, power, and
+elevation — all sharing one timeline.
 
 It's built in the spirit of the analysis view you'd find in Garmin Connect or
-Intervals.ICU, focused on one thing: letting you look closely at *how* a run
-unfolded, second by second.
+Intervals.ICU, focused on one thing: letting you look closely at *how* an
+activity unfolded, second by second.
 
 ## Who it's for
 
@@ -65,14 +66,14 @@ whole story at that moment in the run.
    actually contains (a file with no power data simply shows no power
    chart), all sharing the same x-axis and hover crosshair.
 4. **You explore** — toggle metrics, switch time/distance, add stat
-   reference lines, and brush-zoom into the parts of the run you care about.
+   reference lines, and brush-zoom into the parts of the activity you care about.
 
 ## Current scope
 
-The app currently focuses on **running only**, **metric units only**, and a
-**single activity at a time**, with no accounts, saved history, or
+The app currently focuses on **running and cycling**, **metric units only**,
+and a **single activity at a time**, with no accounts, saved history, or
 persistence — each session starts fresh with a new file. The design
-anticipates future growth (cycling, comparing multiple activities, lap
+anticipates future growth (swimming, comparing multiple activities, lap
 breakdowns) without those features being built yet; see
 [ARCHITECTURE.md](../ARCHITECTURE.md) for the technical design and roadmap,
 and [README.md](../README.md) for how to run the project.

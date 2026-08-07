@@ -9,6 +9,17 @@ export function mpsToSecPerKm(speedMps) {
   return METRES_PER_KM / speedMps
 }
 
+/** @param {number} speedMps @returns {number} km/h */
+export function mpsToKmh(speedMps) {
+  return speedMps * 3.6
+}
+
+/** @param {number|null|undefined} kmh @returns {string} e.g. 28.42 -> '28.4' */
+export function formatSpeedKmh(kmh) {
+  if (kmh == null || !Number.isFinite(kmh)) return '–'
+  return kmh.toFixed(1)
+}
+
 function pad2(n) {
   return String(n).padStart(2, '0')
 }

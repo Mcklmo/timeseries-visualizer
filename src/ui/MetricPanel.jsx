@@ -16,7 +16,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { metricRegistry } from '../metrics/metricRegistry.js'
+import { metricRegistry, metricUnit } from '../metrics/metricRegistry.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
 import { SyncedTooltip } from './SyncedTooltip.jsx'
 
@@ -46,19 +46,20 @@ function declutter(positions) {
 // Labels for all enabled stats of one metric, positioned from the real
 // y-scale and decluttered together — a per-ReferenceLine `label` prop can't
 // coordinate with its siblings, so this renders them as one overlay instead.
-function StatLabels({ metric, entries }) {
+function StatLabels({ metric, entries, sport }) {
   const yScale = useYAxisScale()
   const plotArea = usePlotArea()
   if (!yScale || !plotArea || entries.length === 0) return null
 
   const x = plotArea.x + plotArea.width + STAT_LABEL_GAP
   const positioned = declutter(entries.map(({ kind, value }) => ({ kind, value, y: yScale(value) })))
+  const unit = metricUnit(metric, sport)
 
   return (
     <g className="stat-labels">
       {positioned.map(({ kind, value, y }) => (
         <text key={kind} x={x} y={y} dominantBaseline="central" fill="var(--stat-line)" fontFamily="var(--font-data)">
-          {kind.toUpperCase()} {metric.format(value)} {metric.unit}
+          {kind.toUpperCase()} {metric.format(value)} {unit}
         </text>
       ))}
     </g>
@@ -109,11 +110,15 @@ export function MetricPanel({
           <CartesianGrid stroke="var(--grid)" vertical={false} />
           <XAxis type="number" dataKey={xKey} domain={zoomDomain} hide={!showXAxis} interval={0} />
           <YAxis width={Y_AXIS_WIDTH} reversed={!!metric.invertAxis} tickFormatter={metric.format} interval={0} />
-          <Tooltip content={<SyncedTooltip metric={metric} />} cursor={{ stroke: 'var(--stat-line)' }} isAnimationActive={false} />
+          <Tooltip
+            content={<SyncedTooltip metric={metric} sport={activity.sport} />}
+            cursor={{ stroke: 'var(--stat-line)' }}
+            isAnimationActive={false}
+          />
           {statEntries.map(({ kind, value }) => (
             <ReferenceLine key={kind} y={value} stroke="var(--stat-line)" strokeDasharray={STAT_DASH[kind]} />
           ))}
-          <StatLabels metric={metric} entries={statEntries} />
+          <StatLabels metric={metric} entries={statEntries} sport={activity.sport} />
           <Line
             dataKey={metricId}
             stroke={metric.color}

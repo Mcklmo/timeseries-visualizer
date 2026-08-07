@@ -1,8 +1,8 @@
 // Shared shapes for the domain/data/state layers, expressed as JSDoc typedefs
 // so the project can stay plain JS. See ARCHITECTURE.md §5 — binding either way.
 
-/** @typedef {'running'} Sport */
-/** @typedef {'pace'|'heartRate'|'cadence'|'power'|'altitude'} MetricId */
+/** @typedef {'running'|'cycling'} Sport */
+/** @typedef {'pace'|'speed'|'heartRate'|'cadence'|'power'|'altitude'} MetricId */
 /** @typedef {'max'|'avg'|'median'} StatKind */
 /** @typedef {'time'|'distance'} XAxisMode */
 
@@ -11,9 +11,9 @@
  * @typedef {object} Sample
  * @property {number} t - seconds since activity start (monotonic, gap-aware)
  * @property {number} d - cumulative metres (monotonic, non-decreasing)
- * @property {number} [speed] - m/s — pace is derived at display time
+ * @property {number} [speed] - m/s — pace/speed are derived at display time
  * @property {number} [heartRate] - bpm
- * @property {number} [cadence] - steps per minute (NOT strides)
+ * @property {number} [cadence] - steps/min for running (NOT strides), pedal rpm for cycling
  * @property {number} [power] - watts
  * @property {number} [altitude] - metres
  * @property {boolean} moving - false inside a detected pause
@@ -38,7 +38,7 @@
  * @property {number} [distanceMeters]
  * @property {number} [altitudeMeters]
  * @property {number} [heartRateBpm]
- * @property {number} [cadenceSpm] - already doubled if source was strides
+ * @property {number} [cadenceSpm] - running: steps/min, already doubled if source was strides. cycling: pedal rpm, undoubled
  * @property {number} [watts]
  * @property {number} [speedMps]
  * @property {number} [lat]

@@ -2,7 +2,7 @@
 // controlled x-domain so panels read as one instrument. See ARCHITECTURE.md
 // §7. Only the bottom panel renders the Brush; its onChange writes the one
 // zoomDomain that every panel's XAxis reads, so panning/zooming stays synced.
-import { metricOrder } from '../metrics/metricRegistry.js'
+import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
@@ -18,7 +18,8 @@ export function ChartStack() {
   if (!activity) return null
 
   const visibleMetrics = metricOrder.filter(
-    (id) => activity.availableMetrics.includes(id) && enabledMetrics.includes(id),
+    (id) =>
+      activity.availableMetrics.includes(id) && enabledMetrics.includes(id) && isMetricForSport(id, activity.sport),
   )
 
   return (

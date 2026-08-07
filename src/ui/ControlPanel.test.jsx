@@ -82,6 +82,16 @@ describe('ControlPanel', () => {
     expect(screen.queryByRole('checkbox', { name: 'Power' })).not.toBeInTheDocument()
   })
 
+  it('offers a Speed toggle instead of Pace for a cycling activity, even though both are "available"', async () => {
+    // Mirrors ChartStack's equivalent test: normalizeActivity flags both
+    // pace and speed as available whenever speed data exists; the
+    // sport-based pick happens in ControlPanel via isMetricForSport.
+    const cycling = { ...fixtureActivity, sport: 'cycling', availableMetrics: ['pace', 'speed', 'heartRate'] }
+    await renderApp({ activity: cycling })
+    expect(screen.getByRole('checkbox', { name: 'Speed' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Pace' })).not.toBeInTheDocument()
+  })
+
   it('every metric toggle starts checked, matching the default enabledMetrics', async () => {
     await renderApp()
     for (const id of visibleOrder) {

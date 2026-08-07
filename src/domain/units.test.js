@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mpsToSecPerKm, formatPace, formatDuration, formatDistanceKm } from './units.js'
+import { mpsToSecPerKm, mpsToKmh, formatPace, formatSpeedKmh, formatDuration, formatDistanceKm } from './units.js'
 
 describe('mpsToSecPerKm', () => {
   it('converts speed to seconds-per-km pace', () => {
@@ -10,6 +10,26 @@ describe('mpsToSecPerKm', () => {
   it('returns null for zero or negative speed (avoid Infinity in charts)', () => {
     expect(mpsToSecPerKm(0)).toBeNull()
     expect(mpsToSecPerKm(-1)).toBeNull()
+  })
+})
+
+describe('mpsToKmh', () => {
+  it('converts m/s to km/h', () => {
+    expect(mpsToKmh(10)).toBeCloseTo(36, 6)
+    expect(mpsToKmh(0)).toBe(0)
+  })
+})
+
+describe('formatSpeedKmh', () => {
+  it('formats to one decimal place', () => {
+    expect(formatSpeedKmh(28.42)).toBe('28.4')
+    expect(formatSpeedKmh(0)).toBe('0.0')
+  })
+
+  it('returns a placeholder for null/undefined/non-finite input', () => {
+    expect(formatSpeedKmh(null)).toBe('–')
+    expect(formatSpeedKmh(undefined)).toBe('–')
+    expect(formatSpeedKmh(NaN)).toBe('–')
   })
 })
 

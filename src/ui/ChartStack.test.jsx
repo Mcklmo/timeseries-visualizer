@@ -119,6 +119,20 @@ describe('ChartStack', () => {
     expect(colors).toEqual([metricRegistry.heartRate.color, metricRegistry.altitude.color])
   })
 
+  it('renders a Speed panel instead of Pace for a cycling activity, even though both are "available"', async () => {
+    // normalizeActivity flags both pace and speed as available whenever
+    // speed data exists (it's sport-agnostic by design) — the sport-based
+    // pick between them happens here, via isMetricForSport. pace and speed
+    // share a line color (they never render together), so disambiguate via
+    // the default-on avg stat label's unit text instead.
+    const cycling = { ...fixtureActivity, sport: 'cycling', availableMetrics: ['pace', 'speed', 'heartRate'] }
+    const { container } = await renderStack({ activity: cycling })
+    const panels = container.querySelectorAll('.metric-panel')
+    expect(panels).toHaveLength(2) // only one "how fast" panel, not both pace and speed
+    expect(panels[0].textContent).toContain('km/h')
+    expect(panels[0].textContent).not.toContain('min/km')
+  })
+
   it('gives the first panel more height than the rest, and the bottom panel extra room for the brush', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
