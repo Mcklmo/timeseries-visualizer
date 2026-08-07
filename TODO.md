@@ -9,8 +9,9 @@ GitHub issue on `Mcklmo/timeseries-visualizer`, guarded by Cloudflare Turnstile
 request/response contract table, and the rationale for each choice. This file
 only tracks what is actually on disk.**
 
-**Status: backend, frontend and App wiring done and green. Styles, config
-files and docs outstanding.**
+**Status: implementation, automated tests and the `wrangler dev` API smoke
+test all done. Only the manual in-browser checks and the owner-only external
+setup are outstanding.**
 
 ## Done
 
@@ -65,34 +66,57 @@ files and docs outstanding.**
 - [x] `npx vitest run worker` — 6 files / 41 tests green
 - [x] `npx vitest run src/lib src/ui/Feedback src/App.test.jsx` — green
 
+- [x] `src/styles/tokens.css` — `--danger` / `--success` semantic tokens
+- [x] `src/styles/global.css` — `.app-footer`, `.feedback-trigger`,
+      `.feedback-dialog` + `::backdrop`, `.feedback-form` and its
+      `__notice`/`__hint`/`__error`/`__success`/`__captcha` parts
+- [x] `wrangler.jsonc` — `main`, `assets.binding`, `vars`, `ratelimits`
+- [x] `.gitignore` — `!.dev.vars.example` negation
+- [x] `.dev.vars.example` + `.env` (both committed; the Turnstile *site* key is
+      public by design, the secret half never is)
+- [x] `package.json` — `wrangler@^4.120.0` devDependency + `npm run deploy`
+- [x] `doc/ARCHITECTURE.md` — §0 progress bullet, §4 scaffold with `worker/`
+      and `shared/`, and the new cross-boundary dependency rule
+- [x] `README.md` — "Deploying (Cloudflare Pages)" replaced with "Deploying
+      (Cloudflare Workers)" + a "Feedback form configuration" table; status,
+      project structure, testing notes and the `wrangler dev` section updated;
+      manual walkthrough steps 11–12 added
+- [x] `npm test` — 40 files / 307 tests green
+- [x] `npm run build` — clean; confirmed the sitekey is inlined into the bundle
+- [x] `npx wrangler dev` API smoke test against the real Workers runtime — all
+      bindings resolved (rate limiter, ASSETS, both vars, both secrets), and:
+      `GET` → 405 · malformed body → 400 · empty fields → 422 with the per-field
+      map · valid submission → **502**, which is the correct end of the chain
+      here: Turnstile passed (test secret always does) and GitHub rejected the
+      *placeholder* PAT in `.dev.vars` · 6th request in a minute → 429 with
+      `Retry-After: 60` · `/` → 200 from `env.ASSETS`
+
 ## Outstanding
 
-- [ ] `src/styles/tokens.css` — add `--danger: #ef476f;` `--success: #06d6a0;`
-- [ ] `src/styles/global.css` — `.app-footer`, `.feedback-trigger`,
-      `.feedback-dialog` + `::backdrop`, `.feedback-form`,
-      `.feedback-form__error`, `.feedback-form__success` (flat
-      class-per-component convention, as in the rest of the file)
-- [ ] `wrangler.jsonc` — add `main: "worker/index.js"`,
-      `assets.binding: "ASSETS"`, `vars` (`GITHUB_REPO_OWNER`/`GITHUB_REPO_NAME`),
-      `ratelimits` (`FEEDBACK_RATE_LIMITER`, `namespace_id` "1001",
-      `simple: {limit: 5, period: 60}`)
-- [ ] `.gitignore` — add `!.dev.vars.example` negation under the existing
-      `.dev.vars*`
-- [ ] `.dev.vars.example` (committed) and `.env` (committed — the Turnstile
-      *site* key is public). Real `.dev.vars` stays untracked.
-- [ ] `package.json` — pin `wrangler` devDependency, add
-      `"deploy": "npm run build && wrangler deploy"`
-- [ ] `doc/ARCHITECTURE.md` — §0 progress bullet, §4 scaffold gains `worker/`
-      and `shared/`, plus the dependency rule: `shared/` is plain
-      environment-agnostic values; `worker/` and `src/` may each import from
-      `shared/`, never from each other
-- [ ] `README.md` — **required.** Replace "Deploying (Cloudflare Pages)" with
-      "Deploying (Cloudflare Workers)" (`npm run build`, two
-      `wrangler secret put`s, `wrangler deploy`). The old dashboard flow cannot
-      serve `/api/feedback` at all, so leaving it is actively wrong.
-- [ ] `npm test` (full suite) + `npm run build`
-- [ ] `npx wrangler dev` smoke test — submit with the local test sitekey/secret,
-      confirm a real issue appears, then check the 422 and 429 UI copy
+- [ ] **Manual browser walkthrough** (README steps 11–12) — needs
+      `wrangler dev`, not `npm run dev`, since `/api/feedback` only exists in
+      the Worker. Requires a real `GITHUB_TOKEN` in `.dev.vars` first; the
+      placeholder there gets a 502 by design. No issue has been filed on the
+      repo yet — the end-to-end "a real issue actually appears" check is still
+      unproven.
+- [ ] Escape-key dialog dismissal — real browser behaviour jsdom won't
+      simulate; check by hand, don't chase it with more stubs.
+
+## Known non-blocking notes
+
+- `npm run lint` reports one **pre-existing** error in
+  `src/stats/useMetricStats.js` (`react-hooks/exhaustive-deps` rule not found —
+  a plugin/config version issue), unrelated to this feature and present before
+  it. ESLint is configured for `**/*.{ts,tsx}` only, so none of the new
+  `.js`/`.jsx` files are linted at all.
+- `src/ui/AboutPage.jsx` says the app "runs entirely in your browser… nothing
+  is recorded, collected, or sold". That is still true of activity files, which
+  never leave the device — but the feedback form does now send what the user
+  types to a server. Worth a clarifying sentence there; deliberately not
+  changed without the owner's say-so.
+- The issue body renders the reporter's message as plain markdown, so an
+  `@mention` in it would ping that GitHub user. Low stakes for a personal repo,
+  and not in the plan — flagged rather than silently transformed.
 
 ## Manual/external setup — for the repo owner, not the agent
 
