@@ -12,15 +12,13 @@ this" doc.
 ## Status
 
 This project is **functional end-to-end, including real Garmin TCX file upload** — drop a
-`.tcx` export and it's parsed and charted for real, not just resolved to the bundled mock.
-What exists today:
+`.tcx` export and it's parsed and charted for real. What exists today:
 
 - Domain pipeline (`src/domain/`), stats/aggregation (`src/stats/`), the metric registry
-  (`src/metrics/`), and the `ActivitySource` port + `MockActivitySource` + JSON fixture
-  are built and tested.
+  (`src/metrics/`), and the `ActivitySource` port are built and tested.
 - State layer (`ActivityContext`, `ChartViewContext`, `AppProviders`) is built and tested.
-- `ChartStack` / `MetricPanel` / `SyncedTooltip` render synced, aligned charts against the
-  mock activity, verified against real rendered Recharts SVG output.
+- `ChartStack` / `MetricPanel` / `SyncedTooltip` render synced, aligned charts, verified
+  against real rendered Recharts SVG output.
 - `ControlPanel` and its children (`MetricToggle`, `StatCheckboxes`, `XAxisModeSwitch`) drive
   metric visibility, per-metric stat lines, and x-axis mode — also verified against real
   rendered Recharts SVG output, not just context state.
@@ -29,9 +27,10 @@ What exists today:
   the zoom (a numeric range in seconds is meaningless once re-read as metres). Verified by
   simulating a real Recharts drag against rendered SVG output, not just calling the state
   setter directly.
-- `App.jsx` is wired end-to-end: drop a file or click "Load sample activity" on the
-  `EmptyState`, watch `ActivityContext` cycle through `loading`, and land on `ControlPanel` +
-  `ChartStack` (or `ErrorState`, with a "Try again" that replays the same load).
+- `App.jsx` is wired end-to-end: drop a file on the idle page's `EmptyState` hero (or on the
+  compact control that takes its place in the header once something is loaded), watch
+  `ActivityContext` cycle through `loading`, and land on `ControlPanel` + `ChartStack` (or
+  `ErrorState`, with a "Try again" that replays the same load).
 - The dark, chart-forward visual theme from ARCHITECTURE.md §9 is applied
   (`styles/tokens.css` + `styles/global.css`); the old default-Vite-template files
   (`App.css`, `index.css`, starter assets) are gone.
@@ -39,8 +38,7 @@ What exists today:
   `normalizeActivity`) and `data/tcx/` (`parseTcx` + `TcxActivitySource`) are built and
   tested, including a cross-check against a real Garmin export (see Testing notes below):
   computed average pace matches Garmin's own reported value to the second. `App.jsx`
-  routes a dropped/browsed file to the real TCX parser and the "Load sample activity"
-  button to the mock fixture — see ARCHITECTURE.md §0 for why both adapters coexist.
+  routes a dropped/browsed file to the real TCX or FIT parser by extension.
 - The footer's **Feedback** link opens a dialog that files a labelled GitHub issue on this
   repo via `POST /api/feedback`, guarded by Cloudflare Turnstile plus a native rate-limit
   binding. This is the project's only server-side code (`worker/`) — activity files are
@@ -124,7 +122,7 @@ binding) before it reaches a real deploy.
 src/
   App.jsx     # composition root: AppShell (by ActivityContext.status) + AppProviders
   app/        # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
-  data/       # ActivitySource port + adapters (mock + tcx + fit built; http is a stub)
+  data/       # ActivitySource port + adapters (tcx + fit built; http is a stub)
   domain/     # pure, framework-free normalization pipeline (types, units, buildDistanceAxis,
               # deriveSpeed, detectPauses, smooth, normalizeActivity)
   lib/        # feedbackClient — the browser side of POST /api/feedback
@@ -132,7 +130,7 @@ src/
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
   ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
-              # LoadActivityBar, ErrorState, FileDropZone, AboutPage,
+              # EmptyState, ErrorState, FileDropZone, AboutPage,
               # FeedbackWidget/Dialog/Form + useTurnstile
   styles/     # tokens.css (dark theme + metric hues), global.css (layout, chrome)
 shared/       # environment-agnostic values imported by BOTH src/ and worker/ (feedbackLimits)
@@ -140,7 +138,6 @@ worker/       # the Cloudflare Worker: routes /api/feedback, serves dist/ via en
   routes/     # feedback.js — the request orchestration
   lib/        # validateFeedback, buildIssuePayload, verifyTurnstile, githubClient, rateLimit
 fixtures/
-  sample-run.json                        # activity used by MockActivitySource in dev/tests
   activity_23870166877.tcx               # real Garmin export, used by the parser cross-check test
   activity_23870166877-meta.json         # Garmin's own reported stats for that export
 ```
@@ -197,12 +194,17 @@ controlled source double. Dropping a malformed file is a real, manually-triggera
 path, though (see step 9 below).
 
 1. **Start the dev server** — `npm run dev`, then open the printed URL.
-2. **Empty state** — page loads to a dark-themed "Load a run" panel with a dashed drop zone
-   ("Drop a TCX file here, or click to browse") and a "Load sample activity" button below it.
-3. **Load the sample activity** — click **Load sample activity**. The empty-state panel
-   should be replaced by a control panel (Time/Distance switch + one row per metric — Pace,
-   Heart rate, Cadence, Elevation — each with a colored dot, a checkbox, and max/avg/median
-   checkboxes) and 4 stacked line charts below it.
+2. **Empty state** — page loads to a dark-themed "Load an activity" hero filling the page
+   body: a large dashed drop target ("Drop a TCX or FIT file here / or click to browse")
+   with the "never leaves your device" hint under it. The header holds the title and About
+   only — no second load control anywhere while the hero is up.
+3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
+   one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
+   The hero should be replaced by a control panel (Time/Distance switch + one row per metric
+   the file actually has — each with a colored dot, a checkbox, and max/min/avg/median
+   checkboxes) and the stacked line charts below it — and the compact drop control should
+   now appear in the header, so a *different* activity can be loaded without leaving this
+   view.
 4. **Synced crosshair/tooltip** — hover anywhere over any chart. Expect a vertical crosshair
    and tooltip at the same x-position on *all* panels, with the tooltip header always showing
    both elapsed time and distance regardless of mode.
@@ -215,13 +217,14 @@ path, though (see step 9 below).
 8. **Brush / zoom** — drag the brush handles under the bottom chart → all panels zoom to the
    same range together. While zoomed, switch Time ⇄ Distance → zoom should reset to full
    range (not carry over a stale numeric range).
-9. **File drop** — drag a real `.tcx` export (or click to browse and pick one) onto the drop
-   zone, e.g. `fixtures/activity_23870166877.tcx`. It's parsed for real: expect the panel set
-   to reflect *that file's* available metrics (no Power panel for a file with no power meter,
-   for instance), not the mock's fixed four. Drop a non-TCX file (or a `.tcx` with invalid
-   XML) to see the error state instead — `ErrorState` shows the parser's specific message.
-10. **Responsive layout** — narrow the window below ~720px → each metric's toggle +
-    stat-checkboxes row should stack instead of staying side-by-side.
+9. **Swap and error paths** — with charts up, drop `fixtures/23870166877_ACTIVITY.fit` on the
+   **header** control → it swaps to the FIT activity (a Power panel appears, since the FIT
+   file carries Stryd power the TCX export drops). Then drop a non-TCX file (or a `.tcx` with
+   invalid XML) to see the error state — `ErrorState` shows the parser's specific message,
+   and **Try again** re-runs the same file.
+10. **Responsive layout** — narrow the window below ~720px → the hero and header should both
+    stay readable with no horizontal overflow, and each metric's toggle + stat-checkboxes row
+    should stack instead of staying side-by-side.
 11. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile

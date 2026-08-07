@@ -64,7 +64,7 @@ input {
    the screen space back. The h1 alone is exempt — see .app-header h1 below —
    so it keeps reading as a small persistent watermark/logo instead of
    disappearing along with the bar. Hovering or focusing the header (e.g.
-   tabbing to "Load sample activity") brings the whole bar back so it stays
+   tabbing to the file drop zone) brings the whole bar back so it stays
    reachable without having to scroll to the top first. */
 .app-header--faded {
   background: transparent;
@@ -184,15 +184,32 @@ main {
   pointer-events: auto;
 }
 
-.load-activity-bar button {
-  font: inherit;
+/* Empty state — the idle page body. Deliberately the loudest thing on the
+   screen while nothing is loaded: the header control alone reads as chrome,
+   which left a first-time visitor staring at a blank page. */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-state h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.empty-state__hint {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--text-dim);
   font-size: 13px;
-  color: var(--bg);
-  background: var(--metric-pace);
-  border: none;
-  border-radius: var(--radius);
-  padding: 8px 14px;
-  cursor: pointer;
+  line-height: 1.6;
 }
 
 /* File drop zone */
@@ -204,11 +221,6 @@ main {
   transition:
     border-color 0.15s,
     background 0.15s;
-}
-
-.file-drop-zone--active {
-  border-color: var(--metric-pace);
-  background: rgba(76, 201, 240, 0.08);
 }
 
 .file-drop-zone label {
@@ -233,6 +245,48 @@ main {
 .file-drop-zone:has(input[type='file']:focus-visible) {
   outline: 2px solid var(--metric-pace);
   outline-offset: 2px;
+}
+
+/* Hero variant (EmptyState): the compact control blown up into a real target
+   you can throw a file at. Takes over the --metric-pace accent freed up by
+   the deleted "Load sample activity" button, matching the --active drag
+   treatment so hover and drag read as the same affordance. Must come after
+   the compact rules above — same specificity, so source order decides. */
+.file-drop-zone--hero {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  border-width: 2px;
+  background: var(--panel);
+}
+
+.file-drop-zone--hero:hover {
+  border-color: var(--metric-pace);
+}
+
+.file-drop-zone--hero label {
+  padding: 48px 24px;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.file-drop-zone__title,
+.file-drop-zone__hint {
+  display: block;
+}
+
+.file-drop-zone__hint {
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* Drag feedback, last in the section on purpose: it carries no more
+   specificity than the --hero rules above, so source order is what keeps the
+   dragged-over tint from being repainted by the hero's panel background. */
+.file-drop-zone--active {
+  border-color: var(--metric-pace);
+  background: rgba(76, 201, 240, 0.08);
 }
 
 /* Activity header */
@@ -595,6 +649,14 @@ main {
 
   main {
     padding: 16px;
+  }
+
+  .empty-state {
+    padding: 32px 8px;
+  }
+
+  .file-drop-zone--hero label {
+    padding: 32px 16px;
   }
 
   .metric-control-row {

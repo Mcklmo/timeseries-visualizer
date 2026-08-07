@@ -44,7 +44,7 @@ function setScrollY(value) {
 // Small hand-built fixture (same shape as ControlPanel.test.jsx's) for the
 // tests below that need control over the ActivitySource itself (loading /
 // error timing) — the real App wiring is exercised separately against the
-// actual MockActivitySource, which always resolves fixtures/sample-run.json.
+// actual TCX parser, driven by the hand-written validTcxXml above.
 const fixtureActivity = {
   id: 'a1',
   sport: 'running',
@@ -60,11 +60,17 @@ const fixtureActivity = {
   availableMetrics: ['pace', 'heartRate', 'cadence', 'altitude'],
 }
 
-describe('App (wired against the real MockActivitySource)', () => {
-  it('shows the empty state before any activity is loaded', () => {
-    render(<App />)
+describe('App (wired against the real TCX/FIT sources)', () => {
+  // Pins the invariant AppShell's `showEmptyState` comment describes: exactly
+  // one FileDropZone is mounted at a time. On the idle page it's the hero, and
+  // the header must hold no second one — two CTAs is the layout problem this
+  // replaced, and two mounted zones would give getByLabelText below two
+  // matches to pick between.
+  it('shows the empty state — and nothing in the header — before any activity is loaded', () => {
+    const { container } = render(<App />)
     expect(screen.getByRole('heading', { name: /activity visualiser/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
+    expect(container.querySelector('header .load-activity-bar')).toBeNull()
   })
 
   it('marks the header faded once the page scrolls (collapsing the load-activity bar, per global.css), and un-fades back at the top', () => {
@@ -78,9 +84,10 @@ describe('App (wired against the real MockActivitySource)', () => {
     setScrollY(200)
     fireEvent.scroll(window)
     expect(header).toHaveClass('app-header--faded')
-    // The h1 itself is exempt from the fade — it stays put as a watermark —
-    // only the load-activity-bar collapses away (via the CSS descendant
-    // selector `.app-header--faded .load-activity-bar`, not React state).
+    // The h1 itself is exempt from the fade — it stays put as a watermark.
+    // Whatever else the header holds collapses away via the CSS descendant
+    // selector `.app-header--faded .load-activity-bar`, not React state; on
+    // this idle page that's nothing, since the drop zone is the hero in <main>.
     expect(heading).toBeVisible()
 
     setScrollY(0)
@@ -90,31 +97,23 @@ describe('App (wired against the real MockActivitySource)', () => {
 
   it('shows the About page from the header link and returns via Back', async () => {
     const user = userEvent.setup()
-    render(<App />)
+    const { container } = render(<App />)
 
     await user.click(screen.getByRole('button', { name: /^about$/i }))
     expect(screen.getByText(/runs entirely in your browser/i)).toBeInTheDocument()
-    // only <main> swaps — the header and its load-activity controls stay put
-    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
+    // About replaces the whole of <main>, hero included — so the header picks
+    // the control back up (the `!showAbout` term in AppShell's showEmptyState),
+    // or a visitor who opened About on a fresh page could load nothing at all.
+    expect(screen.queryByRole('heading', { name: /load an activity/i })).not.toBeInTheDocument()
+    expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
 
     // anchored, since the footer's "Feedback" trigger also contains "back"
     await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
     expect(screen.queryByText(/runs entirely in your browser/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
   })
 
-  it('loads the sample activity end-to-end into synced, controllable chart panels', async () => {
-    const user = userEvent.setup()
-    const { container } = render(<App />)
-
-    await user.click(screen.getByRole('button', { name: /sample activity/i }))
-
-    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
-    expect(screen.getByRole('checkbox', { name: 'Pace' })).toBeChecked()
-    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
-  })
-
-  it('loads a dropped TCX file through the real parser, not the mock fixture', async () => {
+  it('loads a dropped TCX file end-to-end through the real parser', async () => {
     const { container } = render(<App />)
 
     fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
@@ -123,9 +122,13 @@ describe('App (wired against the real MockActivitySource)', () => {
 
     await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
     // the dropped fixture only has pace/heartRate/cadence — no power, no altitude —
-    // which only holds if this went through TcxActivitySource, not MockActivitySource
+    // which only holds if this went through the real TcxActivitySource
+    expect(screen.getByRole('checkbox', { name: 'Pace' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Cadence' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Elevation' })).not.toBeInTheDocument()
+    // with the hero gone, the compact header control has taken over, so a
+    // different activity can still be loaded without leaving the chart view
+    expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
   })
 
   it('shows the parser\'s error for a malformed dropped file', async () => {
@@ -139,7 +142,7 @@ describe('App (wired against the real MockActivitySource)', () => {
   })
 })
 
-describe('AppShell (controlled source, for states the real Mock never produces)', () => {
+describe('AppShell (controlled source, for states the real parsers never produce on demand)', () => {
   function renderShell(source) {
     return render(
       <AppProviders source={source}>
@@ -148,13 +151,20 @@ describe('AppShell (controlled source, for states the real Mock never produces)'
     )
   }
 
+  // The injected source double ignores the ref entirely, so picking a file in
+  // whichever drop zone is currently mounted drives every status path.
+  function pickFile() {
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [makeFile()] },
+    })
+  }
+
   it('shows a loading indicator between requesting and resolving an activity', async () => {
-    const user = userEvent.setup()
     let resolveLoad
     const load = () => new Promise((resolve) => (resolveLoad = resolve))
     renderShell({ kind: 'mock', load })
 
-    await user.click(screen.getByRole('button', { name: /sample activity/i }))
+    pickFile()
     expect(screen.getByText(/loading/i)).toBeInTheDocument()
 
     resolveLoad(fixtureActivity)
@@ -162,11 +172,10 @@ describe('AppShell (controlled source, for states the real Mock never produces)'
   })
 
   it('shows an error state when the source rejects, without leaving stale loading/empty UI behind', async () => {
-    const user = userEvent.setup()
     const load = vi.fn().mockRejectedValue(new Error('unsupported TCX schema'))
     renderShell({ kind: 'mock', load })
 
-    await user.click(screen.getByRole('button', { name: /sample activity/i }))
+    pickFile()
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(screen.getByText(/unsupported tcx schema/i)).toBeInTheDocument()
@@ -184,7 +193,7 @@ describe('AppShell (controlled source, for states the real Mock never produces)'
 
     expect(feedbackTrigger()).toBeInTheDocument() // idle
 
-    await user.click(screen.getByRole('button', { name: /sample activity/i }))
+    pickFile()
     expect(screen.getByText(/loading/i)).toBeInTheDocument()
     expect(feedbackTrigger()).toBeInTheDocument() // loading
 
@@ -206,9 +215,10 @@ describe('AppShell (controlled source, for states the real Mock never produces)'
       .mockResolvedValueOnce(fixtureActivity)
     const { container } = renderShell({ kind: 'mock', load })
 
-    await user.click(screen.getByRole('button', { name: /sample activity/i }))
+    pickFile()
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
 
+    // replays the same {type:'file'} ref through lastRef — hence two calls
     await user.click(screen.getByRole('button', { name: /try again/i }))
 
     await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))

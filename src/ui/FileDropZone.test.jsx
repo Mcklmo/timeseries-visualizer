@@ -59,6 +59,15 @@ describe('FileDropZone', () => {
     expect(zone).not.toHaveClass('file-drop-zone--active')
   })
 
+  // The hero variant is the idle-page target; it must stay findable by the
+  // same label query the compact one uses (see the component's comment).
+  it('renders the hero variant with the same browse affordance', () => {
+    const { container } = render(<FileDropZone variant="hero" onFileSelected={() => {}} />)
+
+    expect(container.querySelector('.file-drop-zone')).toHaveClass('file-drop-zone--hero')
+    expect(screen.getByLabelText(/click to browse/i)).toBeInTheDocument()
+  })
+
   it('clears the active state after a drop', () => {
     const { container } = render(<FileDropZone onFileSelected={() => {}} />)
     const zone = container.querySelector('.file-drop-zone')

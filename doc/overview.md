@@ -51,13 +51,13 @@ whole story at that moment in the run.
   what your watch already told you. This has been cross-checked against a
   real Garmin export and matches Garmin's own reported average pace to the
   second.
-- **No account, no upload to a server, no setup.** Drop a file (or try the
-  built-in sample run) and the charts render immediately in the browser.
+- **No account, no upload to a server, no setup.** Drop a file and the charts
+  render immediately in the browser.
 
 ## How it works, in brief
 
 1. **Load an activity** — drag and drop a `.tcx` file exported from a Garmin
-   device (or click "Load sample activity" to explore with example data).
+   device.
 2. **The app parses and normalizes it** — extracting time, distance, pace,
    heart rate, cadence, power, and elevation into one consistent internal
    format, deriving values (like pace) that aren't stored directly, and
