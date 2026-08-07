@@ -42,10 +42,13 @@ describe('speed', () => {
     expect(speed.accessor({})).toBeNull()
   })
 
-  it('is a non-inverted, moving-only, cycling-only metric', () => {
+  it('is a non-inverted, moving-only metric, and the "how fast" panel for everything except running', () => {
     expect(speed.invertAxis).toBe(false)
     expect(speed.aggStrategy).toBe('movingOnly')
-    expect(speed.sports).toEqual(['cycling'])
+    // A GPS-only track gets speed rather than pace: min/km is meaningless at
+    // breadcrumb sampling rates.
+    expect(speed.sports).toEqual(['cycling', 'track'])
+    expect(metricRegistry.pace.sports).toEqual(['running'])
   })
 
   it('format delegates to the shared formatSpeedKmh formatter', () => {
@@ -65,10 +68,10 @@ describe('heartRate', () => {
 
 describe('cadence', () => {
   const { cadence } = metricRegistry
-  it('is moving-only and available for both sports, with a sport-dependent unit', () => {
+  it('is moving-only and available for every sport, with a sport-dependent unit', () => {
     expect(cadence.accessor({ cadence: 172 })).toBe(172)
     expect(cadence.aggStrategy).toBe('movingOnly')
-    expect(cadence.sports).toEqual(['running', 'cycling'])
+    expect(cadence.sports).toEqual(['running', 'cycling', 'track'])
   })
 
   it('unit resolves to spm for running and rpm for cycling', () => {
@@ -100,10 +103,16 @@ describe('isMetricForSport', () => {
     expect(isMetricForSport('speed', 'running')).toBe(false)
   })
 
-  it('allows heart rate, power, altitude, and cadence for both sports', () => {
+  it('allows heart rate, power, altitude, and cadence for every sport', () => {
     for (const id of ['heartRate', 'power', 'altitude', 'cadence']) {
       expect(isMetricForSport(id, 'running')).toBe(true)
       expect(isMetricForSport(id, 'cycling')).toBe(true)
+      expect(isMetricForSport(id, 'track')).toBe(true)
     }
+  })
+
+  it('gives a GPS-only track speed rather than pace', () => {
+    expect(isMetricForSport('speed', 'track')).toBe(true)
+    expect(isMetricForSport('pace', 'track')).toBe(false)
   })
 })

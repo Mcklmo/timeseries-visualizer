@@ -1,7 +1,7 @@
 // Shared shapes for the domain/data/state layers, expressed as JSDoc typedefs
 // so the project can stay plain JS. See ARCHITECTURE.md §5 — binding either way.
 
-/** @typedef {'running'|'cycling'} Sport */
+/** @typedef {'running'|'cycling'|'track'} Sport - 'track' is a generic GPS log with no sport of its own (GPX only) */
 /** @typedef {'pace'|'speed'|'heartRate'|'cadence'|'power'|'altitude'} MetricId */
 /** @typedef {'max'|'min'|'avg'|'median'} StatKind */
 /** @typedef {'time'|'distance'} XAxisMode */
@@ -29,6 +29,7 @@
  * @property {number} totalMovingTime - s
  * @property {number} totalDistance - m
  * @property {Sample[]} samples - full resolution
+ * @property {number} samplingIntervalS - median gap between samples; every sampling-adaptive threshold reads this
  * @property {MetricId[]} availableMetrics - drives which panels can render
  */
 

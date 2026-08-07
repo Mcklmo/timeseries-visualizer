@@ -7,11 +7,11 @@ function makeFile(name = 'run.tcx') {
 }
 
 describe('FileDropZone', () => {
-  it('renders a labelled file input accepting .tcx files', () => {
+  it('renders a labelled file input accepting every supported format', () => {
     render(<FileDropZone onFileSelected={() => {}} />)
     const input = screen.getByLabelText(/drop a tcx file|click to browse/i)
     expect(input).toHaveAttribute('type', 'file')
-    expect(input).toHaveAttribute('accept', '.tcx,.fit')
+    expect(input).toHaveAttribute('accept', '.tcx,.fit,.gpx')
   })
 
   it('calls onFileSelected with the chosen file when picked via the input', () => {

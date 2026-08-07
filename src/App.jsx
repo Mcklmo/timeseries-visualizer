@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
 import { FitActivitySource } from './data/fit/FitActivitySource.js'
+import { GpxActivitySource } from './data/gpx/GpxActivitySource.js'
 import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { AboutPage } from './ui/AboutPage.jsx'
@@ -121,20 +122,29 @@ export function AppShell() {
 }
 
 // Composition-root dispatcher: a dropped/browsed file (`{type:'file'}`) goes
-// to the real TCX or FIT parser, chosen by extension. Anything else falls
-// through to TcxActivitySource, which rejects a non-`file` ref with a real
-// error — the UI can only ever produce file refs now, but routing them there
-// beats dropping the branch, which would leave isFitFile reading `.name` off
-// an undefined `ref.file`. All concrete adapters are instantiated only here —
+// to the real TCX, FIT or GPX parser, chosen by extension. Anything else —
+// including a file with an unrecognised extension — falls through to
+// TcxActivitySource, which rejects a non-`file` ref with a real error. The UI
+// can only ever produce file refs now, but routing them there beats dropping
+// the branch, which would leave the extension lookup reading `.name` off an
+// undefined `ref.file`. All concrete adapters are instantiated only here —
 // see ARCHITECTURE.md §5.
-const isFitFile = (file) => file.name.toLowerCase().endsWith('.fit')
-
 const tcxSource = new TcxActivitySource()
 const fitSource = new FitActivitySource()
+const gpxSource = new GpxActivitySource()
+
+const SOURCE_BY_EXTENSION = { '.fit': fitSource, '.gpx': gpxSource, '.tcx': tcxSource }
+
+function sourceFor(ref) {
+  if (ref.type !== 'file') return tcxSource
+  const name = ref.file.name.toLowerCase()
+  const extension = Object.keys(SOURCE_BY_EXTENSION).find((ext) => name.endsWith(ext))
+  return extension ? SOURCE_BY_EXTENSION[extension] : tcxSource
+}
+
 const defaultSource = {
   kind: 'tcx',
-  load: (ref) =>
-    ref.type === 'file' && isFitFile(ref.file) ? fitSource.load(ref) : tcxSource.load(ref),
+  load: (ref) => sourceFor(ref).load(ref),
 }
 
 export default function App() {

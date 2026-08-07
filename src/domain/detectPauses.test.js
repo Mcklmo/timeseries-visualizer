@@ -50,3 +50,41 @@ describe('detectPauses', () => {
     expect(detectPauses({ t, speed })).toHaveLength(3)
   })
 })
+
+// Both thresholds scale with the recording's own cadence now. Every assertion
+// above runs at the implicit 1 Hz default and is unchanged, which is the point
+// — a watch file must detect exactly the pauses it always did.
+describe('detectPauses at sparse sampling rates', () => {
+  it('treats an ordinary breadcrumb interval as moving, not as one long pause', () => {
+    // A position every 10 minutes: under the old fixed 10s threshold, every
+    // sample past the first was "paused" and moving time collapsed to zero.
+    const t = [0, 600, 1200, 1800, 2400]
+    const speed = [2, 2, 2, 2, 2]
+    expect(detectPauses({ t, speed, intervalS: 600 })).toEqual([true, true, true, true, true])
+  })
+
+  it('still flags a real dropout — four missed breadcrumbs and up', () => {
+    const t = [0, 600, 1200, 24000, 24600] // 6.3h outage before index 3
+    const speed = [2, 2, 2, 2, 2]
+    expect(detectPauses({ t, speed, intervalS: 600 })).toEqual([true, true, true, false, true])
+  })
+
+  it('scales the sustained-slow trigger too, so one slow breadcrumb is not a stop', () => {
+    const t = [0, 600, 1200, 1800]
+    const speed = [2, 0.1, 2, 2]
+    expect(detectPauses({ t, speed, intervalS: 600 })).toEqual([true, true, true, true])
+  })
+
+  it('flags a genuinely stationary stretch at sparse sampling', () => {
+    const t = [0, 600, 1200, 1800, 5400, 6000]
+    const speed = [2, 0.1, 0.1, 0.1, 0.1, 2]
+    const result = detectPauses({ t, speed, intervalS: 600 })
+    expect(result.slice(1, 5)).toEqual([false, false, false, false])
+  })
+
+  it('defaults to 1 Hz behaviour when no interval is given', () => {
+    const t = [0, 1, 2, 20, 21]
+    const speed = [3, 3, 3, 3, 3]
+    expect(detectPauses({ t, speed })).toEqual(detectPauses({ t, speed, intervalS: 1 }))
+  })
+})

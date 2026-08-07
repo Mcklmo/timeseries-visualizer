@@ -60,4 +60,16 @@ describe('ActivityHeader', () => {
     expect(await screen.findByText('Evening Ride')).toBeInTheDocument()
     expect(screen.getByText('Cycling')).toBeInTheDocument()
   })
+
+  it('renders a "Track" chip for a GPS-only track', async () => {
+    const track = { ...fixtureActivity, sport: 'track', name: '3-day Track' }
+    render(
+      <AppProviders source={makeSource(track)}>
+        <Loader />
+        <ActivityHeader />
+      </AppProviders>,
+    )
+    expect(await screen.findByText('3-day Track')).toBeInTheDocument()
+    expect(screen.getByText('Track')).toBeInTheDocument()
+  })
 })

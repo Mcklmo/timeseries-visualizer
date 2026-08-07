@@ -43,16 +43,57 @@ describe('normalizeActivity', () => {
   })
 
   it('excludes paused stretches from totalMovingTime but keeps totalTime including them', () => {
-    // 20s gap between samples 1 and 2 -> sample 2 marked not-moving by detectPauses
+    // 1 Hz sampling with a 30s gap: past detectPauses' threshold at this
+    // cadence (gapThresholdFor(1) === 10), so the sample after it is marked
+    // not-moving. Sampled at 1 Hz deliberately — the threshold scales with the
+    // recording's own interval now, and a 30s gap in a 10s-cadence log is
+    // ordinary jitter rather than a pause (see the sparse test below).
     const trackpoints = [
       tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3 }),
-      tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3 }),
-      tp({ time: new Date('2026-01-01T00:00:40.000Z'), distanceMeters: 30, speedMps: 3 }), // 30s gap after resume
-      tp({ time: new Date('2026-01-01T00:00:50.000Z'), distanceMeters: 60, speedMps: 3 }),
+      tp({ time: new Date('2026-01-01T00:00:01.000Z'), distanceMeters: 3, speedMps: 3 }),
+      tp({ time: new Date('2026-01-01T00:00:02.000Z'), distanceMeters: 6, speedMps: 3 }),
+      tp({ time: new Date('2026-01-01T00:00:32.000Z'), distanceMeters: 6, speedMps: 3 }), // 30s gap
+      tp({ time: new Date('2026-01-01T00:00:33.000Z'), distanceMeters: 9, speedMps: 3 }),
     ]
     const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
-    expect(activity.totalTime).toBe(50)
+    expect(activity.totalTime).toBe(33)
     // moving time should be less than total time since a gap was paused through
+    expect(activity.totalMovingTime).toBeLessThan(activity.totalTime)
+  })
+
+  it('exposes the recording\'s median sampling interval for the sampling-adaptive thresholds', () => {
+    const trackpoints = [0, 600, 1200, 1800].map((s) =>
+      tp({ time: new Date(Date.UTC(2026, 0, 1, 0, 0, s)), lat: 47 + s / 100000, lon: 8 }),
+    )
+    const activity = normalizeActivity({ id: 'a1', sport: 'track', trackpoints })
+    expect(activity.samplingIntervalS).toBe(600)
+  })
+
+  it('keeps sparse breadcrumbs moving — the regression that made a 100km satellite track average 0:02 min/km', () => {
+    // A SPOT-style log: a position every 10 minutes for two hours. Every
+    // sample past the first used to trip detectPauses' fixed 10s gap
+    // threshold, collapsing totalMovingTime to the first interval.
+    const trackpoints = Array.from({ length: 12 }, (_, i) =>
+      tp({ time: new Date(Date.UTC(2026, 0, 1, 0, 0, i * 600)), lat: 47 + i * 0.01, lon: 8, altitudeMeters: 400 + i }),
+    )
+    const activity = normalizeActivity({ id: 'a1', sport: 'track', trackpoints })
+
+    expect(activity.samples.every((s) => s.moving)).toBe(true)
+    expect(activity.totalMovingTime).toBe(activity.totalTime)
+    // ~1.1 km per 0.01° of latitude every 10 min -> a plausible ~6.7 km/h
+    const avgSpeedMps = activity.totalDistance / activity.totalMovingTime
+    expect(avgSpeedMps).toBeGreaterThan(1)
+    expect(avgSpeedMps).toBeLessThan(3)
+  })
+
+  it('still marks a real multi-hour dropout in a sparse recording as paused', () => {
+    const times = [0, 600, 1200, 1800, 23400, 24000] // 6-hour satellite outage mid-log
+    const trackpoints = times.map((s, i) =>
+      tp({ time: new Date(Date.UTC(2026, 0, 1, 0, 0, s)), lat: 47 + i * 0.01, lon: 8 }),
+    )
+    const activity = normalizeActivity({ id: 'a1', sport: 'track', trackpoints })
+
+    expect(activity.samples.map((s) => s.moving)).toEqual([true, true, true, true, false, true])
     expect(activity.totalMovingTime).toBeLessThan(activity.totalTime)
   })
 

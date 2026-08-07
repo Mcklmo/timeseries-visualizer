@@ -6,6 +6,7 @@ import { buildDistanceAxis } from './buildDistanceAxis.js'
 import { deriveSpeed } from './deriveSpeed.js'
 import { deriveWorkoutName } from './deriveWorkoutName.js'
 import { detectPauses } from './detectPauses.js'
+import { medianIntervalOf } from './samplingInterval.js'
 
 // A trackpoint with only a timestamp and nothing else carries no signal —
 // drop it here rather than let it become a sample full of nulls. "Nothing
@@ -58,9 +59,13 @@ export function normalizeActivity({ id, sport, sportLabel, trackpoints }) {
   const startTime = usable.length > 0 ? usable[0].time : new Date()
 
   const t = usable.map((tp) => (tp.time.getTime() - startTime.getTime()) / 1000)
+  // Every threshold below this line scales off the recording's own cadence
+  // rather than assuming ~1 Hz — see samplingInterval.js. A GPS breadcrumb
+  // logged every 10 minutes is not a 10-minute pause.
+  const intervalS = medianIntervalOf(t)
   const d = buildDistanceAxis(usable)
-  const speed = deriveSpeed({ trackpoints: usable, t, d })
-  const moving = detectPauses({ t, speed })
+  const speed = deriveSpeed({ trackpoints: usable, t, d, intervalS })
+  const moving = detectPauses({ t, speed, intervalS })
 
   const samples = usable.map((tp, i) => ({
     t: t[i],
@@ -73,15 +78,20 @@ export function normalizeActivity({ id, sport, sportLabel, trackpoints }) {
     moving: moving[i],
   }))
 
+  // Computed before the name, not inline below it: a recording spanning days
+  // is named by its duration rather than by a time-of-day bucket.
+  const totalTime = samples.length > 0 ? samples[samples.length - 1].t : 0
+
   return {
     id,
     sport,
-    name: deriveWorkoutName({ sport, sportLabel, startTime }),
+    name: deriveWorkoutName({ sport, sportLabel, startTime, totalTime }),
     startTime,
-    totalTime: samples.length > 0 ? samples[samples.length - 1].t : 0,
+    totalTime,
     totalMovingTime: movingTimeOf(samples),
     totalDistance: samples.length > 0 ? samples[samples.length - 1].d : 0,
     samples,
+    samplingIntervalS: intervalS,
     availableMetrics: availableMetricsOf(samples),
   }
 }

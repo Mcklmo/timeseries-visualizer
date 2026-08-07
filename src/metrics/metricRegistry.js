@@ -16,6 +16,9 @@ export const metricRegistry = {
     invertAxis: true, // faster reads higher
     aggStrategy: 'weightedPace',
     domainPadding: 0.08,
+    // Deliberately not 'track': min/km is meaningless at breadcrumb sampling
+    // (and the accessor nulls out anything under 0.3 m/s anyway), so a GPS
+    // track shows speed instead.
     sports: ['running'],
   },
   speed: {
@@ -31,7 +34,7 @@ export const metricRegistry = {
     // excludes paused samples, same reasoning as cadence below.
     aggStrategy: 'movingOnly',
     domainPadding: 0.08,
-    sports: ['cycling'],
+    sports: ['cycling', 'track'],
   },
   heartRate: {
     id: 'heartRate',
@@ -42,7 +45,7 @@ export const metricRegistry = {
     format: round,
     invertAxis: false,
     aggStrategy: 'timeWeighted',
-    sports: ['running', 'cycling'],
+    sports: ['running', 'cycling', 'track'],
   },
   cadence: {
     id: 'cadence',
@@ -54,7 +57,7 @@ export const metricRegistry = {
     invertAxis: false,
     aggStrategy: 'movingOnly',
     domainPadding: 0.08,
-    sports: ['running', 'cycling'],
+    sports: ['running', 'cycling', 'track'],
   },
   power: {
     id: 'power',
@@ -65,7 +68,7 @@ export const metricRegistry = {
     format: round,
     invertAxis: false,
     aggStrategy: 'timeWeighted',
-    sports: ['running', 'cycling'],
+    sports: ['running', 'cycling', 'track'],
   },
   altitude: {
     id: 'altitude',
@@ -76,7 +79,7 @@ export const metricRegistry = {
     format: round,
     invertAxis: false,
     aggStrategy: 'timeWeighted',
-    sports: ['running', 'cycling'],
+    sports: ['running', 'cycling', 'track'],
   },
 }
 

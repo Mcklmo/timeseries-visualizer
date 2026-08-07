@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { mpsToSecPerKm, mpsToKmh, formatPace, formatSpeedKmh, formatDuration, formatDistanceKm } from './units.js'
+import {
+  mpsToSecPerKm,
+  mpsToKmh,
+  formatPace,
+  formatSpeedKmh,
+  formatDuration,
+  formatDistanceKm,
+  makeElapsedTickFormatter,
+  makeDistanceTickFormatter,
+} from './units.js'
 
 describe('mpsToSecPerKm', () => {
   it('converts speed to seconds-per-km pace', () => {
@@ -63,6 +72,66 @@ describe('formatDuration', () => {
 
   it('zero-pads minutes when hours are present', () => {
     expect(formatDuration(3665)).toBe('1:01:05')
+  })
+
+  it('rolls hours into days past 24h instead of counting on to 72:00:00', () => {
+    expect(formatDuration(86400)).toBe('1d 0:00:00')
+    expect(formatDuration(2 * 86400 + 4 * 3600 + 15 * 60 + 30)).toBe('2d 4:15:30')
+  })
+
+  it('is unchanged for anything under a day', () => {
+    expect(formatDuration(86399)).toBe('23:59:59')
+  })
+})
+
+describe('makeElapsedTickFormatter', () => {
+  // Recharts stacks a tick label's whitespace-separated words on separate
+  // lines, so no tick may contain a space — see units.js.
+  it('never emits a space, at any span', () => {
+    for (const span of [60, 600, 3600, 20000, 259200]) {
+      const format = makeElapsedTickFormatter(span)
+      for (const v of [0, span / 3, span]) expect(format(v)).not.toMatch(/\s/)
+    }
+  })
+
+  it('reads m:ss for a short activity', () => {
+    const format = makeElapsedTickFormatter(300)
+    expect([0, 150, 300].map(format)).toEqual(['0:00', '2:30', '5:00'])
+  })
+
+  it('reads h:mm for an activity of a few hours', () => {
+    const format = makeElapsedTickFormatter(2 * 3600)
+    expect([0, 1800, 3600].map(format)).toEqual(['0:00', '0:30', '1:00'])
+  })
+
+  it('reads whole hours for a sub-day span', () => {
+    const format = makeElapsedTickFormatter(18 * 3600)
+    expect([0, 6 * 3600, 12 * 3600].map(format)).toEqual(['0h', '6h', '12h'])
+  })
+
+  it('reads days and hours past 24h — the axis that used to print 259200', () => {
+    const format = makeElapsedTickFormatter(3 * 86400)
+    expect([0, 86400, 2 * 86400, 2.5 * 86400].map(format)).toEqual(['0h', '1d0h', '2d0h', '2d12h'])
+  })
+
+  it('falls back to the finest band for an unknown span rather than the coarsest', () => {
+    expect(makeElapsedTickFormatter(undefined)(90)).toBe('1:30')
+  })
+})
+
+describe('makeDistanceTickFormatter', () => {
+  it('reads metres below a kilometre', () => {
+    const format = makeDistanceTickFormatter(800)
+    expect([0, 200, 800].map(format)).toEqual(['0m', '200m', '800m'])
+  })
+
+  it('reads kilometres above one, to one decimal', () => {
+    const format = makeDistanceTickFormatter(100000)
+    expect([0, 25000, 100000].map(format)).toEqual(['0.0km', '25.0km', '100.0km'])
+  })
+
+  it('never emits a space', () => {
+    expect(makeDistanceTickFormatter(5000)(1234)).not.toMatch(/\s/)
   })
 })
 

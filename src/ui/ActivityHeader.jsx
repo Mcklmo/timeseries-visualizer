@@ -4,7 +4,7 @@
 // that would just duplicate the name.
 import { useActivity } from '../state/ActivityContext.jsx'
 
-const SPORT_CHIP_LABEL = { running: 'Running', cycling: 'Cycling' }
+const SPORT_CHIP_LABEL = { running: 'Running', cycling: 'Cycling', track: 'Track' }
 
 export function ActivityHeader() {
   const { activity } = useActivity()

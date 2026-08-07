@@ -2,7 +2,7 @@
 
 > **Audience:** an implementing coding agent (or human) working from an empty Vite project.
 > **Status:** implementation in progress — see checklist below.
-> **Scope of v1:** running and cycling, metric units only, TCX/FIT file input, stacked synced charts, statistic reference lines.
+> **Scope of v1:** running, cycling and generic GPS tracks, metric units only, TCX/FIT/GPX file input, stacked synced charts, statistic reference lines.
 
 ---
 
@@ -43,6 +43,7 @@ Kept in sync after each feature lands — see build order in §11.
 - [x] **2026-08-07: persistent sticky "Load an activity" bar** — the load controls (`FileDropZone` + "Load sample activity" button) used to live only in `EmptyState`, gated to `status === 'idle'`, so loading a *different* activity after one was already loaded (or after landing on `ErrorState`) meant fixing/retrying from the error screen or reloading the page. `EmptyState.jsx` is now `ui/LoadActivityBar.jsx` — controls-only, no heading/"or" separator — rendered unconditionally in `AppShell`'s `<header>` next to the `<h1>`, outside the `status` switch, so it's visible and usable across idle/loading/error/ready. `.app-header` became `position: sticky; top: 0` (the first sticky/`z-index` usage in the codebase) with an opaque `background: var(--bg)` so scrolled content doesn't show through, plus a flex-row layout (`flex-wrap: wrap`) so the bar drops under the title on narrow viewports without extra markup. `FileDropZone`'s label copy and `.file-drop-zone` styling shrank from a tall dashed drop card to an inline compact control to fit the header row.
 - [x] **2026-08-07: feedback → GitHub issue, and with it the project's first server-side code.** A "Feedback" trigger in a new persistent `<footer>` (outside the `status` switch, like the header — someone staring at an error is exactly who most needs to report it) opens a native `<dialog>`; submitting `POST /api/feedback` files a labelled issue on `Mcklmo/timeseries-visualizer`. This breaks §1's "no server-side anything" non-goal *for this one route only* — the activity pipeline is untouched and still runs entirely client-side, which is what that non-goal was actually protecting. Two new top-level folders sit outside `src/`: `worker/` (the Cloudflare Worker — `index.js` routes `/api/feedback` and hands everything else to `env.ASSETS.fetch`) and `shared/` (`feedbackLimits.js`, plain values). **New dependency rule, extending §3:** `shared/` holds environment-agnostic values only — no Workers globals, no DOM, no React — and `worker/` and `src/` may each import from it, never from each other. That's what lets the length limits be defined once and still leave the server authoritative (the client's `maxLength` is a UX hint; `worker/lib/validateFeedback.js` re-checks everything). **Abuse protection is two-layer:** Cloudflare Turnstile is the "is this a human" gate, and the native Rate Limiting binding (5/60s keyed on `CF-Connecting-IP`) only caps blast radius behind it — deliberately *not* a hand-rolled KV counter, whose get-then-put races exactly like the thing it would replace (true atomicity would need a Durable Object, disproportionate here). **Non-obvious pieces:** (1) this is the "Workers with static assets" deploy model, not Cloudflare Pages, so Pages' `functions/` auto-routing convention does not exist and routing is explicit in `worker/index.js` — the README's old Pages-dashboard flow *could not have served this route at all* and was replaced, not amended. (2) `src/lib/feedbackClient.js` returns a discriminated result instead of throwing, breaking the `ActivitySource` adapters' throw-on-failure convention on purpose: the UI has to render a 422's per-field map inline but a 429/502/network error as one banner, a distinction a single thrown `Error` carries badly. (3) The Turnstile widget is lazy-loaded via a module-level singleton promise and rendered *explicitly* (`turnstile.render(el, …)`), not via the implicit `data-sitekey` div — only the explicit API returns a widget id, which is what `remove()` (no leaked hidden iframes across repeated opens) and `reset()` (tokens are single-use, so every failed submit needs a fresh one) require. (4) `<dialog>`'s `close` listener is attached with `addEventListener`, not a JSX `onClose` prop, since React's synthetic handling of that native event is inconsistent — this also funnels the "×" button and a real Escape keypress through one path. (5) jsdom 30 still has no `showModal`/`close`, so `setupTests.js` gained a stub; it *does* apply the UA `dialog:not([open]){display:none}` rule and map `<dialog>` to role `"dialog"`, so that stub alone is enough for role-based queries. Escape-to-close itself is browser behaviour jsdom won't simulate — left to the manual walkthrough rather than chased with more stubs. (6) Watch out: "Feedback" contains "back", which silently broke the pre-existing `getByRole('button', {name: /back/i})` in `App.test.jsx`'s About test.
 - [x] **2026-08-07: sample activity removed, file entrypoint promoted** — the loudest control on the page ("Load sample activity", the only filled `--metric-pace` button in the header) pointed at bundled demo data rather than at the thing the app is for, and the sticky-bar change above had left a first-time visitor with an otherwise *completely empty* page body: `AppShell` had no `status === 'idle'` branch at all, so the only entrypoint was a small dim dashed strip that reads as chrome. The whole sample path is deleted — button, `SAMPLE_REF`, the `{type:'id'}` dispatcher branch, `data/mock/MockActivitySource.js`, and the 38 KB `fixtures/sample-run.json` it served — rather than kept as scaffolding: once the button was its last caller, the mock adapter was dead weight, and the real-Garmin fixtures now cover everything it demonstrated. In its place, the load control **splits by status**: a hero drop target (`ui/EmptyState.jsx`, the filename `4be0ff4` deleted and §4 still listed) fills `<main>` while idle, and the compact header control appears once something is loading/ready/errored — so `4be0ff4`'s "swap activity without leaving the chart view" property is fully retained. `FileDropZone` grew a `variant` prop (`'compact' | 'hero'`) for this and switched its hardcoded `id="tcx-file-input"` to `useId()`. **The invariant to preserve: exactly one `FileDropZone` is mounted at any time** — `showEmptyState = status === 'idle' && !showAbout`, header control when that's false. It is load-bearing four times over: two CTAs on the idle page is the exact problem this change fixes; two instances would collide on one DOM id (hence `useId()`); three test files query the zone with `getByLabelText(/drop a tcx file|click to browse/i)`, which throws on two matches (hence both variants keeping the literal "click to browse" copy); and `AboutPage` replaces the whole of `<main>`, so without the `!showAbout` term a visitor who opened About on a fresh page would have *no* load control anywhere — that term is pinned by its own assertion in `App.test.jsx`. The dispatcher routes non-`file` refs to `TcxActivitySource` (which rejects them with a real error) instead of dropping the branch, or `isFitFile` would read `.name` off an undefined `ref.file`. `'mock'` stays in the `kind` union (§5) — nearly every UI test still drives `AppProviders` with an inline `{kind:'mock', load}` double.
+- [x] **2026-08-07: GPX support, and with it a pipeline that no longer assumes ~1 Hz.** A commenter on the launch post asked for formats beyond TCX/FIT, naming a **SPOT X** satellite messenger and an **OM System Tough TG-7** camera — both export GPX. Before this, a dropped `.gpx` fell through `App.jsx`'s `.fit` check into `parseTcx`, parsed as XML, and died at the `<Activity>` lookup with a misleading *"is it a TCX export?"*. **The parser was the easy half.** These devices record position + elevation + time only, every 2.5–30 minutes, across days, with multi-hour satellite dropouts, and four places in the pipeline had "a continuous ~1 Hz recording of at most a few hours" baked in as a constant. A parser alone would have rendered *dishonestly* rather than errored, which is worse: `AVG 0:02 min/km` on a 100 km track, blank speed panels, a 6-hour dropout drawn as a straight diagonal, and axis ticks reading `259200`. Everything now hangs off one measured number, `Activity.samplingIntervalS` (new `domain/samplingInterval.js`: `medianIntervalOf` + `gapThresholdFor`, the latter exported because `detectPauses` and the UI's gap-break insertion must agree on where a gap is). **`gapThresholdFor(1) === 10` and the derived smoothing window at 1 Hz is still 9 samples — both asserted explicitly, and both `realGarminFixture` tests pass completely unchanged, which is the actual proof watch files are untouched.** The single root cause of the wrong numbers was `detectPauses`' fixed `GAP_THRESHOLD_S = 10` flagging *every* sample past the first as paused: fixing it also fixed `computeYDomain`'s collapse (one moving sample → `min === max` → `pad` falls back to `1` → `allowDataOverflow` clips the series away) and degenerate `median`/`extreme` stats, with no change to `stats/aggregate.js` at all. `deriveSpeed`'s smoothing window became 9 *seconds* converted at the recording's cadence, which at breadcrumb rates collapses to 1 sample, i.e. skip `smooth()` entirely — a delta measured over 10 minutes is already an average. New generic **`'track'` sport** for a GPS log with no sport of its own (a SPOT track is not a "Morning Run"); it is in every metric's `sports` except `pace`, since min/km is meaningless at breadcrumb sampling, so a track shows **Speed** instead. `deriveWorkoutName` now takes `totalTime` and drops the time-of-day bucket past 24 h ("3-day Track", not "Morning Track"). **Non-obvious pieces:** (1) **Recharts' `<Text>` splits a tick label on whitespace and stacks the words as separate `<tspan dy="1em">`s** — `"1d 0h"` renders on two lines with the second outside the axis band, so `units.js`'s new `makeElapsedTickFormatter`/`makeDistanceTickFormatter` emit `1d0h` and `450m`, and the "no tick label may contain a space" rule is pinned by its own test. Both are *factories* because Recharts hands `tickFormatter` only the value, never the span, and the right band depends entirely on the span. (2) Gap breaks are inserted into `MetricPanel`'s `data` memo (`domain/insertGapBreaks.js`), never into `activity.samples` — synthetic samples would corrupt `sampleDurations`, the distance axis and every stat; the inserted row carries **both** `t` and `d` because `xKey` flips with `xMode`, and a row missing the active key is dropped off the chart rather than breaking the line. Brush indices stay consistent because every panel builds `data` from the same samples with the same threshold. (3) `<time>` is **optional** in GPX, unlike TCX/FIT — a route or waypoint export is valid GPX with no timestamps at all, and gets its own user-facing error. (4) The GPX namespace is resolved from `documentElement.namespaceURI` (1.0 and 1.1 differ by one character) rather than hardcoded, and `<trk><type>` must be read as a *direct child* — `<link>` carries its own `<type>` (a MIME type) that a document-order search wins with. (5) **Real-data finding:** haversine over noisy 1 Hz fixes overestimates distance by **+0.92%** against Garmin's own figure for the same run (4755 m vs 4712 m, avg pace 6:19 vs 6:22/km) — the first real-data check of `buildDistanceAxis`'s haversine fallback and `deriveSpeed`'s derived path, both previously unit-tested only. Hence the 3% tolerance in `GpxActivitySource.realGarminFixture.test.js`, and its assertion that the drift is *positive*. (6) Noticed while building the sparse fixture, **not fixed** (pre-existing, affects TCX/FIT equally): `movingTimeOf` credits a gap's duration to the sample *before* it, which is still `moving`, so a pause's own duration lands in `totalMovingTime` — see §12.
 - [ ] `domain/downsample.js` (LTTB) — deferred until a long activity is actually sluggish
 
 ---
@@ -99,13 +100,13 @@ flowchart TB
 
   subgraph DATA["1 · Ports & Adapters (DI boundary)"]
     PORT{{"ActivitySource port<br/>load ref → Promise Activity"}}
-    TCX[TcxActivitySource<br/>BUILD NOW]
+    TCX[TcxActivitySource · FitActivitySource · GpxActivitySource]
     API[HttpActivitySource<br/>FUTURE — do not build]
     TCX -.implements.-> PORT
     API -.implements.-> PORT
   end
 
-  FILE[/TCX file upload/] --> TCX
+  FILE[/TCX · FIT · GPX file upload/] --> TCX
   TCX --> NORM
   MODEL --> AC
   AC --> STATS
@@ -139,6 +140,9 @@ src/
     fit/
       FitActivitySource.js   # implements port; @garmin/fitsdk based
       parseFit.js            # FIT binary -> RawTrackpoint[]; pure, no domain logic. async — dynamic-imports @garmin/fitsdk
+    gpx/
+      GpxActivitySource.js   # implements port; DOMParser based
+      parseGpx.js            # XML -> RawTrackpoint[]; pure, no domain logic
     http/
       HttpActivitySource.js  # STUB ONLY — throws 'not implemented'
   domain/
@@ -147,9 +151,11 @@ src/
     deriveSpeed.js
     buildDistanceAxis.js
     detectPauses.js
+    samplingInterval.js      # medianIntervalOf + gapThresholdFor — every rate-adaptive threshold reads these
+    insertGapBreaks.js       # display-only: nulls inside a dropout so the line breaks. NOT a Sample field
     smooth.js                # centred rolling mean, window in samples
     downsample.js            # LTTB for display; domain stays full-resolution
-    units.js                 # SI conversions + formatters (mm:ss, km, bpm...)
+    units.js                 # SI conversions + formatters (mm:ss, km, bpm...) + axis tick formatter factories
   stats/
     aggregate.js             # max / min / avg / median, strategy-aware
     useMetricStats.js        # memoized hook over activity + registry
@@ -196,6 +202,8 @@ fixtures/
   activity_23870166877.tcx        # real Garmin export, cross-checked against
   activity_23870166877-meta.json  # ...Garmin's own reported stats
   23870166877_ACTIVITY.fit        # same activity as FIT, carries Stryd power
+  activity_23870166877.gpx        # ...and as GPX: same run reduced to lat/lon/ele/time
+  sparse-multiday.gpx             # hand-built SPOT X / TG-7 shape: 10-min breadcrumbs over 3 days
 ```
 
 **Dependency rule for the two new top-level folders:** `shared/` holds
@@ -210,7 +218,7 @@ import from the other.
 Types are given as TypeScript for precision. If the project stays JavaScript, express these as JSDoc `@typedef` in `domain/types.js` — the shapes are binding either way.
 
 ```ts
-type Sport = 'running' | 'cycling';           // union grows later (swimming, ...)
+type Sport = 'running' | 'cycling' | 'track';  // 'track' = a GPS log with no sport of its own (GPX). Union grows later (swimming, ...)
 type MetricId = 'pace' | 'speed' | 'heartRate' | 'cadence' | 'power' | 'altitude';
 type StatKind = 'max' | 'min' | 'avg' | 'median';
 type XAxisMode = 'time' | 'distance';
@@ -236,6 +244,7 @@ interface Activity {
   totalMovingTime: number;      // s
   totalDistance: number;        // m
   samples: Sample[];            // full resolution
+  samplingIntervalS: number;    // median gap between samples; THE input to every rate-adaptive threshold (§8)
   availableMetrics: MetricId[]; // drives which panels can render
 }
 
@@ -254,7 +263,7 @@ interface RawTrackpoint {
 
 /** THE dependency-injection boundary. */
 interface ActivitySource {
-  readonly kind: 'tcx' | 'fit' | 'http' | 'mock';
+  readonly kind: 'tcx' | 'fit' | 'gpx' | 'http' | 'mock';
   load(ref: ActivityRef): Promise<Activity>;
 }
 
@@ -290,7 +299,7 @@ export const metricRegistry = {
     invertAxis: true,            // faster reads higher
     aggStrategy: 'weightedPace', // see below
     domainPadding: 0.08,
-    sports: ['running'],
+    sports: ['running'],         // NOT 'track': min/km is meaningless at breadcrumb sampling
   },
   speed: {
     id: 'speed',
@@ -302,16 +311,16 @@ export const metricRegistry = {
     invertAxis: false,
     aggStrategy: 'movingOnly',   // avg speed IS the time-weighted mean by definition; movingOnly just excludes pauses
     domainPadding: 0.08,
-    sports: ['cycling'],
+    sports: ['cycling', 'track'], // the "how fast" panel for everything except running
   },
   heartRate: { id:'heartRate', label:'Heart rate', unit:'bpm', accessor:(s)=>s.heartRate ?? null,
-               format:(v)=>Math.round(v), invertAxis:false, aggStrategy:'timeWeighted', sports:['running','cycling'] },
+               format:(v)=>Math.round(v), invertAxis:false, aggStrategy:'timeWeighted', sports:['running','cycling','track'] },
   cadence:   { id:'cadence',   label:'Cadence',   unit:(sport)=>(sport==='cycling'?'rpm':'spm'), accessor:(s)=>s.cadence ?? null,
-               format:(v)=>Math.round(v), aggStrategy:'movingOnly', domainPadding: 0.08, sports:['running','cycling'] },
+               format:(v)=>Math.round(v), aggStrategy:'movingOnly', domainPadding: 0.08, sports:['running','cycling','track'] },
   power:     { id:'power',     label:'Power',     unit:'W',   accessor:(s)=>s.power ?? null,
-               format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling'] },
+               format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling','track'] },
   altitude:  { id:'altitude',  label:'Elevation', unit:'m',   accessor:(s)=>s.altitude ?? null,
-               format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling'] },
+               format:(v)=>Math.round(v), aggStrategy:'timeWeighted', sports:['running','cycling','track'] },
 };
 
 export const metricOrder = ['pace', 'speed', 'heartRate', 'power', 'cadence', 'altitude'];
@@ -338,7 +347,8 @@ Stats are computed over the **whole activity**, not the zoom window. Keep this f
 - Panel heights: first panel ~200px, subsequent ~140px. Whole stack scrolls with the page; do not nest scroll areas.
 
 **MetricPanel**
-- `<LineChart>` with `dot={false}`, `isAnimationActive={false}` (animation on 10k points is a jank generator), `connectNulls={false}` so sensor dropouts render as gaps rather than invented straight lines.
+- `<LineChart>` with `dot={false}`, `isAnimationActive={false}` (animation on 10k points is a jank generator), `connectNulls={false}` so sensor dropouts render as gaps rather than invented straight lines. Sparse recordings carry no nulls of their own, so `domain/insertGapBreaks.js` puts one *in the chart rows only* (never in `activity.samples`) wherever the elapsed gap exceeds `gapThresholdFor(activity.samplingIntervalS)` — the same threshold `detectPauses` uses, so the visual break and the paused-sample flag always agree.
+- `XAxis` gets a `tickFormatter` built by span (`units.js`, §8) — raw elapsed seconds are unreadable past an hour and absurd past a day. **No tick label may contain a space:** Recharts stacks whitespace-separated words as separate `<tspan dy="1em">`s, pushing the second line out of the axis band.
 - For each enabled `StatKind`, render a `<ReferenceLine y={value}>` (no inline label) so the horizontal indicator still shows where the stat sits relative to the line; dash patterns distinguish kinds: max `4 4`, min `1 2`, avg solid-thin, median `2 3`. The stat's text (`` `${label} ${format(value)} ${unit}` ``) renders as a "chip" in a plain-HTML row below the chart (`StatSummary`, outside the SVG) rather than as a positioned label — always shown for every enabled stat, no show/hide toggle.
 - `invertAxis: true` → `<YAxis reversed />` plus reversed domain calculation.
 
@@ -350,7 +360,7 @@ Stats are computed over the **whole activity**, not the zoom window. Keep this f
 
 ---
 
-## 8. TCX & FIT parsing notes (these cost real debugging time)
+## 8. TCX, FIT & GPX parsing notes (these cost real debugging time)
 
 ### TCX
 
@@ -377,6 +387,30 @@ Decoded with `@garmin/fitsdk` (official Garmin package, zero runtime deps, pure 
 - A non-FIT/garbage buffer does not throw synchronously — `decoder.read()` returns `{ messages: {}, errors: [Error(...)] }`. `parseFit` checks `errors.length` itself, mirroring how `parseTcx` throws a friendly message on invalid XML.
 - **Neither FIT nor TCX carries a genuine free-text activity title** — that's a Garmin Connect database concept, not part of either file export (confirmed by decoding the real fixtures). FIT does carry the watch's sport-profile label though: `sessionMesgs[0].sportProfileName` (e.g. `"Trail Run"` for a custom profile, `"Run"` for the default one) and `sportMesgs[0].name`, which are typically duplicates of each other — `parseFit` checks both (`sportProfileName` first) since either can be absent, and exposes the result as `sportLabel`. TCX has no equivalent field anywhere in the schema — its only `<Name>` elements are `<Creator><Name>` (device model) and `<Author><Name>` (exporting app), neither usable as a title. `domain/deriveWorkoutName.js` uses `sportLabel` when present, falling back to a generic sport-based label (`"Run"`/`"Ride"`) otherwise — see its own header comment for the time-of-day bucketing rules.
 - The package is ~1.3 MB unpacked, almost all of it `src/profile.js` (the full FIT field/message profile table). `parseFit.js` dynamically `import()`s it internally so TCX-only users don't pay for it — this is also why `parseFit`, unlike sync `parseTcx`, returns a `Promise`.
+
+### GPX
+
+Parsed with `DOMParser` + `getElementsByTagNameNS`, same as TCX and with no new dependency. The format itself is the *simplest* of the three; what it costs is downstream, because the devices that emit it record nothing like a watch does.
+
+- **Resolve the namespace from the document, never hardcode it.** GPX 1.1 is `http://www.topografix.com/GPX/1/1`, but 1.0 files (`.../GPX/1/0`) are still common from older loggers, and the two differ by one character. `parseGpx` reads `documentElement.namespaceURI`, checks `localName === 'gpx'`, and rejects any other namespace rather than guessing.
+- **`lat`/`lon` are attributes on `<trkpt>`**, not child elements as in TCX. Elevation is `<ele>`, in metres.
+- **`<time>` is optional in GPX**, unlike TCX and FIT. A route or waypoint export is a perfectly valid GPX file with no timestamps anywhere, and nothing in a timeseries view can be placed on an axis without one — it gets its own user-facing error ("looks like a route or waypoint list, not a recorded track"), since reporting it as an empty file would send the user looking for the wrong problem.
+- Structure: `gpx > trk+ > trkseg+ > trkpt+`, flattened into one array the way `parseTcx` flattens laps. Segment boundaries are the recorder's own idea of a dropout; `detectPauses` re-derives them from the timestamps anyway.
+- **Sport comes from `<trk><type>`, read as a *direct child*.** `<trk>` may also contain a `<link>`, which has its own `<type>` holding a MIME type — a document-order descendant search picks that up instead. The value is free text (`run|running|jogging` → `running`, `bike|biking|cycling|cycle|ride` → `cycling`); anything else, including the bare numeric code Strava writes, and the common case of no `<type>` at all, resolves to the generic `'track'` sport.
+- **No distance and no speed element exists in GPX.** `buildDistanceAxis` takes its haversine-over-lat/lon path and `deriveSpeed` its derived path — both pre-existing, both previously unit-tested only. Measured against Garmin's own figures for the same run: haversine over noisy 1 Hz fixes **overestimates by ~0.9%** (4755 m vs 4712 m), because per-second GPS noise accumulates as extra distance. Pace inherits exactly that drift and nothing more (6:19 vs 6:22/km).
+
+### Sampling-rate adaptivity (why GPX needed more than a parser)
+
+A SPOT X or a TG-7 logs a position every 2.5–30 minutes, for days, with multi-hour dropouts. Four constants assumed ~1 Hz; all four now scale off `Activity.samplingIntervalS` (`medianIntervalOf` — a median so one long outage can't drag the "typical" interval up):
+
+| What | Was | Now |
+| --- | --- | --- |
+| `detectPauses` gap trigger | `> 10 s` | `> gapThresholdFor(intervalS)` = `max(10, 4 × intervalS)` |
+| `detectPauses` sustained-slow window | `> 10 s` | same scaling (`SLOW_SPEED_MPS = 0.3` stays fixed — it's a physical threshold, not a sampling one) |
+| `deriveSpeed` smoothing | 9 **samples** | 9 **seconds**, converted at `intervalS`; collapses to 1 sample (skip `smooth()`) at breadcrumb rates |
+| x-axis ticks | raw seconds | `makeElapsedTickFormatter(span)` (§7) |
+
+At 1 Hz every one of these resolves to its original value — that is what makes the change a no-op for watch files, and both `realGarminFixture` tests are the standing proof.
 
 ---
 
@@ -456,3 +490,10 @@ Quality floor: visible keyboard focus rings, all toggles reachable by keyboard, 
 - **API source:** implement `HttpActivitySource.load({type:'id'})`, swap the provider. If the API returns already-normalized samples, the adapter skips `normalizeActivity` — that is the adapter's call, not the UI's.
 - **Multi-activity overlay:** `ActivityContext` becomes a list; `MetricPanel` renders N `<Line>` per panel. The registry and stats layer need no change.
 - **Laps:** parser already sees lap boundaries; surface them as `ReferenceArea` bands.
+- **`gpxtpx:TrackPointExtension`** (`hr`, `cad`, `atemp`) and `pwr:PowerInWatts` — the cheapest of these and probably the most-used in practice: a Strava or Garmin *GPX* export carries heart rate and cadence, and without this those files get fewer panels than the same activity as TCX. ~20 lines inside `parseGpx`; nothing above it changes, since `RawTrackpoint` already has every field.
+- **Temperature metric:** the TG-7's other real channel. `RawTrackpoint.temperatureC` → `Sample.temperature` → one `metricRegistry` entry → one `--metric-temperature` token. The registry exists for exactly this (§6).
+- **KML:** SPOT and OI.Track both also export it. A separate parser, not a variant of `parseGpx` — `<gx:Track>` holds parallel `<when>` and `<gx:coord>` lists rather than per-point elements.
+- **Wall-clock x-axis mode:** `XAxisMode` is already an enum for this reason. A multi-day track is the first data that really wants it. Touches `ChartViewContext`, `XAxisModeSwitch`, `Brush`, `SyncedTooltip`.
+- **Pause duration leaks into `totalMovingTime`:** `movingTimeOf` (and `sampleDurations` in `stats/aggregate.js`) credit the interval *ending* at a sample to the sample *before* it, which is still `moving` — so a pause's own duration is counted as moving time. Pre-existing and format-agnostic (it affects TCX/FIT files with pauses identically); it went unnoticed because the Garmin cross-check fixture has no pauses at all. Fixing it means treating an interval as moving only when both ends are, which changes every stat on any file containing a pause — deliberately not bundled into the GPX change.
+- **Activity title from `<trk><name>`:** GPX is the first format that carries a real free-text title. Routing it through the existing `sportLabel` seam is wrong — `deriveWorkoutName` prefixes a time-of-day bucket, so a Strava export would read "Morning Morning Run". It needs a real `Activity.title` seam separate from the inferred name.
+- **Empty-state for an activity with no chartable channels:** it currently reaches `status: 'ready'` and renders a bare bordered box with no text. Not reachable via GPX (elevation or derived speed will essentially always exist), but a real hole.

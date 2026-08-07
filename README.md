@@ -1,18 +1,19 @@
 # Activity Visualiser
 
 A web UI, in the spirit of Intervals.ICU / Garmin Connect, for inspecting a single running
-or cycling activity as vertically stacked, time-synced charts (pace/speed, heart rate,
-cadence, power, elevation) sharing one x-axis — elapsed time or distance.
+or cycling activity — or a plain GPS track — as vertically stacked, time-synced charts
+(pace/speed, heart rate, cadence, power, elevation) sharing one x-axis — elapsed time or
+distance.
 
-v1 scope is intentionally narrow: running and cycling only, metric units only, single
-activity, no persistence, no auth. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full
-design spec, build order, and rationale — this README is the practical "how do I run/build
-this" doc.
+v1 scope is intentionally narrow: running, cycling and generic GPS tracks, metric units
+only, single activity, no persistence, no auth. See [ARCHITECTURE.md](ARCHITECTURE.md) for
+the full design spec, build order, and rationale — this README is the practical "how do I
+run/build this" doc.
 
 ## Status
 
-This project is **functional end-to-end, including real Garmin TCX file upload** — drop a
-`.tcx` export and it's parsed and charted for real. What exists today:
+This project is **functional end-to-end, including real Garmin file upload** — drop a
+`.tcx`, `.fit` or `.gpx` export and it's parsed and charted for real. What exists today:
 
 - Domain pipeline (`src/domain/`), stats/aggregation (`src/stats/`), the metric registry
   (`src/metrics/`), and the `ActivitySource` port are built and tested.
@@ -38,7 +39,15 @@ This project is **functional end-to-end, including real Garmin TCX file upload**
   `normalizeActivity`) and `data/tcx/` (`parseTcx` + `TcxActivitySource`) are built and
   tested, including a cross-check against a real Garmin export (see Testing notes below):
   computed average pace matches Garmin's own reported value to the second. `App.jsx`
-  routes a dropped/browsed file to the real TCX or FIT parser by extension.
+  routes a dropped/browsed file to the real TCX, FIT or GPX parser by extension.
+- **GPX** (`data/gpx/`) covers everything that isn't a training watch — satellite messengers
+  (SPOT), cameras (OM System Tough TG-7 via OI.Track), phone apps. A GPX carries position,
+  elevation and time and nothing else, so distance is reconstructed by haversine and speed
+  from its deltas; a track with no `<trk><type>` gets a generic **Track** sport that shows
+  speed rather than pace. The whole pipeline is **sampling-rate adaptive** for these: pause
+  detection, speed smoothing and the x-axis tick format all scale off the recording's own
+  median interval, so a breadcrumb every 10 minutes across three days charts honestly while
+  1 Hz watch files behave exactly as they did (asserted, not assumed — see Testing notes).
 - The footer's **Feedback** link opens a dialog that files a labelled GitHub issue on this
   repo via `POST /api/feedback`, guarded by Cloudflare Turnstile plus a native rate-limit
   binding. This is the project's only server-side code (`worker/`) — activity files are
@@ -122,9 +131,10 @@ binding) before it reaches a real deploy.
 src/
   App.jsx     # composition root: AppShell (by ActivityContext.status) + AppProviders
   app/        # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
-  data/       # ActivitySource port + adapters (tcx + fit built; http is a stub)
+  data/       # ActivitySource port + adapters (tcx + fit + gpx built; http is a stub)
   domain/     # pure, framework-free normalization pipeline (types, units, buildDistanceAxis,
-              # deriveSpeed, detectPauses, smooth, normalizeActivity)
+              # deriveSpeed, detectPauses, smooth, samplingInterval, insertGapBreaks,
+              # normalizeActivity)
   lib/        # feedbackClient — the browser side of POST /api/feedback
   stats/      # max/min/avg/median aggregation, strategy-aware, memoized hook
   metrics/    # metricRegistry — the extension point for adding metrics/sports
@@ -140,6 +150,9 @@ worker/       # the Cloudflare Worker: routes /api/feedback, serves dist/ via en
 fixtures/
   activity_23870166877.tcx               # real Garmin export, used by the parser cross-check test
   activity_23870166877-meta.json         # Garmin's own reported stats for that export
+  23870166877_ACTIVITY.fit               # the same activity as FIT (carries Stryd power)
+  activity_23870166877.gpx               # ...and as GPX: same run reduced to lat/lon/ele/time
+  sparse-multiday.gpx                    # hand-built SPOT X shape: 10-min breadcrumbs over 3 days
 ```
 
 The dependency rule: `domain/` imports nothing from `ui/`, `data/`, or React; `data/`
@@ -182,6 +195,16 @@ examples, and ARCHITECTURE.md §0 for the jsdom pitfalls that motivated this app
   `weightedPace` (ARCHITECTURE.md §6) is actually correct, not just internally consistent.
   Drop your own `.tcx` export in `fixtures/` with a sibling `-meta.json` (see that file for
   the shape) to add another real cross-check.
+- `FitActivitySource.realGarminFixture.test.js` and `GpxActivitySource.realGarminFixture.test.js`
+  do the same for the *same activity* in the other two formats, which is what makes them
+  comparable. The GPX one uses a deliberately looser 3% distance tolerance: with no
+  `<DistanceMeters>` in the file, distance is summed from great-circle hops between noisy
+  per-second fixes, which overestimates by ~0.9% against Garmin's own figure. Quantifying
+  that drift is the point of the test.
+- `GpxActivitySource.sparse.test.js` runs `fixtures/sparse-multiday.gpx` — 10-minute
+  breadcrumbs over three days with a 6-hour dropout — end-to-end. It is the regression net
+  for the sampling-rate adaptivity: before it, every sample past the first counted as
+  paused and the activity averaged `0:02 min/km`.
 
 ### Manual testing walkthrough
 
@@ -195,9 +218,9 @@ path, though (see step 9 below).
 
 1. **Start the dev server** — `npm run dev`, then open the printed URL.
 2. **Empty state** — page loads to a dark-themed "Load an activity" hero filling the page
-   body: a large dashed drop target ("Drop a TCX or FIT file here / or click to browse")
-   with the "never leaves your device" hint under it. The header holds the title and About
-   only — no second load control anywhere while the hero is up.
+   body: a large dashed drop target ("Drop a TCX, FIT or GPX file here / or click to
+   browse") with the "never leaves your device" hint under it. The header holds the title
+   and About only — no second load control anywhere while the hero is up.
 3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
    one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
    The hero should be replaced by a control panel (Time/Distance switch + one row per metric
@@ -222,10 +245,26 @@ path, though (see step 9 below).
    file carries Stryd power the TCX export drops). Then drop a non-TCX file (or a `.tcx` with
    invalid XML) to see the error state — `ErrorState` shows the parser's specific message,
    and **Try again** re-runs the same file.
-10. **Responsive layout** — narrow the window below ~720px → the hero and header should both
+10. **GPX, same activity** — drop `fixtures/activity_23870166877.gpx`: chip reads
+    **Running**, panels are Pace + Elevation only (no heart rate/cadence — GPX carries
+    neither), and avg pace reads ≈ 6:19/km against the TCX file's 6:22, the ~1% haversine
+    overestimate. Then re-drop the `.tcx` and `.fit` and confirm both look exactly as they
+    did before — that is the no-regression check for the sampling-rate changes.
+11. **GPX, sparse and multi-day** — drop `fixtures/sparse-multiday.gpx`: chip reads
+    **Track**, the name reads **"3-day Track"**, panels are Speed + Elevation, the x-axis
+    ticks read `0h · 1d0h · 2d0h` (not `259200`), avg speed is a plausible walking figure,
+    and **both lines break visibly** at the 6-hour dropout and at each of the three nights
+    in camp rather than running a straight diagonal across them. Hover anywhere: the
+    tooltip header shows elapsed time in days (e.g. `2d 4:15:30`). Brush-zoom into one day
+    and confirm the crosshair still syncs across both panels.
+12. **GPX with no timestamps** — drop any route/waypoint `.gpx` (a planned route exported
+    from a mapping app, or hand-edit a copy of a fixture to remove every `<time>`): expect
+    the specific "looks like a route or waypoint list, not a recorded track" error, not the
+    generic empty-file one.
+13. **Responsive layout** — narrow the window below ~720px → the hero and header should both
     stay readable with no horizontal overflow, and each metric's toggle + stat-checkboxes row
     should stack instead of staying side-by-side.
-11. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
+14. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile
     widget, and a **Send feedback** button that stays disabled until the challenge is
@@ -234,7 +273,7 @@ path, though (see step 9 below).
     page URL / timestamp / user agent. Then check the failure paths: submit with the fields
     empty (expect inline per-field errors, not a banner), and submit ~6 times in a minute
     (expect the "too many submissions" banner).
-12. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
+15. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
     `<dialog>` behaviour that jsdom does not simulate, so it is *only* covered here, never
     by the automated suite. Re-opening afterwards should show empty fields, not the previous
     attempt.

@@ -10,7 +10,9 @@ const AFTERNOON_START_HOUR = 12
 const EVENING_START_HOUR = 17
 const NIGHT_START_HOUR = 21
 
-const ACTIVITY_LABEL_BY_SPORT = { running: 'Run', cycling: 'Ride' }
+const ACTIVITY_LABEL_BY_SPORT = { running: 'Run', cycling: 'Ride', track: 'Track' }
+
+const SECONDS_PER_DAY = 86400
 
 function timeOfDayLabel(date) {
   const hour = date.getHours() // local browser time — see ARCHITECTURE.md notes on this decision
@@ -25,12 +27,19 @@ function timeOfDayLabel(date) {
  * @param {import('./types.js').Sport} args.sport
  * @param {string} [args.sportLabel] - watch sport-profile name, FIT only (e.g. "Trail Run")
  * @param {Date} args.startTime
+ * @param {number} [args.totalTime] - s, elapsed; only consulted to spot a multi-day recording
  * @returns {string}
  */
-export function deriveWorkoutName({ sport, sportLabel, startTime }) {
+export function deriveWorkoutName({ sport, sportLabel, startTime, totalTime = 0 }) {
   // Deliberately NOT case-normalized: trust the athlete's own watch-profile
   // naming verbatim rather than second-guessing it.
   const trimmedLabel = sportLabel?.trim()
   const activityLabel = trimmedLabel ? trimmedLabel : ACTIVITY_LABEL_BY_SPORT[sport]
+  // A satellite messenger's log runs for days, and a time-of-day bucket would
+  // then describe only its first few hours ("Morning Track" for something that
+  // ran through three nights). Say how long it ran instead.
+  if (totalTime >= SECONDS_PER_DAY) {
+    return `${Math.round(totalTime / SECONDS_PER_DAY)}-day ${activityLabel}`
+  }
   return `${timeOfDayLabel(startTime)} ${activityLabel}`
 }

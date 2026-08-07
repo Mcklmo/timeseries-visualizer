@@ -15,6 +15,12 @@ export function AboutPage({ onBack }) {
         or sold.
       </p>
       <p>
+        It reads <strong>TCX</strong>, <strong>FIT</strong> and <strong>GPX</strong> files, so
+        anything from a training watch to a satellite messenger or a camera&apos;s location log can
+        be charted. A GPX track carrying only position and elevation still gets speed and elevation
+        panels — both are reconstructed from the positions themselves.
+      </p>
+      <p>
         I built Activity Visualiser as a mostly satisfied user of Garmin Connect and{' '}
         <a
           className="about-page__link"

@@ -159,11 +159,11 @@ describe('ControlPanel', () => {
         (el) => el.textContent,
       )
 
-    expect(bottomTickLabels().at(-1)).toBe('40') // elapsed seconds, matches fixture's last sample t
+    expect(bottomTickLabels().at(-1)).toBe('0:40') // elapsed, matches fixture's last sample t (40s)
 
     await userEvent.click(screen.getByRole('button', { name: 'Distance' }))
 
-    await waitFor(() => expect(bottomTickLabels().at(-1)).toBe('200')) // metres, matches fixture's last sample d
+    await waitFor(() => expect(bottomTickLabels().at(-1)).toBe('200m')) // matches fixture's last sample d
     expect(screen.getByRole('button', { name: 'Distance' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Time' })).toHaveAttribute('aria-pressed', 'false')
   })

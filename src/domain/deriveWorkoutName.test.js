@@ -41,6 +41,21 @@ describe('deriveWorkoutName', () => {
     ).toBe('Morning TRAIL RUN')
   })
 
+  it('labels a GPS-only track "Track"', () => {
+    expect(deriveWorkoutName({ sport: 'track', startTime: new Date(2026, 0, 1, 6) })).toBe('Morning Track')
+  })
+
+  it('names a multi-day recording by its duration — a time-of-day bucket describes only its first hours', () => {
+    const startTime = new Date(2026, 0, 1, 6)
+    expect(deriveWorkoutName({ sport: 'track', startTime, totalTime: 3 * 86400 })).toBe('3-day Track')
+    expect(deriveWorkoutName({ sport: 'running', startTime, totalTime: 86400 })).toBe('1-day Run')
+  })
+
+  it('keeps the time-of-day bucket right up to 24h', () => {
+    const startTime = new Date(2026, 0, 1, 6)
+    expect(deriveWorkoutName({ sport: 'track', startTime, totalTime: 86399 })).toBe('Morning Track')
+  })
+
   it('falls back to the sport map when sportLabel is whitespace-only, empty, or undefined', () => {
     const startTime = new Date(2026, 0, 1, 6)
     expect(deriveWorkoutName({ sport: 'running', sportLabel: '   ', startTime })).toBe('Morning Run')

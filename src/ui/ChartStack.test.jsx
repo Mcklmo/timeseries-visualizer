@@ -70,6 +70,14 @@ function tickLabels(panel) {
   )
 }
 
+// Elapsed ticks are formatted by span now (units.js); this fixture's 40-second
+// span puts them in the m:ss band, so read them back to seconds rather than
+// asserting on the copy — the assertion below is about the zoom domain.
+function tickSeconds(label) {
+  const [minutes, seconds] = label.split(':').map(Number)
+  return minutes * 60 + seconds
+}
+
 async function renderStack({ activity = fixtureActivity, extra = null } = {}) {
   const utils = render(
     <AppProviders source={makeSource(activity)}>
@@ -224,7 +232,7 @@ describe('ChartStack', () => {
     const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
 
     dragBrushEndTraveller(bottomPanel(), -300)
-    await waitFor(() => expect(Number(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
+    await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
 
     fireEvent.click(screen.getByText('switch-x-distance'))
 
@@ -232,7 +240,9 @@ describe('ChartStack', () => {
     // would misread as a distance domain and clip the distance axis to
     // 0–20m instead of the full 0–200m track — resetting on mode switch
     // avoids that silent bug.
-    await waitFor(() => expect(tickLabels(bottomPanel())).toEqual(['0', '50', '100', '150', '200']))
+    await waitFor(() =>
+      expect(tickLabels(bottomPanel())).toEqual(['0m', '50m', '100m', '150m', '200m']),
+    )
     await waitFor(() => expect(linePointCount(bottomPanel())).toBe(5))
   })
 })

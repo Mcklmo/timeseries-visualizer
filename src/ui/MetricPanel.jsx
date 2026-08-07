@@ -4,6 +4,9 @@
 // tooltip/crosshair stays in sync across the whole stack.
 import { useMemo } from 'react'
 import { Brush, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { insertGapBreaks } from '../domain/insertGapBreaks.js'
+import { gapThresholdFor } from '../domain/samplingInterval.js'
+import { makeDistanceTickFormatter, makeElapsedTickFormatter } from '../domain/units.js'
 import { metricRegistry, metricUnit } from '../metrics/metricRegistry.js'
 import { computeYDomain } from '../stats/aggregate.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
@@ -48,9 +51,20 @@ export function MetricPanel({
   const stats = useMetricStats(activity, metricId)
   const xKey = xMode === 'distance' ? 'd' : 't'
 
-  const data = useMemo(
-    () => activity.samples.map((s) => ({ t: s.t, d: s.d, [metricId]: metric.accessor(s) })),
-    [activity.samples, metricId, metric],
+  // Every panel builds its rows from the same samples with the same gap
+  // threshold, so the synthetic break rows land at the same indices in all of
+  // them and the Brush's index range stays meaningful across the stack.
+  const data = useMemo(() => {
+    const rows = activity.samples.map((s) => ({ t: s.t, d: s.d, [metricId]: metric.accessor(s) }))
+    return insertGapBreaks(rows, { metricId, gapThresholdS: gapThresholdFor(activity.samplingIntervalS) })
+  }, [activity.samples, activity.samplingIntervalS, metricId, metric])
+
+  const xTickFormatter = useMemo(
+    () =>
+      xMode === 'distance'
+        ? makeDistanceTickFormatter(activity.totalDistance)
+        : makeElapsedTickFormatter(activity.totalTime),
+    [xMode, activity.totalDistance, activity.totalTime],
   )
 
   const yDomain = useMemo(() => computeYDomain({ samples: activity.samples, metric }), [activity.samples, metric])
@@ -77,7 +91,14 @@ export function MetricPanel({
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={data} syncId={SYNC_ID} margin={{ top: 8, right: 12, bottom: 16, left: 4 }}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />
-          <XAxis type="number" dataKey={xKey} domain={zoomDomain} hide={!showXAxis} interval={0} />
+          <XAxis
+            type="number"
+            dataKey={xKey}
+            domain={zoomDomain}
+            hide={!showXAxis}
+            interval={0}
+            tickFormatter={xTickFormatter}
+          />
           <YAxis
             width={Y_AXIS_WIDTH}
             reversed={!!metric.invertAxis}

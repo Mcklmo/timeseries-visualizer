@@ -90,8 +90,11 @@ describe('MetricPanel', () => {
     const labels = [...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan')].map(
       (el) => el.textContent,
     )
-    expect(labels[0]).toBe('0')
-    expect(labels.at(-1)).toBe('40')
+    // Ticks are formatted by span (units.js's makeElapsedTickFormatter): a
+    // 40-second fixture falls in the m:ss band. Raw seconds used to be printed
+    // verbatim, which read as "259200" on a multi-day track.
+    expect(labels[0]).toBe('0:00')
+    expect(labels.at(-1)).toBe('0:40')
   })
 
   it('plots against distance when xMode is distance', () => {
@@ -99,8 +102,8 @@ describe('MetricPanel', () => {
     const labels = [...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan')].map(
       (el) => el.textContent,
     )
-    expect(labels[0]).toBe('0')
-    expect(labels.at(-1)).toBe('200')
+    expect(labels[0]).toBe('0m')
+    expect(labels.at(-1)).toBe('200m')
   })
 
   it('hides x-axis tick labels on non-bottom panels', () => {
@@ -230,6 +233,68 @@ describe('MetricPanel', () => {
       ...container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value tspan'),
     ].map((el) => Number(el.textContent))
     expect(labels.every((v) => v >= 100)).toBe(true)
+  })
+
+  // A sparse, multi-day GPS log: breadcrumbs every 10 minutes with one 6-hour
+  // satellite dropout. Sparse data carries no nulls of its own, so without an
+  // inserted break the dropout renders as one straight diagonal across six
+  // hours of nothing.
+  const sparseActivity = {
+    id: 'spot-1',
+    sport: 'track',
+    totalMovingTime: 259200,
+    totalTime: 259200,
+    totalDistance: 47000,
+    samplingIntervalS: 600,
+    samples: [
+      { t: 0, d: 0, speed: 1.2, altitude: 980, moving: true },
+      { t: 600, d: 720, speed: 1.2, altitude: 1020, moving: true },
+      { t: 1200, d: 1440, speed: 1.2, altitude: 1060, moving: true },
+      { t: 22800, d: 20000, speed: 0.9, altitude: 1400, moving: false }, // after a 6h dropout
+      { t: 23400, d: 20720, speed: 1.2, altitude: 1420, moving: true },
+    ],
+    availableMetrics: ['speed', 'altitude'],
+  }
+
+  function renderSparsePanel(props = {}) {
+    return render(
+      <MetricPanel
+        activity={sparseActivity}
+        metricId="altitude"
+        xMode="time"
+        zoomDomain={['dataMin', 'dataMax']}
+        enabledStats={[]}
+        showXAxis={true}
+        height={200}
+        {...props}
+      />,
+    )
+  }
+
+  it('breaks the line at a recording dropout in sparse data, which carries no nulls of its own', () => {
+    const { container } = renderSparsePanel()
+    // Two subpaths: the synthetic null row inserted mid-gap is what
+    // connectNulls={false} breaks on.
+    expect(linePath(container).getAttribute('d').match(/M/g)).toHaveLength(2)
+  })
+
+  it('does not break the line across ordinary breadcrumb intervals', () => {
+    const noDropout = {
+      ...sparseActivity,
+      samples: sparseActivity.samples.slice(0, 3),
+    }
+    const { container } = renderSparsePanel({ activity: noDropout })
+    expect(linePath(container).getAttribute('d').match(/M/g)).toHaveLength(1)
+  })
+
+  it('scales the x-axis ticks to a multi-day span instead of printing raw seconds', () => {
+    const threeDays = { ...sparseActivity, totalTime: 259200 }
+    const { container } = renderSparsePanel({ activity: threeDays })
+    const labels = [
+      ...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan'),
+    ].map((el) => el.textContent)
+    // Raw elapsed seconds used to render as "23400" here.
+    expect(labels.every((l) => /^(\d+d)?\d+h$/.test(l))).toBe(true)
   })
 
   it('gives every panel the same syncId so crosshairs sync across panels', () => {

@@ -1,4 +1,4 @@
-// Click-to-browse + drag-and-drop TCX/FIT file picker. Only ever hands a raw
+// Click-to-browse + drag-and-drop TCX/FIT/GPX file picker. Only ever hands a raw
 // File up to its parent via onFileSelected — no parsing here, see
 // ARCHITECTURE.md §5 (adapters, not components, own interpretation).
 //
@@ -44,14 +44,14 @@ export function FileDropZone({ onFileSelected, variant = 'compact' }) {
       <label htmlFor={inputId}>
         {variant === 'hero' ? (
           <>
-            <span className="file-drop-zone__title">Drop a TCX or FIT file here</span>{' '}
+            <span className="file-drop-zone__title">Drop a TCX, FIT or GPX file here</span>{' '}
             <span className="file-drop-zone__hint">or click to browse</span>
           </>
         ) : (
-          'Click to browse, or drop a TCX/FIT file'
+          'Click to browse, or drop a TCX/FIT/GPX file'
         )}
       </label>
-      <input id={inputId} type="file" accept=".tcx,.fit" onChange={handleChange} />
+      <input id={inputId} type="file" accept=".tcx,.fit,.gpx" onChange={handleChange} />
     </div>
   )
 }

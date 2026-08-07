@@ -31,6 +31,30 @@ const validTcxXml = `<?xml version="1.0" encoding="UTF-8"?>
   </Activities>
 </TrainingCenterDatabase>`
 
+// A GPS-only track: no <type>, no sensor channels, position + elevation +
+// time only — the shape a satellite messenger or camera exports.
+const validGpxXml = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Test track</name>
+    <trkseg>
+      <trkpt lat="57.010000" lon="9.970000"><ele>12.0</ele><time>2026-01-01T00:00:00.000Z</time></trkpt>
+      <trkpt lat="57.010135" lon="9.970000"><ele>13.0</ele><time>2026-01-01T00:00:10.000Z</time></trkpt>
+      <trkpt lat="57.010270" lon="9.970000"><ele>14.0</ele><time>2026-01-01T00:00:20.000Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>`
+
+// Valid GPX, but a planned route rather than a recording: <time> is optional
+// in GPX, and without it there is no axis to plot anything against.
+const routeGpxXml = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><trkseg>
+    <trkpt lat="57.010000" lon="9.970000"><ele>12.0</ele></trkpt>
+    <trkpt lat="57.010135" lon="9.970000"><ele>13.0</ele></trkpt>
+  </trkseg></trk>
+</gpx>`
+
 function makeFile(name = 'run.tcx') {
   return new File([validTcxXml], name, { type: 'application/vnd.garmin.tcx+xml' })
 }
@@ -129,6 +153,34 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     // with the hero gone, the compact header control has taken over, so a
     // different activity can still be loaded without leaving the chart view
     expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
+  })
+
+  it('routes a dropped .gpx to the GPX parser, not the TCX one', async () => {
+    const { container } = render(<App />)
+
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [new File([validGpxXml], 'track.gpx', { type: 'application/gpx+xml' })] },
+    })
+
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+    // Sport, panels and chip all differ from the TCX path: a GPS-only track
+    // has no <type>, so it gets the generic 'track' sport, which shows Speed
+    // rather than Pace and offers none of the sensor metrics.
+    expect(screen.getByText('Track')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Speed' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Elevation' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Pace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Heart rate' })).not.toBeInTheDocument()
+  })
+
+  it('shows the GPX parser\'s route-not-a-track error for a timestamp-less .gpx', async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [new File([routeGpxXml], 'route.gpx', { type: 'application/gpx+xml' })] },
+    })
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/route or waypoint list/i))
   })
 
   it('shows the parser\'s error for a malformed dropped file', async () => {
