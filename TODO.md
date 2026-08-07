@@ -120,6 +120,9 @@ setup are outstanding.**
 
 ## Manual/external setup — for the repo owner, not the agent
 
+**→ Full ordered walkthrough: [doc/FEEDBACK_SETUP.md](doc/FEEDBACK_SETUP.md).**
+The summary below is just the shape of it.
+
 1. Create a **Turnstile widget** in the Cloudflare dashboard for the site's
    domain; put its public sitekey in `.env` as `VITE_TURNSTILE_SITE_KEY`.
    Until then the committed value is Cloudflare's always-passes test key.
