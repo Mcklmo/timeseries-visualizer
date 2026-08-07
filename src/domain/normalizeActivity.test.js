@@ -102,4 +102,23 @@ describe('normalizeActivity', () => {
     expect(activity.id).toBe('garmin-123')
     expect(activity.sport).toBe('running')
   })
+
+  it('derives a name from sport and the computed startTime when no sportLabel is given', () => {
+    const activity = normalizeActivity({
+      id: 'a1',
+      sport: 'running',
+      trackpoints: [tp({ time: new Date(2026, 0, 1, 6), distanceMeters: 0, speedMps: 3 })],
+    })
+    expect(activity.name).toMatch(/Run$/)
+  })
+
+  it('uses sportLabel in the derived name when given', () => {
+    const activity = normalizeActivity({
+      id: 'a1',
+      sport: 'cycling',
+      sportLabel: 'Gravel Ride',
+      trackpoints: [tp({ time: new Date(2026, 0, 1, 6), distanceMeters: 0, speedMps: 3 })],
+    })
+    expect(activity.name).toMatch(/Gravel Ride$/)
+  })
 })

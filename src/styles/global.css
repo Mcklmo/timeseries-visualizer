@@ -146,6 +146,29 @@ main {
   outline-offset: 2px;
 }
 
+/* Activity header */
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.activity-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sport-chip {
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 2px 10px;
+}
+
 /* Control panel */
 .control-panel {
   display: flex;

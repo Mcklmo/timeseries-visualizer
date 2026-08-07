@@ -23,6 +23,7 @@
  * @typedef {object} Activity
  * @property {string} id
  * @property {Sport} sport
+ * @property {string} name - inferred (not read verbatim — neither FIT nor TCX has a title field)
  * @property {Date} startTime
  * @property {number} totalTime - s, elapsed
  * @property {number} totalMovingTime - s

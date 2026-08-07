@@ -39,4 +39,9 @@ describe('MockActivitySource', () => {
     const last = activity.samples[activity.samples.length - 1]
     expect(activity.totalDistance).toBeCloseTo(last.d, 1)
   })
+
+  it('derives a name ending in "Run", computed from the fixture\'s sport and startTime', async () => {
+    const activity = await new MockActivitySource().load()
+    expect(activity.name).toMatch(/Run$/)
+  })
 })

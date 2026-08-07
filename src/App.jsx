@@ -7,6 +7,7 @@ import { FitActivitySource } from './data/fit/FitActivitySource.js'
 import { MockActivitySource } from './data/mock/MockActivitySource.js'
 import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
+import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
 import { ControlPanel } from './ui/ControlPanel.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
@@ -47,6 +48,7 @@ export function AppShell() {
         {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
         {status === 'ready' && activity && (
           <>
+            <ActivityHeader />
             <ControlPanel />
             <ChartStack />
           </>

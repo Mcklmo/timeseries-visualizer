@@ -1,3 +1,4 @@
+import { deriveWorkoutName } from '../../domain/deriveWorkoutName.js'
 import sampleRun from '../../../fixtures/sample-run.json'
 
 /**
@@ -11,9 +12,15 @@ export class MockActivitySource {
 
   /** @returns {Promise<import('../../domain/types.js').Activity>} */
   load() {
+    const startTime = new Date(sampleRun.startTime)
     return Promise.resolve({
       ...sampleRun,
-      startTime: new Date(sampleRun.startTime),
+      startTime,
+      // Computed at load time (not hardcoded into the fixture JSON) so it
+      // exercises the same time-of-day-dependent code path real data uses,
+      // rather than a string that could silently contradict the viewer's
+      // local time — see deriveWorkoutName.js.
+      name: deriveWorkoutName({ sport: sampleRun.sport, startTime }),
     })
   }
 }

@@ -59,7 +59,7 @@ function parseTrackpoint(record, powerKey, sport) {
 
 /**
  * @param {ArrayBuffer} buffer
- * @returns {Promise<{id: string, sport: import('../../domain/types.js').Sport, trackpoints: import('../../domain/types.js').RawTrackpoint[]}>}
+ * @returns {Promise<{id: string, sport: import('../../domain/types.js').Sport, sportLabel: (string|undefined), trackpoints: import('../../domain/types.js').RawTrackpoint[]}>}
  */
 export async function parseFit(buffer) {
   const { Decoder, Stream } = await import('@garmin/fitsdk')
@@ -79,6 +79,15 @@ export async function parseFit(buffer) {
     throw new Error(`Only running and cycling activities are supported right now (this file is "${sport}")`)
   }
 
+  // The watch's sport-profile label (e.g. "Trail Run"), when the athlete
+  // used a custom profile rather than the default. sessionMesgs and
+  // sportMesgs are typically duplicates of each other — checked both since
+  // either can be absent. Deliberately `||`, not `??`, at each step: an
+  // empty-but-present sportProfileName string must still fall through to
+  // sportMesgs[0].name, which `??` (only catches null/undefined) would miss.
+  const sportLabel =
+    messages.sessionMesgs?.[0]?.sportProfileName?.trim() || messages.sportMesgs?.[0]?.name?.trim() || undefined
+
   const powerKey = findPowerDevFieldKey(messages.fieldDescriptionMesgs ?? [])
 
   const trackpoints = messages.recordMesgs
@@ -94,5 +103,5 @@ export async function parseFit(buffer) {
   // missing <Id>) is enough.
   const id = `fit-${Date.now()}`
 
-  return { id, sport, trackpoints }
+  return { id, sport, sportLabel, trackpoints }
 }

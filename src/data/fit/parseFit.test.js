@@ -24,6 +24,7 @@ const powerFieldDescriptionMesg = {
 function fit({
   sport = 'running',
   includeSession = true,
+  sportProfileName,
   withPowerDevField = false,
   records = [],
 } = {}) {
@@ -46,7 +47,7 @@ function fit({
   }
 
   if (includeSession) {
-    encoder.writeMesg({ mesgNum: Profile.MesgNum.SESSION, sport })
+    encoder.writeMesg({ mesgNum: Profile.MesgNum.SESSION, sport, ...(sportProfileName != null ? { sportProfileName } : {}) })
   }
 
   records.forEach((record) => {
@@ -131,6 +132,16 @@ describe('parseFit', () => {
   it('treats a missing session message as running rather than blocking', async () => {
     const result = await parseFit(fit({ includeSession: false, records: [fullRecord] }))
     expect(result.sport).toBe('running')
+  })
+
+  it('extracts sportLabel from the session sportProfileName when present', async () => {
+    const result = await parseFit(fit({ sportProfileName: 'Trail Run', records: [fullRecord] }))
+    expect(result.sportLabel).toBe('Trail Run')
+  })
+
+  it('leaves sportLabel undefined when the session has no sportProfileName', async () => {
+    const result = await parseFit(fit({ records: [fullRecord] }))
+    expect(result.sportLabel).toBeUndefined()
   })
 
   it('throws a clear error for an unsupported sport', async () => {

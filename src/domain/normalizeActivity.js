@@ -4,6 +4,7 @@
 // adapter can stay a dumb field-mapper.
 import { buildDistanceAxis } from './buildDistanceAxis.js'
 import { deriveSpeed } from './deriveSpeed.js'
+import { deriveWorkoutName } from './deriveWorkoutName.js'
 import { detectPauses } from './detectPauses.js'
 
 // A trackpoint with only a timestamp and nothing else carries no signal —
@@ -48,10 +49,11 @@ function availableMetricsOf(samples) {
  * @param {object} args
  * @param {string} args.id
  * @param {import('./types.js').Sport} args.sport
+ * @param {string} [args.sportLabel] - watch sport-profile name, FIT only (e.g. "Trail Run")
  * @param {import('./types.js').RawTrackpoint[]} args.trackpoints
  * @returns {import('./types.js').Activity}
  */
-export function normalizeActivity({ id, sport, trackpoints }) {
+export function normalizeActivity({ id, sport, sportLabel, trackpoints }) {
   const usable = trackpoints.filter(hasAnyData)
   const startTime = usable.length > 0 ? usable[0].time : new Date()
 
@@ -74,6 +76,7 @@ export function normalizeActivity({ id, sport, trackpoints }) {
   return {
     id,
     sport,
+    name: deriveWorkoutName({ sport, sportLabel, startTime }),
     startTime,
     totalTime: samples.length > 0 ? samples[samples.length - 1].t : 0,
     totalMovingTime: movingTimeOf(samples),

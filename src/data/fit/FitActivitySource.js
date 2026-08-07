@@ -17,7 +17,7 @@ export class FitActivitySource {
       throw new Error('FitActivitySource can only load a file reference')
     }
     const buffer = await ref.file.arrayBuffer()
-    const { id, sport, trackpoints } = await parseFit(buffer)
-    return normalizeActivity({ id, sport, trackpoints })
+    const { id, sport, sportLabel, trackpoints } = await parseFit(buffer)
+    return normalizeActivity({ id, sport, sportLabel, trackpoints })
   }
 }
