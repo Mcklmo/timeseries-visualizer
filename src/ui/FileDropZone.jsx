@@ -31,9 +31,7 @@ export function FileDropZone({ onFileSelected }) {
       onDragLeave={() => setIsDragActive(false)}
       onDrop={handleDrop}
     >
-      <label htmlFor="tcx-file-input">
-        <strong>Drop a TCX or FIT file</strong> here, or click to browse
-      </label>
+      <label htmlFor="tcx-file-input">Click to browse, or drop a TCX/FIT file</label>
       <input id="tcx-file-input" type="file" accept=".tcx,.fit" onChange={handleChange} />
     </div>
   )

@@ -1,7 +1,7 @@
 // Composition root. See ARCHITECTURE.md §5: swapping the ActivitySource is
 // exactly changing the `source` instance passed to AppProviders below —
 // nothing else in the tree touches a concrete adapter.
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { AppProviders } from './app/providers.jsx'
 import { FitActivitySource } from './data/fit/FitActivitySource.js'
 import { MockActivitySource } from './data/mock/MockActivitySource.js'
@@ -10,8 +10,8 @@ import { useActivity } from './state/ActivityContext.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
 import { ControlPanel } from './ui/ControlPanel.jsx'
-import { EmptyState } from './ui/EmptyState.jsx'
 import { ErrorState } from './ui/ErrorState.jsx'
+import { LoadActivityBar } from './ui/LoadActivityBar.jsx'
 
 const SAMPLE_REF = { type: 'id', id: 'sample' }
 
@@ -37,9 +37,9 @@ export function AppShell() {
     <div className="app">
       <header className="app-header">
         <h1>Activity Visualiser</h1>
+        <LoadActivityBar onFileSelected={handleFileSelected} onLoadSample={handleLoadSample} />
       </header>
       <main>
-        {status === 'idle' && <EmptyState onFileSelected={handleFileSelected} onLoadSample={handleLoadSample} />}
         {status === 'loading' && (
           <p className="loading-indicator" role="status">
             Loading activity…

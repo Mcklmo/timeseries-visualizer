@@ -69,7 +69,7 @@ describe('App (wired against the real MockActivitySource)', () => {
 
     await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
     expect(screen.getByRole('checkbox', { name: 'Pace' })).toBeChecked()
-    expect(screen.queryByRole('button', { name: /sample activity/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
   })
 
   it('loads a dropped TCX file through the real parser, not the mock fixture', async () => {
