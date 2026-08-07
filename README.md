@@ -93,11 +93,56 @@ diagram and the metric registry contract.
 
 ## Testing notes
 
+### Automated: unit + system tests
+
+```bash
+npm test             # vitest run — unit + system tests, single pass
+npm run test:watch   # same, watch mode
+```
+
+"System" here means component tests that render through `AppProviders` and assert against
+actual rendered Recharts SVG output (parsed path/line coordinates, `.recharts-*` DOM), not
+just component props or context state — see `ControlPanel.test.jsx` and `App.test.jsx` for
+examples, and ARCHITECTURE.md §0 for the jsdom pitfalls that motivated this approach.
+
 - `src/setupTests.js` stubs `ResizeObserver` and provides a fixed `getBoundingClientRect`
   (jsdom reports 0×0 otherwise, which collapses Recharts' `ResponsiveContainer`), and calls
   `afterEach(cleanup)` explicitly since this project doesn't enable Vitest's `globals`.
 - Chart tests assert against actual rendered SVG (parsed path/line coordinates), not just
   component props — see ARCHITECTURE.md §0 for the jsdom pitfalls that motivated this.
+
+### Manual testing walkthrough
+
+The automated suite already asserts against real rendered Recharts SVG output, but it's
+still worth eyeballing the app after UI changes — some regressions (alignment, contrast,
+responsive collapse) only show up visually. There's no manual step for the error state:
+`MockActivitySource` never rejects, so that path is only exercised by `App.test.jsx`.
+
+1. **Start the dev server** — `npm run dev`, then open the printed URL.
+2. **Empty state** — page loads to a dark-themed "Load a run" panel with a dashed drop zone
+   ("Drop a TCX file here, or click to browse") and a "Load sample activity" button below it.
+3. **Load the sample activity** — click **Load sample activity**. The empty-state panel
+   should be replaced by a control panel (Time/Distance switch + one row per metric — Pace,
+   Heart rate, Cadence, Elevation — each with a colored dot, a checkbox, and max/avg/median
+   checkboxes) and 4 stacked line charts below it.
+4. **Synced crosshair/tooltip** — hover anywhere over any chart. Expect a vertical crosshair
+   and tooltip at the same x-position on *all* panels, with the tooltip header always showing
+   both elapsed time and distance regardless of mode.
+5. **Metric toggles** — uncheck "Cadence" → its panel disappears, others stay aligned.
+   Re-check it → it comes back.
+6. **Stat reference lines** — check "Heart rate max" → a dashed line + label appears in the
+   heart-rate panel only. Uncheck "avg" on any metric → its solid reference line disappears.
+7. **X-axis mode** — click **Distance** → the bottom axis ticks switch from seconds to
+   metres on every panel. Click **Time** to switch back.
+8. **Brush / zoom** — drag the brush handles under the bottom chart → all panels zoom to the
+   same range together. While zoomed, switch Time ⇄ Distance → zoom should reset to full
+   range (not carry over a stale numeric range).
+9. **File drop** — drag any file (or click to browse and pick any file) onto the drop zone.
+   Since only `MockActivitySource` is wired up so far, it loads the same sample activity
+   regardless of the file's content — that's expected until real TCX parsing lands (see
+   ARCHITECTURE.md §11 step 8).
+10. **Responsive layout** — narrow the window below ~720px → each metric's toggle +
+    stat-checkboxes row should stack instead of staying side-by-side.
 
 ## Contributing / continuing the build
 
