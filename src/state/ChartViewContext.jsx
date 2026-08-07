@@ -1,7 +1,8 @@
 // Controls what the chart stack shows: x-axis mode, zoom domain, which
 // metrics are on, and which stat lines are on per metric. See ARCHITECTURE.md
-// §10. Stats themselves (§6) are computed over the whole activity regardless
-// of zoomDomain — this context only tracks which lines are *visible*.
+// §10. This context tracks which stat lines are *visible*; what they are
+// computed over follows zoomDomain, and that derivation lives entirely in
+// stats/statsBasis.js — there is no stats-specific state here (§6).
 import { createContext, useCallback, useContext, useState } from 'react'
 import { fullDomain } from '../domain/zoomDomain.js'
 import { metricOrder } from '../metrics/metricRegistry.js'

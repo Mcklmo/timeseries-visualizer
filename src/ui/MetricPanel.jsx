@@ -40,9 +40,12 @@ function StatSummary({ metric, entries, sport }) {
   )
 }
 
-export function MetricPanel({ activity, metricId, xMode, zoomDomain, enabledStats, showXAxis, height }) {
+// `statsBasis` is built once for the whole stack by ChartStack (stats/statsBasis.js)
+// and carries the zoom window with it — the panel neither slices nor knows it
+// is zoomed, it just reports on what it was handed.
+export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis, enabledStats, showXAxis, height }) {
   const metric = metricRegistry[metricId]
-  const stats = useMetricStats(activity, metricId)
+  const stats = useMetricStats(statsBasis, metricId)
   const xKey = xMode === 'distance' ? 'd' : 't'
 
   // Every panel builds its rows from the same samples with the same gap
@@ -63,6 +66,10 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, enabledStat
     [xMode, activity.totalDistance, activity.totalTime],
   )
 
+  // Whole-activity on purpose, unlike the stats above: a y-axis that rescaled
+  // to the window would make the line jitter vertically through a pinch, and
+  // the windowed reference lines still land inside this fixed range — which is
+  // the point of keeping it fixed.
   const yDomain = useMemo(() => computeYDomain({ samples: activity.samples, metric }), [activity.samples, metric])
 
   const statEntries = STAT_ORDER.filter((kind) => enabledStats.includes(kind) && stats[kind] != null).map(

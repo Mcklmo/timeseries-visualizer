@@ -289,6 +289,34 @@ describe('ChartStack', () => {
     expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
   })
 
+  // §6 was reversed here: stats used to be pinned to the whole activity. The
+  // number is asserted exactly, not just "it changed" — a windowed slice that
+  // forgot to recompute the window's totals still changes most chips, and
+  // would leave average pace silently reporting the whole ride.
+  it('reports the zoom window in the stat chips, and the whole activity again after reset', async () => {
+    const { container } = await renderStack()
+    // Second panel is heart rate (metricOrder ∩ availableMetrics), and every
+    // metric's default enabledStats is ['avg'].
+    const hrChip = () => [...container.querySelectorAll('.metric-panel')][1].querySelector('.stat-chip').textContent
+    // Whole activity, time-weighted, last sample weighing 0:
+    // (120 + 130 + 150 + 140) × 10 / 40 = 135.
+    expect(hrChip()).toContain('AVG 135 bpm')
+
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+
+    // waitFor rather than a sync getBy: aggregation runs behind
+    // useDeferredValue, so the chips settle a frame or two after the line
+    // moves, by design.
+    await waitFor(() => {
+      // The pinch lands on ≈6.7–33.3s, i.e. the samples at 10/20/30s:
+      // (130 + 150) × 10 / 20 = 140.
+      expect(hrChip()).toContain('AVG 140 bpm')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /reset zoom/i }))
+    await waitFor(() => expect(hrChip()).toContain('AVG 135 bpm'))
+  })
+
   // Encodes the decision that there is no one-finger drag-to-pan, so it can't
   // be reintroduced by accident: one finger on a chart must stay page scroll.
   it('ignores a single-finger drag', async () => {

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { MetricPanel } from './MetricPanel.jsx'
+import { extentOf, fullDomain } from '../domain/zoomDomain.js'
 import { metricRegistry } from '../metrics/metricRegistry.js'
+import { statsBasisFor } from '../stats/statsBasis.js'
 
 // Recharts path data looks like "M61,85L328,5L595,45" — one M/L command per
 // rendered point, in data order. Parsing it back out is the only way to
@@ -30,19 +32,27 @@ const activity = {
   availableMetrics: ['pace', 'heartRate', 'cadence', 'altitude'],
 }
 
+const DEFAULT_PROPS = {
+  activity,
+  metricId: 'heartRate',
+  xMode: 'time',
+  zoomDomain: fullDomain(),
+  enabledStats: ['avg'],
+  showXAxis: true,
+  height: 200,
+}
+
+// ChartStack builds this once for the whole stack and passes it down; a panel
+// rendered on its own has to build its own. Derived from the panel's other
+// props so a test that sets `zoomDomain` gets stats for that window, exactly
+// as it would in the app.
 function renderPanel(props = {}) {
-  return render(
-    <MetricPanel
-      activity={activity}
-      metricId="heartRate"
-      xMode="time"
-      zoomDomain={['dataMin', 'dataMax']}
-      enabledStats={['avg']}
-      showXAxis={true}
-      height={200}
-      {...props}
-    />,
-  )
+  const merged = { ...DEFAULT_PROPS, ...props }
+  const xKey = merged.xMode === 'distance' ? 'd' : 't'
+  const statsBasis =
+    merged.statsBasis ??
+    statsBasisFor(merged.activity, xKey, merged.zoomDomain, extentOf(merged.activity.samples, xKey))
+  return render(<MetricPanel {...merged} statsBasis={statsBasis} />)
 }
 
 describe('MetricPanel', () => {
@@ -70,17 +80,7 @@ describe('MetricPanel', () => {
       ...activity,
       samples: activity.samples.map((s, i) => (i === 2 ? { ...s, heartRate: undefined } : s)),
     }
-    const { container } = render(
-      <MetricPanel
-        activity={withGap}
-        metricId="heartRate"
-        xMode="time"
-        zoomDomain={['dataMin', 'dataMax']}
-        enabledStats={[]}
-        showXAxis={true}
-        height={200}
-      />,
-    )
+    const { container } = renderPanel({ activity: withGap, enabledStats: [] })
     const d = linePath(container).getAttribute('d')
     expect(d.match(/M/g)).toHaveLength(2)
   })
@@ -178,22 +178,25 @@ describe('MetricPanel', () => {
     expect(container.textContent).toContain('AVG 135 bpm')
   })
 
+  it('reports the zoom window, not the whole activity, once the basis is windowed', () => {
+    // Same weighting rule over the last three samples only: the 0-10-20s
+    // stretch is off screen and must not be in the number.
+    // (150 + 140) × 10 / 20 = 145, against 135 for the whole activity.
+    const { container } = renderPanel({ metricId: 'heartRate', enabledStats: ['avg'], zoomDomain: [20, 40] })
+    expect(container.textContent).toContain('AVG 145 bpm')
+    expect(container.textContent).not.toContain('AVG 135 bpm')
+  })
+
   it("resolves cadence's unit from the activity's sport: spm for running, rpm for cycling", () => {
     const { container: runningContainer } = renderPanel({ metricId: 'cadence', enabledStats: ['avg'] })
     expect(runningContainer.textContent).toContain('spm')
     expect(runningContainer.textContent).not.toContain('rpm')
 
-    const { container: cyclingContainer } = render(
-      <MetricPanel
-        activity={{ ...activity, sport: 'cycling' }}
-        metricId="cadence"
-        xMode="time"
-        zoomDomain={['dataMin', 'dataMax']}
-        enabledStats={['avg']}
-        showXAxis={true}
-        height={200}
-      />,
-    )
+    const { container: cyclingContainer } = renderPanel({
+      activity: { ...activity, sport: 'cycling' },
+      metricId: 'cadence',
+      enabledStats: ['avg'],
+    })
     expect(cyclingContainer.textContent).toContain('rpm')
     expect(cyclingContainer.textContent).not.toContain('spm')
   })
@@ -232,17 +235,12 @@ describe('MetricPanel', () => {
         { t: 30, d: 110, cadence: 178, moving: true },
       ],
     }
-    const { container } = render(
-      <MetricPanel
-        activity={withPause}
-        metricId="cadence"
-        xMode="time"
-        zoomDomain={['dataMin', 'dataMax']}
-        enabledStats={[]}
-        showXAxis={false}
-        height={200}
-      />,
-    )
+    const { container } = renderPanel({
+      activity: withPause,
+      metricId: 'cadence',
+      enabledStats: [],
+      showXAxis: false,
+    })
     const labels = [
       ...container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value tspan'),
     ].map((el) => Number(el.textContent))
@@ -271,18 +269,7 @@ describe('MetricPanel', () => {
   }
 
   function renderSparsePanel(props = {}) {
-    return render(
-      <MetricPanel
-        activity={sparseActivity}
-        metricId="altitude"
-        xMode="time"
-        zoomDomain={['dataMin', 'dataMax']}
-        enabledStats={[]}
-        showXAxis={true}
-        height={200}
-        {...props}
-      />,
-    )
+    return renderPanel({ activity: sparseActivity, metricId: 'altitude', enabledStats: [], ...props })
   }
 
   it('breaks the line at a recording dropout in sparse data, which carries no nulls of its own', () => {

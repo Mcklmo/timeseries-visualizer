@@ -86,8 +86,8 @@ export function computeYDomain({ samples, metric }) {
  * @param {import('../domain/types.js').Sample[]} args.samples
  * @param {{accessor: (s: import('../domain/types.js').Sample) => number|null, aggStrategy: 'timeWeighted'|'movingOnly'|'weightedPace', invertAxis?: boolean}} args.metric
  * @param {'max'|'min'|'avg'|'median'} args.statKind
- * @param {number} args.totalMovingTime - s, whole-activity total (weightedPace avg only)
- * @param {number} args.totalDistance - m, whole-activity total (weightedPace avg only)
+ * @param {number} args.totalMovingTime - s, over the same span `samples` covers (weightedPace avg only)
+ * @param {number} args.totalDistance - m, over the same span `samples` covers (weightedPace avg only)
  * @param {number} [args.gapThresholdS] - a t delta above this is a recording gap and carries no
  *   weight (avg only); omitted means count every interval, see domain/sampleDurations.js
  * @returns {number|null}

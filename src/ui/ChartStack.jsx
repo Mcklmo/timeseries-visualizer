@@ -3,11 +3,12 @@
 // §7. Zooming is a two-finger pinch (or ctrl/⌘+scroll) anywhere on the stack,
 // handled by usePinchZoom, which writes the one zoomDomain every panel's XAxis
 // reads — so all panels zoom and pan together by construction.
-import { useMemo } from 'react'
+import { useDeferredValue, useMemo } from 'react'
 import { extentOf, fullDomain, isFullDomain } from '../domain/zoomDomain.js'
 import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
+import { statsBasisFor } from '../stats/statsBasis.js'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
 import { usePinchZoom } from './usePinchZoom.js'
@@ -29,6 +30,19 @@ export function ChartStack() {
   // insertGapBreaks' synthetic midpoints (see extentOf's contract).
   const xKey = xMode === 'distance' ? 'd' : 't'
   const fullExtent = useMemo(() => extentOf(activity?.samples ?? [], xKey), [activity?.samples, xKey])
+
+  // The stats' window, sliced once for the whole stack rather than once per
+  // panel. Deferred because the two jobs have different deadlines: the chart's
+  // x-domain must track the gesture at framerate, while aggregation (a sort
+  // per metric over the full-resolution series) must not run on every pinch
+  // frame. useDeferredValue lets React paint the new domain first and settle
+  // the numbers on a spare frame — so the chips lag the line by a frame or two
+  // under a fast pinch, and agree with it the moment the fingers stop.
+  const statsZoomDomain = useDeferredValue(zoomDomain)
+  const statsBasis = useMemo(
+    () => statsBasisFor(activity, xKey, statsZoomDomain, fullExtent),
+    [activity, xKey, statsZoomDomain, fullExtent],
+  )
 
   const { ref: pinchRef, wheelHint } = usePinchZoom({
     domain: zoomDomain,
@@ -68,6 +82,7 @@ export function ChartStack() {
             metricId={metricId}
             xMode={xMode}
             zoomDomain={zoomDomain}
+            statsBasis={statsBasis}
             enabledStats={enabledStats[metricId] ?? []}
             showXAxis={isBottom}
             height={height}
