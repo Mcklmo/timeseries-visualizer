@@ -266,6 +266,11 @@ No `base` path needs setting in `vite.config.ts` — the Worker serves from the 
 
 ### Feedback form configuration
 
+> Setting this up for the first time? [doc/FEEDBACK_SETUP.md](doc/FEEDBACK_SETUP.md) is the
+> ordered walkthrough — creating the Turnstile widget and the GitHub token, the build-time
+> vs. runtime trap that makes the *second* deploy the one that matters, and the browser
+> checks to run afterwards. This section is the reference for what the values are.
+
 The footer's **Feedback** link opens a dialog that files a labelled GitHub issue on this
 repo. It needs four values, split by whether they're secret:
 
