@@ -10,11 +10,11 @@ describe('AboutPage', () => {
     expect(screen.getByText(/mostly satisfied user of Garmin Connect/i)).toBeInTheDocument()
   })
 
-  it('links Intervals.icu to its about page in a new tab', () => {
+  it('links Intervals.icu to its home page in a new tab', () => {
     render(<AboutPage onBack={() => {}} />)
 
     const link = screen.getByRole('link', { name: /intervals\.icu/i })
-    expect(link).toHaveAttribute('href', 'https://intervals.icu/about')
+    expect(link).toHaveAttribute('href', 'https://www.intervals.icu')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
   })
