@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
 import { FitActivitySource } from './data/fit/FitActivitySource.js'
 import { GpxActivitySource } from './data/gpx/GpxActivitySource.js'
+import { credentialStore } from './data/intervals/credentialStore.js'
+import { IntervalsActivitySource } from './data/intervals/IntervalsActivitySource.js'
 import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { AboutPage } from './ui/AboutPage.jsx'
@@ -15,6 +17,7 @@ import { EmptyState } from './ui/EmptyState.jsx'
 import { ErrorState } from './ui/ErrorState.jsx'
 import { FeedbackWidget } from './ui/FeedbackWidget.jsx'
 import { FileDropZone } from './ui/FileDropZone.jsx'
+import { IntervalsPage } from './ui/IntervalsPage.jsx'
 
 // Below this, the header stays fully opaque — only fades once the user has
 // actually scrolled away from the top, not on a stray 1px wheel tick.
@@ -45,18 +48,20 @@ export function AppShell() {
   const { activity, status, error, load } = useActivity()
   const lastRef = useRef(null)
   const isScrolled = useIsScrolled()
-  // No router here (see AboutPage.jsx) — About overlays <main> via state,
-  // leaving the status-driven branches untouched underneath.
-  const [showAbout, setShowAbout] = useState(false)
+  // No router here (see AboutPage.jsx) — the non-chart views overlay <main>
+  // via state, leaving the status-driven branches untouched underneath. One
+  // enum rather than a boolean per view, so `about && intervals` is
+  // unrepresentable rather than merely unlikely.
+  const [view, setView] = useState(/** @type {'activity'|'about'|'intervals'} */ ('activity'))
 
   // Exactly one FileDropZone is mounted at any time: the hero in <main> while
   // idle, the compact header control otherwise. Not simply `status === 'idle'`
-  // — About replaces the whole of <main>, so without the `!showAbout` term a
-  // visitor who opened About on a fresh page would have no load control at
-  // all. Rendering both instead would put two competing CTAs on the idle page
-  // (the thing this layout exists to fix) and give the drop-zone queries in
-  // the tests two matches to choose between.
-  const showEmptyState = status === 'idle' && !showAbout
+  // — About and intervals.icu each replace the whole of <main>, so without the
+  // view term a visitor who opened one on a fresh page would have no load
+  // control at all. Rendering both instead would put two competing CTAs on the
+  // idle page (the thing this layout exists to fix) and give the drop-zone
+  // queries in the tests two matches to choose between.
+  const showEmptyState = status === 'idle' && view === 'activity'
 
   const loadRef = useCallback(
     (ref) => {
@@ -66,10 +71,19 @@ export function AppShell() {
     [load],
   )
   const handleFileSelected = useCallback((file) => loadRef({ type: 'file', file }), [loadRef])
+  // Picking a row in the intervals.icu view both dispatches the load and
+  // leaves that view, so the chart it produces is what the user lands on.
+  const handleActivitySelected = useCallback(
+    (ref) => {
+      setView('activity')
+      loadRef(ref)
+    },
+    [loadRef],
+  )
   // ErrorState only renders after a load(), and every load() goes through
   // loadRef, which sets lastRef.current first — so the guard is unreachable in
-  // practice. It still beats seeding the ref with a ref shape (the old sample
-  // {type:'id'}) the app can no longer produce.
+  // practice. It still beats seeding the ref with a ref shape the app might
+  // not be able to produce.
   const handleRetry = useCallback(() => {
     if (lastRef.current) load(lastRef.current)
   }, [load])
@@ -79,7 +93,15 @@ export function AppShell() {
       <header className={`app-header${isScrolled ? ' app-header--faded' : ''}`}>
         <div className="app-header__title">
           <h1>Activity Visualiser</h1>
-          <button type="button" className="about-link" onClick={() => setShowAbout(true)}>
+          {/* Quiet text buttons, deliberately not drop zones — the file path
+              stays the single loud CTA. "intervals.icu" is also chosen to
+              match none of the tests' button queries: not /back/i (the trap
+              "Feedback" already sprang once), not /^about$/i, and not the
+              drop-zone label. */}
+          <button type="button" className="about-link" onClick={() => setView('intervals')}>
+            intervals.icu
+          </button>
+          <button type="button" className="about-link" onClick={() => setView('about')}>
             About
           </button>
         </div>
@@ -90,11 +112,18 @@ export function AppShell() {
         )}
       </header>
       <main>
-        {showAbout ? (
-          <AboutPage onBack={() => setShowAbout(false)} />
-        ) : (
+        {view === 'about' && <AboutPage onBack={() => setView('activity')} />}
+        {view === 'intervals' && (
+          <IntervalsPage onBack={() => setView('activity')} onSelectActivity={handleActivitySelected} />
+        )}
+        {view === 'activity' && (
           <>
-            {status === 'idle' && <EmptyState onFileSelected={handleFileSelected} />}
+            {status === 'idle' && (
+              <EmptyState
+                onFileSelected={handleFileSelected}
+                onOpenIntervals={() => setView('intervals')}
+              />
+            )}
             {status === 'loading' && (
               <p className="loading-indicator" role="status">
                 Loading activity…
@@ -121,21 +150,27 @@ export function AppShell() {
   )
 }
 
-// Composition-root dispatcher: a dropped/browsed file (`{type:'file'}`) goes
-// to the real TCX, FIT or GPX parser, chosen by extension. Anything else —
-// including a file with an unrecognised extension — falls through to
-// TcxActivitySource, which rejects a non-`file` ref with a real error. The UI
-// can only ever produce file refs now, but routing them there beats dropping
-// the branch, which would leave the extension lookup reading `.name` off an
-// undefined `ref.file`. All concrete adapters are instantiated only here —
-// see ARCHITECTURE.md §5.
+// Composition-root dispatcher. A dropped/browsed file (`{type:'file'}`) goes
+// to the real TCX, FIT or GPX parser, chosen by extension; a file with an
+// unrecognised extension falls through to TcxActivitySource, which rejects it
+// with a real error. An `{type:'id'}` ref comes from the intervals.icu picker
+// and goes to IntervalsActivitySource, which downloads the original file and
+// sniffs its format from the bytes — the ref itself carries no format hint,
+// which is what makes ErrorState's "Try again" work on that path too.
+// All concrete adapters are instantiated only here — see ARCHITECTURE.md §5.
 const tcxSource = new TcxActivitySource()
 const fitSource = new FitActivitySource()
 const gpxSource = new GpxActivitySource()
+// The key is read through a function, at call time — never captured here, so
+// a Disconnect takes effect on the very next load. Nothing about this
+// construction touches the network or storage, which is what keeps a visitor
+// who only ever drops files at zero requests.
+const intervalsSource = new IntervalsActivitySource({ getApiKey: () => credentialStore.readApiKey() })
 
 const SOURCE_BY_EXTENSION = { '.fit': fitSource, '.gpx': gpxSource, '.tcx': tcxSource }
 
 function sourceFor(ref) {
+  if (ref.type === 'id') return intervalsSource
   if (ref.type !== 'file') return tcxSource
   const name = ref.file.name.toLowerCase()
   const extension = Object.keys(SOURCE_BY_EXTENSION).find((ext) => name.endsWith(ext))

@@ -1,5 +1,5 @@
-// Static blog-style page swapped into <main> while AppShell's showAbout is
-// set — no router in this app, so "navigation" is plain state, same as the
+// Static blog-style page swapped into <main> while AppShell's `view` is
+// 'about' — no router in this app, so "navigation" is plain state, same as the
 // status-driven views. Presentational only; the back action is the caller's.
 export function AboutPage({ onBack }) {
   return (
@@ -13,6 +13,13 @@ export function AboutPage({ onBack }) {
         they stay on your machine, so your data never leaves your device. There are no cookies, no
         tracking, and no analytics. This is a non-profit project: nothing is recorded, collected,
         or sold.
+      </p>
+      <p>
+        Two things do reach the network, and only when you ask them to. The feedback link at the
+        bottom of the page posts what you write to GitHub as a public issue. And if you connect an
+        Intervals.icu account, your browser fetches your activities from Intervals.icu{' '}
+        <strong>directly</strong> — the API key you paste and the files it downloads never pass
+        through this app&apos;s server, which holds nothing but the page itself.
       </p>
       <p>
         It reads <strong>TCX</strong>, <strong>FIT</strong> and <strong>GPX</strong> files, so

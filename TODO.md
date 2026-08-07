@@ -109,11 +109,18 @@ setup are outstanding.**
   a plugin/config version issue), unrelated to this feature and present before
   it. ESLint is configured for `**/*.{ts,tsx}` only, so none of the new
   `.js`/`.jsx` files are linted at all.
-- `src/ui/AboutPage.jsx` says the app "runs entirely in your browser… nothing
-  is recorded, collected, or sold". That is still true of activity files, which
-  never leave the device — but the feedback form does now send what the user
-  types to a server. Worth a clarifying sentence there; deliberately not
-  changed without the owner's say-so.
+- ~~`src/ui/AboutPage.jsx` says the app "runs entirely in your browser… nothing
+  is recorded, collected, or sold"…~~ **Resolved 2026-08-07**, alongside the
+  intervals.icu feature, which added a second exception of the same shape. The
+  scoped, still-true claim is kept **verbatim** — three assertions across
+  `AboutPage.test.jsx` and `App.test.jsx` pin the phrase `/runs entirely in your
+  browser/i`, so keeping it made the rewrite cost zero test churn — and a second
+  paragraph now names both exceptions: the feedback form posts what you write to
+  GitHub as a public issue, and the intervals.icu connection is off unless you
+  turn it on, at which point your browser talks to intervals.icu directly with
+  nothing passing through this app's server. Same adjustment made in
+  `EmptyState.jsx` (as a sibling line on the new CTA, leaving the file-path
+  claim untouched), `README.md` and `doc/overview.md`.
 - The issue body renders the reporter's message as plain markdown, so an
   `@mention` in it would ping that GitHub user. Low stakes for a personal repo,
   and not in the plan — flagged rather than silently transformed.

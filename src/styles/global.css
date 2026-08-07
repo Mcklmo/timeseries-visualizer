@@ -642,6 +642,251 @@ main {
   min-height: 65px; /* reserve the widget's own height so the dialog doesn't jump when it loads */
 }
 
+/* intervals.icu page — a prose column like .about-page, since the connect
+   form is mostly explanation, but with a list that has to work under a thumb.
+   This view is the app's mobile entry point, so it meets the touch bar now
+   rather than waiting for the wider mobile pass (ARCHITECTURE.md, "Mobile UX
+   adaptation routes", Route E). */
+.intervals-page {
+  max-width: 640px;
+  margin: 48px auto;
+  width: 100%;
+}
+
+.intervals-page h2 {
+  margin: 24px 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.intervals-page__account {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 20px;
+}
+
+.intervals-page__disconnect {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.intervals-page__disconnect:hover {
+  color: var(--text);
+}
+
+.intervals-page__hint {
+  flex: 1;
+  min-width: 220px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.intervals-page__error {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* Required by intervals.icu's API Terms §1.1 whenever Garmin-derived
+   information is on screen — quiet, but it is not decoration. */
+.intervals-page__attribution {
+  margin: 20px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.intervals-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.intervals-connect__lead {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.intervals-connect label {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+.intervals-connect input {
+  font: inherit;
+  /* 16px exactly, not smaller: below it, iOS Safari zooms the whole page on
+     focus and the athlete has to pinch back out to read the list. */
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 10px;
+  width: 100%;
+}
+
+.intervals-connect input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.intervals-connect__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.intervals-connect__hint a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.intervals-connect__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.intervals-connect button[type='submit'] {
+  font: inherit;
+  color: var(--bg);
+  background: var(--metric-pace);
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  margin-top: 12px;
+  align-self: flex-start;
+  cursor: pointer;
+}
+
+.intervals-connect button[type='submit']:disabled {
+  background: var(--grid);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+/* The "this key is a password" disclosure — same treatment as the feedback
+   form's public-issue warning, for the same reason: it must not read as a
+   throwaway hint. */
+.intervals-connect__notice {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--bg);
+  border-left: 2px solid var(--metric-power);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 8px 12px;
+}
+
+.intervals-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The whole row is one button: keyboard and screen-reader support for free,
+   and a real tap target rather than a clickable <div>. */
+.intervals-activity {
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px; /* the touch floor — do not shrink */
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.intervals-activity:hover:not(:disabled) {
+  border-color: var(--metric-pace);
+}
+
+.intervals-activity:disabled {
+  cursor: not-allowed;
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.intervals-activity__name {
+  font-size: 14px;
+}
+
+.intervals-activity__meta {
+  font-family: var(--font-data);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Visible dim text, never a `title` tooltip — a tooltip is invisible on
+   touch, which is the device this whole view exists for. */
+.intervals-activity__reason {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.intervals-list__more {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 10px 16px;
+  margin-top: 16px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.intervals-list__more:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.intervals-list__empty {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+/* The idle page's secondary route. Outlined, not filled: the drop zone above
+   it stays the loud CTA on desktop, where dropping a file is still easier. */
+.empty-state__secondary {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 10px 20px;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.empty-state__secondary:hover {
+  border-color: var(--metric-pace);
+}
+
 @media (max-width: 720px) {
   .app-header {
     padding: 12px 16px;
@@ -662,5 +907,11 @@ main {
   .metric-control-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* The intervals.icu view is the phone's way in, so it gets the full width
+     rather than the desktop prose column's margins. */
+  .intervals-page {
+    margin: 16px auto;
   }
 }

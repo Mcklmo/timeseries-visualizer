@@ -1,8 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App, { AppShell } from './App.jsx'
 import { AppProviders } from './app/providers.jsx'
+import { API_KEY_STORAGE_KEY } from './data/intervals/credentialStore.js'
+
+// App wires the real credentialStore, which is backed by jsdom's real
+// localStorage — so "not connected" has to be established rather than assumed.
+beforeEach(() => window.localStorage.removeItem(API_KEY_STORAGE_KEY))
 
 const validTcxXml = `<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase
@@ -126,8 +131,8 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     await user.click(screen.getByRole('button', { name: /^about$/i }))
     expect(screen.getByText(/runs entirely in your browser/i)).toBeInTheDocument()
     // About replaces the whole of <main>, hero included — so the header picks
-    // the control back up (the `!showAbout` term in AppShell's showEmptyState),
-    // or a visitor who opened About on a fresh page could load nothing at all.
+    // the control back up (the view term in AppShell's showEmptyState), or a
+    // visitor who opened About on a fresh page could load nothing at all.
     expect(screen.queryByRole('heading', { name: /load an activity/i })).not.toBeInTheDocument()
     expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
 
@@ -135,6 +140,74 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
     expect(screen.queryByText(/runs entirely in your browser/i)).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
+  })
+
+  it('shows the intervals.icu page from the header link and returns via Back', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /^intervals\.icu$/i }))
+    expect(screen.getByLabelText(/intervals\.icu api key/i)).toBeInTheDocument()
+    // same invariant as About: <main> is replaced, so the header takes the
+    // load control back
+    expect(screen.queryByRole('heading', { name: /load an activity/i })).not.toBeInTheDocument()
+    expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
+    expect(screen.queryByLabelText(/intervals\.icu api key/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
+  })
+
+  it('reaches the intervals.icu page from the empty state CTA too', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /load from intervals\.icu/i }))
+
+    expect(screen.getByLabelText(/intervals\.icu api key/i)).toBeInTheDocument()
+  })
+
+  // The one-FileDropZone invariant (AppShell's showEmptyState comment) has to
+  // hold in every view, not just the two it was written for: a DOM id
+  // collision, three getByLabelText queries that throw on two matches, and two
+  // competing CTAs on the idle page all ride on it.
+  it('keeps exactly one FileDropZone mounted in all three views', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<App />)
+    const zoneCount = () => container.querySelectorAll('input[type="file"]').length
+
+    expect(zoneCount()).toBe(1) // activity (idle: the hero)
+
+    await user.click(screen.getByRole('button', { name: /^about$/i }))
+    expect(zoneCount()).toBe(1) // about (header control)
+
+    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
+    await user.click(screen.getByRole('button', { name: /^intervals\.icu$/i }))
+    expect(zoneCount()).toBe(1) // intervals (header control)
+  })
+
+  // Pins the opt-in privacy stance mechanically rather than by convention:
+  // nothing about booting the app, or about the file path, may touch the
+  // network. Safe today because Turnstile loads via a <script> tag and only
+  // once the feedback dialog is opened.
+  it('issues no network request at boot, or when a file is dropped', async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error('the offline path must not reach the network')
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    try {
+      const { container } = render(<App />)
+      expect(fetchSpy).not.toHaveBeenCalled()
+
+      fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+        target: { files: [makeFile()] },
+      })
+      await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('loads a dropped TCX file end-to-end through the real parser', async () => {
@@ -257,6 +330,42 @@ describe('AppShell (controlled source, for states the real parsers never produce
     await act(async () => settle.resolve(fixtureActivity))
     await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
     expect(feedbackTrigger()).toBeInTheDocument() // ready
+  })
+
+  // The seam ARCHITECTURE.md §5 has anticipated since day one: the picker
+  // produces an {type:'id'} ref, the dispatcher routes it, and the optional
+  // `name` carries intervals.icu's real title through — without it, tapping
+  // "Tempo 5×1k" and landing on a chart headed "Morning Run" reads as a bug.
+  it('dispatches an id ref, with the real title, when an intervals.icu activity is picked', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem(API_KEY_STORAGE_KEY, 'stored-key')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([
+              { id: 'i77', name: 'Tempo 5×1k', type: 'Run', start_date_local: '2026-08-11T17:04:00' },
+            ]),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    )
+    const load = vi.fn().mockResolvedValue(fixtureActivity)
+
+    try {
+      renderShell({ kind: 'mock', load })
+
+      await user.click(screen.getByRole('button', { name: /^intervals\.icu$/i }))
+      await user.click(await screen.findByRole('button', { name: /Tempo 5×1k/ }))
+
+      expect(load).toHaveBeenCalledWith({ type: 'id', id: 'i77', name: 'Tempo 5×1k' })
+      // and it leaves the picker, so the chart is what the user lands on
+      await waitFor(() => expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument())
+    } finally {
+      vi.unstubAllGlobals()
+      window.localStorage.removeItem(API_KEY_STORAGE_KEY)
+    }
   })
 
   it('retries the same load on demand from the error state', async () => {

@@ -52,12 +52,20 @@ whole story at that moment in the run.
   real Garmin export and matches Garmin's own reported average pace to the
   second.
 - **No account, no upload to a server, no setup.** Drop a file and the charts
-  render immediately in the browser.
+  render immediately in the browser — the file is parsed on your own machine
+  and never uploaded anywhere.
+- **On a phone, connect Intervals.icu instead.** A watch file isn't something
+  you can browse to on a phone, so you can paste an Intervals.icu API key once
+  and pick an activity from your real history. Your browser fetches it from
+  Intervals.icu **directly** — nothing passes through this app's server, which
+  serves nothing but the page itself. It is off unless you turn it on, and one
+  "Disconnect" removes the key again.
 
 ## How it works, in brief
 
-1. **Load an activity** — drag and drop a `.tcx` file exported from a Garmin
-   device.
+1. **Load an activity** — drag and drop a `.tcx`, `.fit` or `.gpx` file
+   exported from a Garmin device (or pick one from a connected Intervals.icu
+   account, which downloads the *original* file your watch uploaded).
 2. **The app parses and normalizes it** — extracting time, distance, pace,
    heart rate, cadence, power, and elevation into one consistent internal
    format, deriving values (like pace) that aren't stored directly, and
@@ -75,5 +83,5 @@ and a **single activity at a time**, with no accounts, saved history, or
 persistence — each session starts fresh with a new file. The design
 anticipates future growth (swimming, comparing multiple activities, lap
 breakdowns) without those features being built yet; see
-[ARCHITECTURE.md](../ARCHITECTURE.md) for the technical design and roadmap,
+[ARCHITECTURE.md](ARCHITECTURE.md) for the technical design and roadmap,
 and [README.md](../README.md) for how to run the project.

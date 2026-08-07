@@ -6,7 +6,7 @@ or cycling activity — or a plain GPS track — as vertically stacked, time-syn
 distance.
 
 v1 scope is intentionally narrow: running, cycling and generic GPS tracks, metric units
-only, single activity, no persistence, no auth. See [ARCHITECTURE.md](ARCHITECTURE.md) for
+only, single activity, no persistence, no auth. See [ARCHITECTURE.md](doc/ARCHITECTURE.md) for
 the full design spec, build order, and rationale — this README is the practical "how do I
 run/build this" doc.
 
@@ -53,10 +53,20 @@ This project is **functional end-to-end, including real Garmin file upload** —
   binding. This is the project's only server-side code (`worker/`) — activity files are
   still parsed entirely in the browser and never uploaded anywhere. See "Feedback form
   configuration" under Deploying.
-- The HTTP source stub and `downsample.js` are still unbuilt — not needed until there's a
-  real API to swap in, or an activity long enough to need downsampling.
+- **intervals.icu activity browser** (`data/intervals/` + `ui/Intervals*.jsx`) — paste an
+  API key once and pick from your real activity history instead of hunting for a file. This
+  is the phone route: a watch file syncs to Garmin Connect and there is no practical way to
+  get it into a mobile browser, but intervals.icu already auto-syncs from Garmin and keeps
+  the **original upload**, so the app downloads that and runs it through the same parsers a
+  dropped file uses — Stryd power and all. It needed **no server-side code**: intervals.icu
+  sends CORS headers, so the browser talks to it directly. See "Connecting intervals.icu"
+  below.
+- `downsample.js` is still unbuilt — not needed until there's an activity long enough to
+  need downsampling. (The old `data/http/` source stub is gone: the real API hands back the
+  original uploaded file rather than normalized samples, so the seam became `data/intervals/`
+  — see ARCHITECTURE.md §0.)
 
-Check the checklist at the top of [ARCHITECTURE.md](ARCHITECTURE.md#0-implementation-progress)
+Check the checklist at the top of [ARCHITECTURE.md](doc/ARCHITECTURE.md#0-implementation-progress)
 for the up-to-date build status.
 
 ## Tech stack
@@ -125,13 +135,53 @@ Open the printed URL (defaults to `http://localhost:8787`). This serves `dist/` 
 catches any `wrangler.jsonc` misconfiguration (e.g. a wrong `assets.directory`, a missing
 binding) before it reaches a real deploy.
 
+## Connecting intervals.icu
+
+Optional, off by default, and the reason the app is usable on a phone at all: your watch
+file syncs to Garmin Connect, and there is no practical way to get it from there into a
+mobile browser. intervals.icu already auto-syncs from Garmin Connect and keeps the
+**original uploaded file**, so the app uses it as a bridge.
+
+**Where the key comes from.** In intervals.icu, open **Settings**, scroll to the bottom, and
+find **Developer Settings**. Paste the key into the app's *intervals.icu* view. It's checked
+against your profile before anything is stored, so a typo can't leave you half-connected.
+
+**What you're handing over.** The key is a **password, not a session token**: it is
+unscoped — the same credential grants full **read *and write*** access across your whole
+intervals.icu account — it never expires, and the only way to revoke it is to regenerate it
+in Developer Settings. This app only ever reads, but the key itself doesn't know that.
+
+**Where it lives.** In this browser's `localStorage`, until you press **Disconnect**.
+Disconnect removes it locally; it does **not** revoke it upstream. Anything with script
+access to the origin can read `localStorage`, so treat a shared or borrowed device
+accordingly.
+
+**Where it goes.** Only to intervals.icu. Requests go browser → `https://intervals.icu`
+directly; nothing — not the key, not your activities — passes through this app's Worker,
+which serves nothing but the page. This works because intervals.icu's API sends CORS
+headers, which is why the feature needed no server-side code at all.
+
+**Consequences worth knowing:**
+
+- Because there's no Worker route involved, `npm run dev` alone is enough to develop and
+  test this — unlike the feedback form, which needs `npx wrangler dev`.
+- **Strava-synced activities can't be downloaded.** intervals.icu doesn't keep an original
+  file for them. Those rows appear in the list, disabled, with that as the stated reason —
+  they're shown rather than hidden so a missing activity doesn't read as a bug.
+- What you get is the *original* file, so it carries everything the file carries — including
+  Stryd power from a FIT developer field, which Garmin Connect's own TCX export drops. It is
+  not, however, byte-identical to a manual Garmin Connect export: Garmin filters some
+  session-level summary fields (VO2max, recovery time) out of its API. Per-record telemetry,
+  which is everything this app charts, comes through intact.
+
 ## Project structure
 
 ```
 src/
   App.jsx     # composition root: AppShell (by ActivityContext.status) + AppProviders
   app/        # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
-  data/       # ActivitySource port + adapters (tcx + fit + gpx built; http is a stub)
+  data/       # ActivitySource port + adapters: tcx, fit, gpx (files) and intervals
+              # (the intervals.icu bridge — the only data path that touches the network)
   domain/     # pure, framework-free normalization pipeline (types, units, buildDistanceAxis,
               # deriveSpeed, detectPauses, smooth, samplingInterval, insertGapBreaks,
               # normalizeActivity)
@@ -141,6 +191,7 @@ src/
   state/      # ActivityContext, ChartViewContext
   ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
               # EmptyState, ErrorState, FileDropZone, AboutPage,
+              # IntervalsPage/ConnectForm/ActivityList,
               # FeedbackWidget/Dialog/Form + useTurnstile
   styles/     # tokens.css (dark theme + metric hues), global.css (layout, chrome)
 shared/       # environment-agnostic values imported by BOTH src/ and worker/ (feedbackLimits)
@@ -205,6 +256,16 @@ examples, and ARCHITECTURE.md §0 for the jsdom pitfalls that motivated this app
   breadcrumbs over three days with a 6-hour dropout — end-to-end. It is the regression net
   for the sampling-rate adaptivity: before it, every sample past the first counted as
   paused and the activity averaged `0:02 min/km`.
+- `IntervalsActivitySource.realGarminFixture.test.js` is the fourth route to that *same*
+  activity: the `.fit` fixture **gzipped and served through a stubbed `fetchImpl`**, exactly
+  as intervals.icu's `/activity/{id}/file` serves an original upload. It asserts the same
+  distance, duration and avg pace — and that `availableMetrics` includes `power`. One
+  activity, four routes, identical numbers: that is the proof the network path reaches full
+  original-file fidelity rather than a downgraded re-export.
+- Everything under `src/data/intervals/` is **fully testable offline** — no key and no
+  network, via an injected `fetchImpl` throughout. `App.test.jsx` also pins the privacy
+  stance mechanically: one test renders `<App />` with `globalThis.fetch` stubbed to throw
+  and asserts it is never called, at boot *or* on the dropped-file path.
 
 ### Manual testing walkthrough
 
@@ -219,8 +280,9 @@ path, though (see step 9 below).
 1. **Start the dev server** — `npm run dev`, then open the printed URL.
 2. **Empty state** — page loads to a dark-themed "Load an activity" hero filling the page
    body: a large dashed drop target ("Drop a TCX, FIT or GPX file here / or click to
-   browse") with the "never leaves your device" hint under it. The header holds the title
-   and About only — no second load control anywhere while the hero is up.
+   browse") with the "never leaves your device" hint under it, then a quieter outlined
+   "Load from intervals.icu" button below. The header holds the title, an *intervals.icu*
+   link and About — no second **drop zone** anywhere while the hero is up.
 3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
    one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
    The hero should be replaced by a control panel (Time/Distance switch + one row per metric
@@ -261,10 +323,27 @@ path, though (see step 9 below).
     from a mapping app, or hand-edit a copy of a fixture to remove every `<time>`): expect
     the specific "looks like a route or waypoint list, not a recorded track" error, not the
     generic empty-file one.
-13. **Responsive layout** — narrow the window below ~720px → the hero and header should both
+13. **intervals.icu, with a real key** — needs only `npm run dev`; this feature adds **no**
+    Worker route, unlike the feedback form below. Open the *intervals.icu* view and paste a
+    key from Settings → Developer Settings.
+    - The list shows real recent activities in descending date order, **including one from
+      today** — that is the check that the `newest`-excludes-its-own-day gotcha is handled.
+    - Open a Garmin-recorded run with Stryd power → charts render, a **Power** panel appears,
+      and the header shows intervals.icu's *real* activity title rather than a derived
+      "Morning Run". Cross-check avg pace against Garmin Connect, as the fixture tests do.
+    - Reload → still connected. **Disconnect** → the key is gone from `localStorage` (check
+      in DevTools → Application), the list is gone, and the app still works fully for
+      dropped files.
+    - Paste a deliberately wrong key → a clear "didn't accept that API key" message, and
+      nothing persisted.
+    - DevTools → Network: requests go to `intervals.icu` **only**, and dropping a local file
+      issues **zero** network requests.
+14. **Responsive layout** — narrow the window below ~720px → the hero and header should both
     stay readable with no horizontal overflow, and each metric's toggle + stat-checkboxes row
-    should stack instead of staying side-by-side.
-14. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
+    should stack instead of staying side-by-side. In the intervals.icu view, activity rows
+    should be comfortable thumb targets and focusing the API-key field must **not** zoom the
+    page on an iPhone.
+15. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile
     widget, and a **Send feedback** button that stays disabled until the challenge is
@@ -273,7 +352,7 @@ path, though (see step 9 below).
     page URL / timestamp / user agent. Then check the failure paths: submit with the fields
     empty (expect inline per-field errors, not a banner), and submit ~6 times in a minute
     (expect the "too many submissions" banner).
-15. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
+16. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
     `<dialog>` behaviour that jsdom does not simulate, so it is *only* covered here, never
     by the automated suite. Re-opening afterwards should show empty fields, not the previous
     attempt.
@@ -338,6 +417,6 @@ no dashboard provisioning — its `namespace_id` only has to be unique within th
 ## Contributing / continuing the build
 
 If you're picking this up (human or agent), read
-[ARCHITECTURE.md](ARCHITECTURE.md) first — §11 gives the build order, §0 tracks what's
+[ARCHITECTURE.md](doc/ARCHITECTURE.md) first — §11 gives the build order, §0 tracks what's
 done, and §12 lists seams that are deliberately designed for but not yet built
 (multi-activity overlay, laps).

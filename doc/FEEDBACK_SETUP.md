@@ -204,13 +204,14 @@ Open `http://localhost:8787`. `npm run dev` will **not** work for this —
 
 ## Three judgement calls I left to you
 
-**1. The About page's privacy copy.** `src/ui/AboutPage.jsx` says the app "runs
-entirely in your browser" and that "nothing is recorded, collected, or sold".
-That is still exactly true of activity files — they never leave the device. But
-the feedback form does now send what a user types to a server and publish it.
-The claim isn't false, but a reader who submits feedback may feel it was.
-A sentence like "the one exception is the feedback form, which posts what you
-write to GitHub as a public issue" would close the gap. Your copy, your call.
+**1. The About page's privacy copy — settled 2026-08-07, no longer open.** It
+was resolved together with the intervals.icu feature, which introduced a second
+exception of exactly this shape. `AboutPage.jsx` keeps the original claim
+verbatim (it is still true, and three tests pin the phrase) and follows it with
+a paragraph naming both exceptions: the feedback form posts what you write to
+GitHub as a public issue, and the intervals.icu connection is off unless you
+turn it on, at which point the browser talks to intervals.icu directly with
+nothing passing through this app's server. See ARCHITECTURE.md §0.
 
 **2. `@mentions` in submitted messages.** The issue body renders the reporter's
 message as plain markdown, so `@someone` becomes a real GitHub ping. On a
