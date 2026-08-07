@@ -4,6 +4,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
 import { MockActivitySource } from './data/mock/MockActivitySource.js'
+import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
 import { ControlPanel } from './ui/ControlPanel.jsx'
@@ -54,7 +55,16 @@ export function AppShell() {
   )
 }
 
-const defaultSource = new MockActivitySource()
+// Composition-root dispatcher: a dropped/browsed file (`{type:'file'}`) goes
+// to the real TCX parser; the "Load sample activity" button (`{type:'id'}`)
+// still resolves the bundled mock fixture. Both concrete adapters are
+// instantiated only here — see ARCHITECTURE.md §5.
+const tcxSource = new TcxActivitySource()
+const mockSource = new MockActivitySource()
+const defaultSource = {
+  kind: 'tcx',
+  load: (ref) => (ref.type === 'file' ? tcxSource.load(ref) : mockSource.load(ref)),
+}
 
 export default function App() {
   return (

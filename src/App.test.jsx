@@ -4,8 +4,35 @@ import userEvent from '@testing-library/user-event'
 import App, { AppShell } from './App.jsx'
 import { AppProviders } from './app/providers.jsx'
 
+const validTcxXml = `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase
+  xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+  xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
+  <Activities>
+    <Activity Sport="Running">
+      <Id>2026-01-01T00:00:00.000Z</Id>
+      <Lap StartTime="2026-01-01T00:00:00.000Z">
+        <Track>
+          <Trackpoint>
+            <Time>2026-01-01T00:00:00.000Z</Time>
+            <DistanceMeters>0.0</DistanceMeters>
+            <HeartRateBpm><Value>120</Value></HeartRateBpm>
+            <Extensions><ns3:TPX><ns3:Speed>3.0</ns3:Speed><ns3:RunCadence>85</ns3:RunCadence></ns3:TPX></Extensions>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>2026-01-01T00:00:10.000Z</Time>
+            <DistanceMeters>30.0</DistanceMeters>
+            <HeartRateBpm><Value>125</Value></HeartRateBpm>
+            <Extensions><ns3:TPX><ns3:Speed>3.0</ns3:Speed><ns3:RunCadence>86</ns3:RunCadence></ns3:TPX></Extensions>
+          </Trackpoint>
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>`
+
 function makeFile(name = 'run.tcx') {
-  return new File(['<xml/>'], name, { type: 'application/vnd.garmin.tcx+xml' })
+  return new File([validTcxXml], name, { type: 'application/vnd.garmin.tcx+xml' })
 }
 
 // Small hand-built fixture (same shape as ControlPanel.test.jsx's) for the
@@ -45,7 +72,7 @@ describe('App (wired against the real MockActivitySource)', () => {
     expect(screen.queryByRole('button', { name: /sample activity/i })).not.toBeInTheDocument()
   })
 
-  it('loads via the file drop zone too, since the wired source resolves the same fixture regardless of ref', async () => {
+  it('loads a dropped TCX file through the real parser, not the mock fixture', async () => {
     const { container } = render(<App />)
 
     fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
@@ -53,6 +80,20 @@ describe('App (wired against the real MockActivitySource)', () => {
     })
 
     await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+    // the dropped fixture only has pace/heartRate/cadence — no power, no altitude —
+    // which only holds if this went through TcxActivitySource, not MockActivitySource
+    expect(screen.getByRole('checkbox', { name: 'Cadence' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Elevation' })).not.toBeInTheDocument()
+  })
+
+  it('shows the parser\'s error for a malformed dropped file', async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [new File(['not xml'], 'bad.tcx', { type: 'application/vnd.garmin.tcx+xml' })] },
+    })
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
   })
 })
 
