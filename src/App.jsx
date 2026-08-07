@@ -12,6 +12,7 @@ import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
 import { ControlPanel } from './ui/ControlPanel.jsx'
 import { ErrorState } from './ui/ErrorState.jsx'
+import { FeedbackWidget } from './ui/FeedbackWidget.jsx'
 import { LoadActivityBar } from './ui/LoadActivityBar.jsx'
 
 const SAMPLE_REF = { type: 'id', id: 'sample' }
@@ -92,6 +93,12 @@ export function AppShell() {
           </>
         )}
       </main>
+      {/* Outside the status switch, same as the header: a visitor who hit an
+          error — or never loaded anything — is exactly who most needs to be
+          able to report it. */}
+      <footer className="app-footer">
+        <FeedbackWidget />
+      </footer>
     </div>
   )
 }

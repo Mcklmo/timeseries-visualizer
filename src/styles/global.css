@@ -428,6 +428,166 @@ main {
   cursor: pointer;
 }
 
+/* Footer + feedback dialog. The footer is a quiet strip at the bottom of
+   .app — it must never compete with the charts, so it mirrors .about-link's
+   text-button treatment rather than the load-activity CTA's. */
+.app-footer {
+  display: flex;
+  justify-content: center;
+  padding: 16px 24px 24px;
+}
+
+.feedback-trigger {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.feedback-trigger:hover {
+  color: var(--text);
+}
+
+/* <dialog> centres itself and traps focus natively; only the surface needs
+   styling. `color`/`background` must be set explicitly — the UA stylesheet
+   forces its own light-theme values otherwise. */
+.feedback-dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 24px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+}
+
+.feedback-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.feedback-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.feedback-dialog__header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.feedback-dialog__close {
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.feedback-dialog__close:hover {
+  color: var(--text);
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.feedback-form label {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+.feedback-form input,
+.feedback-form textarea {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  width: 100%;
+  resize: vertical;
+}
+
+.feedback-form input[aria-invalid='true'],
+.feedback-form textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.feedback-form button[type='submit'] {
+  font: inherit;
+  color: var(--bg);
+  background: var(--metric-pace);
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px 20px;
+  margin-top: 16px;
+  cursor: pointer;
+}
+
+.feedback-form button[type='submit']:disabled {
+  background: var(--grid);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+/* The "this becomes a public GitHub issue" warning — the one bit of copy in
+   this dialog that must not read as a throwaway hint. */
+.feedback-form__notice {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--bg);
+  border-left: 2px solid var(--metric-power);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 8px 12px;
+}
+
+.feedback-form__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.feedback-form__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.feedback-form__success {
+  margin-top: 16px;
+  color: var(--success);
+}
+
+.feedback-form__success p {
+  margin: 0 0 8px;
+}
+
+.feedback-form__success a {
+  color: var(--success);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.feedback-form__captcha {
+  margin-top: 16px;
+  min-height: 65px; /* reserve the widget's own height so the dialog doesn't jump when it loads */
+}
+
 @media (max-width: 720px) {
   .app-header {
     padding: 12px 16px;

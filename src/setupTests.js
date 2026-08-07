@@ -16,6 +16,24 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver = ResizeObserverStub
 
+// jsdom 30 still doesn't implement <dialog>'s showModal()/close(), so the
+// feedback dialog would throw on open. It *does* apply the UA
+// `dialog:not([open]) { display: none }` rule and map <dialog> to role
+// "dialog" via aria-query, so toggling the `open` attribute is enough for
+// role-based queries and visibility assertions to behave. `close()` no-ops
+// when already closed, matching the real API — otherwise FeedbackDialog's
+// initial closed render would fire a spurious `close` event.
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function () {
+    if (!this.hasAttribute('open')) return
+    this.removeAttribute('open')
+    this.dispatchEvent(new Event('close'))
+  }
+}
+
 // ResponsiveContainer measures its container with getBoundingClientRect on
 // mount to turn width="100%" into a pixel width; jsdom never computes real
 // layout, so every rect is 0 by default and charts render at 0x0 with none

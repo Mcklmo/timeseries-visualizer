@@ -9,8 +9,8 @@ GitHub issue on `Mcklmo/timeseries-visualizer`, guarded by Cloudflare Turnstile
 request/response contract table, and the rationale for each choice. This file
 only tracks what is actually on disk.**
 
-**Status: backend + client transport done and green. Frontend components,
-wiring, styles, config and docs outstanding.**
+**Status: backend, frontend and App wiring done and green. Styles, config
+files and docs outstanding.**
 
 ## Done
 
@@ -44,31 +44,29 @@ wiring, styles, config and docs outstanding.**
       `render`/`remove`/`reset`; exports `TURNSTILE_SITE_KEY` from
       `import.meta.env.VITE_TURNSTILE_SITE_KEY`, falling back to Cloudflare's
       test sitekey (fails *closed* against a real prod secret — see the
-      comment in the file). No test file yet; covered via `FeedbackForm.test.jsx`.
+      comment in the file). No test file of its own; covered through
+      `FeedbackForm.test.jsx`, which stubs `window.turnstile`.
+- [x] `src/ui/FeedbackForm.jsx` (+ test) — fields, Turnstile mount point,
+      submit/validation/result states. `maxLength` from `FEEDBACK_LIMITS`,
+      deliberately **no** `required`/`minLength` (native validation would
+      intercept submit before the 422 round-trip). Copy states the issue and
+      any email given are public. `resetToken()` on every failure.
+- [x] `src/ui/FeedbackDialog.jsx` (+ test) — always-mounted `<dialog>`, form
+      rendered only while open, `close` listener attached via
+      `addEventListener` (not a JSX prop)
+- [x] `src/ui/FeedbackWidget.jsx` (+ test) — footer trigger, owns `isOpen`
+- [x] `src/setupTests.js` — `<dialog>` `showModal`/`close` stub
+- [x] `src/App.jsx` — persistent `<footer className="app-footer">` inside
+      `.app`, outside the `status` switch; `App.test.jsx` asserts the trigger
+      survives idle → loading → error → ready.
+      **Gotcha found:** "Feedback" contains "back", so the pre-existing
+      `getByRole('button', {name: /back/i})` in the About test started matching
+      two buttons — it is now anchored to `/^←\s*back$/i`.
 - [x] `npx vitest run worker` — 6 files / 41 tests green
+- [x] `npx vitest run src/lib src/ui/Feedback src/App.test.jsx` — green
 
 ## Outstanding
 
-- [ ] `src/ui/FeedbackDialog.jsx` (+ test) — always-mounted `<dialog>` (stable
-      ref for `showModal()`), renders `<FeedbackForm>` only while open so
-      re-opening starts fresh; `close` listener attached manually via
-      `addEventListener`, not a JSX prop (React's synthetic handling of
-      `<dialog>`'s native `close`/`cancel` is inconsistent)
-- [ ] `src/ui/FeedbackForm.jsx` (+ test) — subject/message/email + Turnstile
-      mount point + submit/validation/result states. Use `maxLength` from
-      `FEEDBACK_LIMITS` for UX only; **no** `required`/`minLength` (native
-      constraint validation would block submit before the handler runs, and the
-      422 path is what the tests drive). Copy must say the issue — including
-      any email given — is public. On any failure call `resetToken()`
-      (Turnstile tokens are single-use).
-- [ ] `src/ui/FeedbackWidget.jsx` (+ test) — footer trigger button, owns
-      `isOpen`
-- [ ] `src/App.jsx` — persistent `<footer className="app-footer">` inside
-      `.app`, outside the `status` switch (mirrors the header); plus an
-      `App.test.jsx` assertion that the trigger persists across statuses
-- [ ] `src/setupTests.js` — `<dialog>` stub (jsdom 30 has no
-      `showModal`/`close`). `close()` should no-op when not `[open]`, else
-      remove the attribute and dispatch a `close` event.
 - [ ] `src/styles/tokens.css` — add `--danger: #ef476f;` `--success: #06d6a0;`
 - [ ] `src/styles/global.css` — `.app-footer`, `.feedback-trigger`,
       `.feedback-dialog` + `::backdrop`, `.feedback-form`,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App, { AppShell } from './App.jsx'
 import { AppProviders } from './app/providers.jsx'
@@ -97,7 +97,8 @@ describe('App (wired against the real MockActivitySource)', () => {
     // only <main> swaps — the header and its load-activity controls stay put
     expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /back/i }))
+    // anchored, since the footer's "Feedback" trigger also contains "back"
+    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
     expect(screen.queryByText(/runs entirely in your browser/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
   })
@@ -170,6 +171,31 @@ describe('AppShell (controlled source, for states the real Mock never produces)'
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(screen.getByText(/unsupported tcx schema/i)).toBeInTheDocument()
     expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
+  })
+
+  // The footer sits outside the status switch on purpose — someone staring at
+  // an error is exactly who most needs to report it.
+  it('keeps the feedback trigger in the footer across idle, loading, error and ready', async () => {
+    const user = userEvent.setup()
+    let settle
+    const load = vi.fn(() => new Promise((resolve, reject) => (settle = { resolve, reject })))
+    const { container } = renderShell({ kind: 'mock', load })
+    const feedbackTrigger = () => screen.queryByRole('button', { name: /^feedback$/i })
+
+    expect(feedbackTrigger()).toBeInTheDocument() // idle
+
+    await user.click(screen.getByRole('button', { name: /sample activity/i }))
+    expect(screen.getByText(/loading/i)).toBeInTheDocument()
+    expect(feedbackTrigger()).toBeInTheDocument() // loading
+
+    await act(async () => settle.reject(new Error('unsupported TCX schema')))
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(feedbackTrigger()).toBeInTheDocument() // error
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    await act(async () => settle.resolve(fixtureActivity))
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+    expect(feedbackTrigger()).toBeInTheDocument() // ready
   })
 
   it('retries the same load on demand from the error state', async () => {

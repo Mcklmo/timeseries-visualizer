@@ -14,6 +14,12 @@
   --metric-cadence: #06d6a0;
   --metric-altitude: #9b8cff;
 
+  /* Semantic status hues. Same values as the heart-rate/cadence metric hues,
+     but named for meaning: a form error is not "a heart-rate thing", and the
+     two must be free to diverge if the palette ever changes. */
+  --danger: #ef476f;
+  --success: #06d6a0;
+
   --panel-gap: 4px; /* tight — panels must read as one instrument */
   --y-axis-width: 56px; /* FIXED, shared by all panels for alignment */
   --radius: 6px;
