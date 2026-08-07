@@ -33,10 +33,15 @@ function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
 
-/** Routes by URL so one stub can serve both the profile check and the list. */
-function stubApi({ profile = { id: 'i0' }, list = activities, status = {} } = {}) {
+/** Routes by URL so one stub can serve the profile check, the list and search. */
+function stubApi({ profile = { id: 'i0' }, list = activities, hits = [], status = {} } = {}) {
   return vi.fn(async (url) => {
     if (url.includes('/profile')) return jsonResponse(profile, status.profile ?? 200)
+    // Before the /activities branch, deliberately: the search path is
+    // /activities/search-full, so it matches both, and the wrong order serves
+    // the browse fixture to every search test — which passes, for the wrong
+    // reason.
+    if (url.includes('/search-full')) return jsonResponse(hits, status.search ?? 200)
     if (url.includes('/activities')) return jsonResponse(list, status.list ?? 200)
     throw new Error(`unexpected request: ${url}`)
   })
@@ -239,5 +244,210 @@ describe('IntervalsPage — connected', () => {
     await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
 
     expect(onBack).toHaveBeenCalled()
+  })
+})
+
+// Real timers throughout, and the real 300 ms debounce with them: RTL's
+// waitFor cannot drive Vitest's fake clock under `globals: false` (its
+// fake-timer support checks for a `jest` global, which does not exist here),
+// so faking time would hang waitFor rather than speed anything up. The timing
+// itself is proven at unit level in useDebouncedValue.test.js; these tests
+// only wait it out. `delay: null` keeps a typed burst synchronous, so it can't
+// straddle the debounce window on a slow machine.
+describe('IntervalsPage — searching', () => {
+  const SETTLE_MS = 450
+
+  const typist = () => userEvent.setup({ delay: null })
+  const searchBox = () => screen.getByLabelText(/search activities/i)
+  const settleDebounce = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+  const searchCalls = (fetchImpl) => fetchImpl.mock.calls.filter(([url]) => url.includes('/search-full'))
+
+  const hillRepeats = {
+    id: 'i7',
+    name: 'Hill repeats',
+    type: 'Run',
+    start_date_local: '2024-03-02T07:30:00',
+    icu_distance: 8000,
+    moving_time: 2400,
+    file_type: 'fit',
+  }
+
+  /** Renders with a stored key and waits for the browse list to be on screen. */
+  async function renderConnected(props = {}) {
+    const fetchImpl = props.fetchImpl ?? stubApi()
+    renderPage({ store: fakeStore('stored-key'), ...props, fetchImpl })
+    await screen.findByRole('button', { name: /Tempo 5×1k/ })
+    return fetchImpl
+  }
+
+  // The whole point of the feature: /search-full covers the entire history,
+  // where the browse list only ever holds a rolling window.
+  it('searches the full history once per typing burst and renders the hits', async () => {
+    const user = typist()
+    const fetchImpl = await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
+
+    await user.type(searchBox(), 'hill')
+
+    expect(await screen.findByRole('button', { name: /Hill repeats/ })).toBeInTheDocument()
+    expect(searchCalls(fetchImpl)).toHaveLength(1)
+    const url = new URL(searchCalls(fetchImpl)[0][0])
+    expect(url.pathname).toBe('/api/v1/athlete/0/activities/search-full')
+    expect(url.searchParams.get('q')).toBe('hill')
+    // the browse list is replaced, not appended to
+    expect(screen.queryByRole('button', { name: /Tempo 5×1k/ })).not.toBeInTheDocument()
+  })
+
+  // A single character matches most of a history for a full-fat response.
+  it('stays inert below the two-character minimum', async () => {
+    const user = typist()
+    const fetchImpl = await renderConnected()
+
+    await user.type(searchBox(), 'h')
+    await settleDebounce()
+
+    expect(searchCalls(fetchImpl)).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument()
+  })
+
+  it('passes a #tag query through verbatim — the API does the tag matching', async () => {
+    const user = typist()
+    const fetchImpl = await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
+
+    await user.type(searchBox(), '#threshold')
+
+    await screen.findByRole('button', { name: /Hill repeats/ })
+    expect(new URL(searchCalls(fetchImpl)[0][0]).searchParams.get('q')).toBe('#threshold')
+  })
+
+  // The browse effect keys on windowStart, so it never re-fired — the window
+  // is simply still there underneath, with no second list request.
+  it('restores the browse list when the box is cleared, without refetching it', async () => {
+    const user = typist()
+    const fetchImpl = await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
+    await user.type(searchBox(), 'hill')
+    await screen.findByRole('button', { name: /Hill repeats/ })
+    const listCalls = fetchImpl.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: /clear search/i }))
+
+    expect(await screen.findByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Hill repeats/ })).not.toBeInTheDocument()
+    await settleDebounce()
+    expect(fetchImpl.mock.calls.length).toBe(listCalls)
+  })
+
+  // Debounced typing means two searches can be in flight at once, and the
+  // slower one can be the older one. The `cancelled` guard is what stops it
+  // landing on top of the newer query's rows.
+  it('ignores an earlier search that resolves after a later one', async () => {
+    const user = typist()
+    const pending = []
+    const fetchImpl = vi.fn(async (url) => {
+      if (!url.includes('/search-full')) return jsonResponse(activities)
+      const query = new URL(url).searchParams.get('q')
+      return new Promise((resolve) => pending.push({ query, resolve }))
+    })
+    renderPage({ store: fakeStore('stored-key'), fetchImpl })
+    await screen.findByRole('button', { name: /Tempo 5×1k/ })
+
+    await user.type(searchBox(), 'hi')
+    await waitFor(() => expect(pending).toHaveLength(1))
+    await user.type(searchBox(), 'll')
+    await waitFor(() => expect(pending).toHaveLength(2))
+    expect(pending.map((p) => p.query)).toEqual(['hi', 'hill'])
+
+    // newest answer first, then the stale one it must not be overwritten by
+    pending[1].resolve(jsonResponse([hillRepeats]))
+    await screen.findByRole('button', { name: /Hill repeats/ })
+    pending[0].resolve(jsonResponse([{ id: 'i8', name: 'Hilly commute', type: 'Ride' }]))
+    await settleDebounce()
+
+    expect(screen.getByRole('button', { name: /Hill repeats/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Hilly commute/ })).not.toBeInTheDocument()
+  })
+
+  it('says nothing matched, rather than claiming the window was empty', async () => {
+    const user = typist()
+    await renderConnected({ fetchImpl: stubApi({ hits: [] }) })
+
+    await user.type(searchBox(), 'kayak')
+
+    expect(await screen.findByText('No activities match "kayak".')).toBeInTheDocument()
+    expect(screen.queryByText(/last few months/i)).not.toBeInTheDocument()
+  })
+
+  it('offers no "load earlier" in search mode — there is no window under the hits', async () => {
+    const user = typist()
+    await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
+    expect(screen.getByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+
+    await user.type(searchBox(), 'hill')
+    await screen.findByRole('button', { name: /Hill repeats/ })
+
+    expect(screen.queryByRole('button', { name: /load earlier activities/i })).not.toBeInTheDocument()
+  })
+
+  // The pre-flight guard is why /search-full is worth its weight: the light
+  // /search rows carry no `source`, so this row would have looked pickable.
+  it('greys out a Strava hit with its reason, exactly as in the browse list', async () => {
+    const user = typist()
+    const strava = { id: 'i9', name: 'Strava import', type: 'Ride', source: 'STRAVA' }
+    await renderConnected({ fetchImpl: stubApi({ hits: [strava] }) })
+
+    await user.type(searchBox(), 'strava')
+
+    const row = await screen.findByRole('button', { name: /Strava import/ })
+    expect(row).toBeDisabled()
+    expect(row).toHaveTextContent(/intervals\.icu doesn't keep the original file/i)
+  })
+
+  // API Terms §1.1 is about what is on screen, so the credit has to follow the
+  // hits — the browse window behind them is irrelevant while they are showing.
+  it('tracks the Garmin credit to the rows actually displayed', async () => {
+    const user = typist()
+    await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
+    expect(screen.getByText(/activity data from garmin/i)).toBeInTheDocument()
+
+    await user.type(searchBox(), 'hill')
+    await screen.findByRole('button', { name: /Hill repeats/ })
+
+    expect(screen.queryByText(/activity data from garmin/i)).not.toBeInTheDocument()
+  })
+
+  it('drops to the connect form when the key is rejected mid-search', async () => {
+    const user = typist()
+    const store = fakeStore('revoked-key')
+    const fetchImpl = stubApi({ status: { search: 401 } })
+    renderPage({ store, fetchImpl })
+    await screen.findByRole('button', { name: /Tempo 5×1k/ })
+
+    await user.type(searchBox(), 'hill')
+
+    await waitFor(() => expect(screen.getByLabelText(/intervals\.icu api key/i)).toBeInTheDocument())
+    expect(store.readApiKey()).toBeNull()
+    expect(screen.getByRole('alert')).toHaveTextContent(/didn't accept that api key/i)
+  })
+
+  it('banners a non-auth search failure and leaves the key alone', async () => {
+    const user = typist()
+    const store = fakeStore('stored-key')
+    renderPage({ store, fetchImpl: stubApi({ status: { search: 429 } }) })
+    await screen.findByRole('button', { name: /Tempo 5×1k/ })
+
+    await user.type(searchBox(), 'hill')
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/too many requests/i))
+    expect(store.readApiKey()).toBe('stored-key')
+  })
+
+  it('picks a search hit by id, the same ref the browse list dispatches', async () => {
+    const user = typist()
+    const onSelectActivity = vi.fn()
+    await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }), onSelectActivity })
+
+    await user.type(searchBox(), 'hill')
+    await user.click(await screen.findByRole('button', { name: /Hill repeats/ }))
+
+    expect(onSelectActivity).toHaveBeenCalledWith({ type: 'id', id: 'i7', name: 'Hill repeats' })
   })
 })

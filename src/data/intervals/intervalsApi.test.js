@@ -5,6 +5,7 @@ import {
   downloadOriginalFile,
   fetchProfile,
   listActivities,
+  searchActivities,
   toApiDate,
 } from './intervalsApi.js'
 
@@ -106,6 +107,63 @@ describe('intervalsApi request shape', () => {
 
     const [oddFetch] = stubFetch(jsonResponse({ error: 'nope' }))
     await expect(listActivities({ apiKey: API_KEY, oldest: '2026-05-09', fetchImpl: oddFetch })).resolves.toEqual([])
+  })
+
+  // /search-full, not /search: only the full row carries source, file_type and
+  // device_name, which the picker needs to grey out Strava rows and to credit
+  // Garmin. See searchActivities' own comment.
+  it('searches the whole history from the full-row endpoint, with no date window', async () => {
+    const [fetchImpl, calls] = stubFetch(jsonResponse([]))
+
+    await searchActivities({ apiKey: API_KEY, query: 'tempo', fetchImpl })
+
+    const { url } = calls()[0]
+    expect(url.origin + url.pathname).toBe(`${INTERVALS_API_BASE}/athlete/0/activities/search-full`)
+    expect(url.searchParams.get('q')).toBe('tempo')
+    expect(url.searchParams.get('limit')).toBe('30')
+    expect(url.searchParams.has('oldest')).toBe(false)
+    expect(url.searchParams.has('newest')).toBe(false)
+    // This endpoint has no `fields` projection — ACTIVITY_LIST_FIELDS is for
+    // /activities only, and sending it here would be cargo cult.
+    expect(url.searchParams.has('fields')).toBe(false)
+  })
+
+  // A leading # is an exact tag search *server-side*, so it has to survive as
+  // a literal # in the query value. Pasting the query into the URL rather than
+  // going through searchParams would make it a fragment and send `q=`.
+  it('encodes a #tag query and a space rather than truncating or dropping them', async () => {
+    const [fetchImpl, calls] = stubFetch(jsonResponse([]))
+
+    await searchActivities({ apiKey: API_KEY, query: '#tempo run', fetchImpl })
+
+    expect(calls()[0].rawUrl).toContain('q=%23tempo+run')
+    expect(calls()[0].url.searchParams.get('q')).toBe('#tempo run')
+  })
+
+  it('honours an explicit limit', async () => {
+    const [fetchImpl, calls] = stubFetch(jsonResponse([]))
+
+    await searchActivities({ apiKey: API_KEY, query: 'tempo', limit: 5, fetchImpl })
+
+    expect(calls()[0].url.searchParams.get('limit')).toBe('5')
+  })
+
+  it('returns the hits, and an empty list for a non-array body', async () => {
+    const rows = [{ id: 'i1' }, { id: 'i2' }]
+    const [hitFetch] = stubFetch(jsonResponse(rows))
+    await expect(searchActivities({ apiKey: API_KEY, query: 'x', fetchImpl: hitFetch })).resolves.toEqual(rows)
+
+    const [oddFetch] = stubFetch(jsonResponse({ error: 'nope' }))
+    await expect(searchActivities({ apiKey: API_KEY, query: 'x', fetchImpl: oddFetch })).resolves.toEqual([])
+  })
+
+  it('throws the same coded error as any other call when the key is rejected', async () => {
+    const [fetchImpl] = stubFetch(new Response('', { status: 401 }))
+
+    const error = await searchActivities({ apiKey: API_KEY, query: 'x', fetchImpl }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(IntervalsApiError)
+    expect(error.code).toBe('unauthorized')
   })
 
   it('downloads the original file as bytes from the activity file endpoint', async () => {

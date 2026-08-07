@@ -790,6 +790,48 @@ main {
   padding: 8px 12px;
 }
 
+/* Searches the whole history, not the loaded window — so it sits above the
+   list rather than inside it. */
+.intervals-search {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.intervals-search__input {
+  font: inherit;
+  /* 16px exactly, for the same reason as .intervals-connect input above:
+     below it, iOS Safari zooms the whole page on focus. */
+  font-size: 16px;
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.intervals-search__input::placeholder {
+  color: var(--text-dim);
+}
+
+.intervals-search__clear {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  min-width: 44px; /* the touch floor — the input's own height carries the rest */
+  cursor: pointer;
+}
+
+.intervals-search__clear:hover {
+  color: var(--text);
+}
+
 .intervals-list {
   list-style: none;
   margin: 0;

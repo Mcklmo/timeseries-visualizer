@@ -72,16 +72,28 @@ export function describeActivity(activity) {
 }
 
 /**
+ * Rows are identical whichever read path filled them — the browse window or a
+ * search — because both arrive as full activity objects (intervalsApi.js).
+ * Only the chrome flexes: `onLoadEarlier` is absent when the list is a set of
+ * search hits rather than a window, since there is no window to widen.
+ *
  * @param {{
  *   activities: object[],
  *   onSelect: (activity: object) => void,
- *   onLoadEarlier: () => void,
+ *   onLoadEarlier?: () => void,
  *   isLoadingEarlier?: boolean,
+ *   emptyMessage?: string,
  * }} props
  */
-export function IntervalsActivityList({ activities, onSelect, onLoadEarlier, isLoadingEarlier }) {
+export function IntervalsActivityList({
+  activities,
+  onSelect,
+  onLoadEarlier,
+  isLoadingEarlier,
+  emptyMessage = 'No activities in the last few months.',
+}) {
   if (activities.length === 0) {
-    return <p className="intervals-list__empty">No activities in the last few months.</p>
+    return <p className="intervals-list__empty">{emptyMessage}</p>
   }
 
   return (
@@ -107,14 +119,16 @@ export function IntervalsActivityList({ activities, onSelect, onLoadEarlier, isL
       </ul>
       {/* A button, not infinite scroll: better on touch, and it needs no
           IntersectionObserver stub in jsdom. */}
-      <button
-        type="button"
-        className="intervals-list__more"
-        onClick={onLoadEarlier}
-        disabled={isLoadingEarlier}
-      >
-        {isLoadingEarlier ? 'Loading…' : 'Load earlier activities'}
-      </button>
+      {onLoadEarlier && (
+        <button
+          type="button"
+          className="intervals-list__more"
+          onClick={onLoadEarlier}
+          disabled={isLoadingEarlier}
+        >
+          {isLoadingEarlier ? 'Loading…' : 'Load earlier activities'}
+        </button>
+      )}
     </>
   )
 }

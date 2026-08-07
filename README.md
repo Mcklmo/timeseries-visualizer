@@ -161,10 +161,19 @@ directly; nothing — not the key, not your activities — passes through this a
 which serves nothing but the page. This works because intervals.icu's API sends CORS
 headers, which is why the feature needed no server-side code at all.
 
+**Finding an activity.** The list itself shows a rolling window of recent activities, widened
+backwards by **Load earlier activities**. The search box above it does not search that window —
+it searches your **whole intervals.icu history** by activity name, from two characters up, as
+you type. A query starting with `#` is an exact **tag** search instead (`#threshold` finds
+everything tagged `threshold`). Clearing the box drops straight back to the list you were
+browsing, exactly where you left it.
+
 **Consequences worth knowing:**
 
 - Because there's no Worker route involved, `npm run dev` alone is enough to develop and
   test this — unlike the feedback form, which needs `npx wrangler dev`.
+- Search returns at most 30 matches and there's no "show more" — narrow the query if what
+  you want isn't there. Nothing is cached, so the same search runs again next time.
 - **Strava-synced activities can't be downloaded.** intervals.icu doesn't keep an original
   file for them. Those rows appear in the list, disabled, with that as the stated reason —
   they're shown rather than hidden so a missing activity doesn't read as a bug.
@@ -191,7 +200,7 @@ src/
   state/      # ActivityContext, ChartViewContext
   ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
               # EmptyState, ErrorState, FileDropZone, AboutPage,
-              # IntervalsPage/ConnectForm/ActivityList,
+              # IntervalsPage/ConnectForm/ActivityList + useDebouncedValue,
               # FeedbackWidget/Dialog/Form + useTurnstile
   styles/     # tokens.css (dark theme + metric hues), global.css (layout, chrome)
 shared/       # environment-agnostic values imported by BOTH src/ and worker/ (feedbackLimits)
@@ -331,6 +340,16 @@ path, though (see step 9 below).
     - Open a Garmin-recorded run with Stryd power → charts render, a **Power** panel appears,
       and the header shows intervals.icu's *real* activity title rather than a derived
       "Morning Run". Cross-check avg pace against Garmin Connect, as the fixture tests do.
+    - **Search** — type part of a workout name from *outside* the loaded window (something
+      older than ~90 days, without pressing "Load earlier"): it should appear. Then `#` plus
+      a tag you actually use → exact tag matches. Clear the box → the original windowed list
+      is back untouched and "Load earlier activities" still widens it correctly. Note the
+      button is **absent** while searching, deliberately — there is no window under the hits.
+    - In DevTools → Network while searching: **one** `search-full` request per typing burst,
+      not one per keystroke. Then type fast enough to overlap two requests and confirm the
+      rows on screen match the *final* query, not whichever answer arrived last. A one-letter
+      query should issue nothing at all.
+    - Open a search hit → it loads and charts like any other row (same `{type:'id'}` path).
     - Reload → still connected. **Disconnect** → the key is gone from `localStorage` (check
       in DevTools → Application), the list is gone, and the app still works fully for
       dropped files.
@@ -341,8 +360,8 @@ path, though (see step 9 below).
 14. **Responsive layout** — narrow the window below ~720px → the hero and header should both
     stay readable with no horizontal overflow, and each metric's toggle + stat-checkboxes row
     should stack instead of staying side-by-side. In the intervals.icu view, activity rows
-    should be comfortable thumb targets and focusing the API-key field must **not** zoom the
-    page on an iPhone.
+    should be comfortable thumb targets, and focusing the API-key field **or the search box**
+    must **not** zoom the page on an iPhone.
 15. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile

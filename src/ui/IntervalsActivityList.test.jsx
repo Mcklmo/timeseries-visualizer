@@ -119,4 +119,19 @@ describe('IntervalsActivityList', () => {
     renderList([])
     expect(screen.getByText(/no activities in the last few months/i)).toBeInTheDocument()
   })
+
+  // Search hits are scattered through history rather than bounded by a
+  // window, so "earlier" has no meaning and the button must not be there to
+  // press.
+  it('drops the widen button entirely when there is no window to widen', () => {
+    renderList([garminRun], { onLoadEarlier: undefined })
+    expect(screen.queryByRole('button', { name: /load earlier activities/i })).not.toBeInTheDocument()
+  })
+
+  it('takes a caller-supplied empty message, so "no matches" never reads as "no recent activities"', () => {
+    renderList([], { emptyMessage: 'No activities match "hill".' })
+
+    expect(screen.getByText('No activities match "hill".')).toBeInTheDocument()
+    expect(screen.queryByText(/last few months/i)).not.toBeInTheDocument()
+  })
 })

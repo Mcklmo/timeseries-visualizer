@@ -192,6 +192,50 @@ export async function listActivities({ apiKey, oldest, fetchImpl = fetch }) {
   return Array.isArray(body) ? body : []
 }
 
+/** Enough to fill a phone screen twice; the endpoint has no paging. */
+export const ACTIVITY_SEARCH_LIMIT = 30
+
+/**
+ * Name search across the athlete's **whole history**, not the browsed window
+ * — neither search endpoint accepts `oldest`/`newest`, which is the entire
+ * point of having this alongside listActivities.
+ *
+ * Deliberately `/search-full` rather than `/search`, despite the ~183-property
+ * rows: the lighter `ActivitySearchResult` omits `source`, `file_type` and
+ * `device_name` — exactly the three the picker needs to grey out Strava rows
+ * up front (unsupportedReason) and to credit Garmin (API Terms §1.1) — and it
+ * names distance `distance` where every row renderer here reads
+ * `icu_distance`. So the light endpoint costs a second request per row's worth
+ * of truth and a divergent row shape; this one renders through the browse
+ * list's code unchanged.
+ *
+ * There is **no `fields` param on this endpoint** (unlike /activities), so
+ * ACTIVITY_LIST_FIELDS deliberately does not apply here and rows arrive
+ * full-fat. That is a knowing cost, not an oversight — do not "fix" it by
+ * passing `fields`; the spec does not document it here.
+ *
+ * A `q` that starts with `#` is an **exact tag search**, per the API. That is
+ * free behaviour through the same input, which is why there is no tag UI on
+ * this side and no `#` handling in the caller.
+ *
+ * @param {{apiKey: string, query: string, limit?: number, fetchImpl?: typeof fetch}} options
+ * @returns {Promise<object[]>}
+ */
+export async function searchActivities({
+  apiKey,
+  query,
+  limit = ACTIVITY_SEARCH_LIMIT,
+  fetchImpl = fetch,
+}) {
+  const response = await request('/athlete/0/activities/search-full', {
+    apiKey,
+    fetchImpl,
+    search: { q: query, limit: String(limit) },
+  })
+  const body = await readJson(response)
+  return Array.isArray(body) ? body : []
+}
+
 /**
  * The **original uploaded file**, gzip-compressed, straight from
  * intervals.icu — no S3 redirect. Deliberately not `/fit-file`, which is
