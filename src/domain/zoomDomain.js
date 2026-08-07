@@ -280,3 +280,39 @@ export function zoomAtFraction(domain, fullExtent, fraction, scale, { maxZoom = 
   })
   return snapToFull(clamped, fullExtent)
 }
+
+/**
+ * Translate the window sideways without changing its width. What the trackpad
+ * pan path calls.
+ *
+ * `fractionDelta` is how far the gesture travelled as a fraction of the PLOT
+ * WIDTH, signed like a scrollbar: positive moves the window forward, i.e. the
+ * content slides left under the fingers, matching every other horizontally
+ * scrollable surface. Scaling it by the CURRENT span (not the full span) is
+ * what keeps finger travel and content travel 1:1 at every zoom level.
+ *
+ * Three properties, all inherited rather than implemented here:
+ *  - Width survives a pan into either end, because clampDomain translates
+ *    rather than truncates — the window slides fully into view at the size the
+ *    user asked for instead of shrinking against the edge.
+ *  - `minSpan` is deliberately left at its default 0: the incoming span came
+ *    from an already-clamped domain, and panning is not the place to
+ *    retroactively fix a zoom-limit violation.
+ *  - Panning at full zoom is a self-cancelling no-op — the clamp slides it back
+ *    to the extent, snapToFull returns the sentinel, and the hook's emit dedupe
+ *    swallows it. No special case needed.
+ *
+ * @param {unknown} domain - current zoomDomain, sentinel or numeric
+ * @param {[number, number]} fullExtent
+ * @param {number} fractionDelta
+ * @returns {[number, number] | ['dataMin', 'dataMax'] | null}
+ */
+export function panByFraction(domain, fullExtent, fractionDelta) {
+  if (!Number.isFinite(fractionDelta)) return null
+  const current = resolveDomain(domain, fullExtent)
+  const span = current[1] - current[0]
+  const shift = fractionDelta * span
+  if (!Number.isFinite(shift) || shift === 0) return null
+  const clamped = clampDomain([current[0] + shift, current[1] + shift], fullExtent)
+  return snapToFull(clamped, fullExtent)
+}

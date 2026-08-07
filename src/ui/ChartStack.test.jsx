@@ -248,6 +248,32 @@ describe('ChartStack', () => {
     })
   })
 
+  it('a horizontal trackpad swipe translates the zoomed curve without rescaling it', async () => {
+    const { container } = await renderStack()
+    const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
+
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
+    const before = pathXs(bottomPanel())
+
+    // The gesture the browser delivers as a wheel event carrying deltaX. 91px
+    // is an eighth of the 728px plot.
+    fireEvent(
+      container.querySelector('.chart-stack'),
+      new WheelEvent('wheel', { deltaX: 91, deltaY: 0, cancelable: true, bubbles: true }),
+    )
+
+    await waitFor(() => {
+      const after = pathXs(bottomPanel())
+      // Rendered proof that width was preserved end-to-end, and stronger than
+      // asserting on context state: the samples moved left as one, and the
+      // pixel gaps between them — i.e. the scale — did not change.
+      expect(after[0]).toBeLessThan(before[0])
+      const gaps = (xs) => xs.slice(1).map((x, i) => x - xs[i])
+      gaps(after).forEach((gap, i) => expect(gap).toBeCloseTo(gaps(before)[i], 6))
+    })
+  })
+
   it('shows a Reset zoom control only once zoomed, and restores the full domain', async () => {
     const { container } = await renderStack()
     const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)

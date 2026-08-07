@@ -9,12 +9,24 @@
 // domain/zoomDomain.js, both of which are pure and unit-tested. Nothing here
 // does arithmetic on a domain.
 //
+// Panning exists on both routes. On touch it arrives free from the anchored
+// solve, since moving both fingers together leaves the solved width unchanged.
+// On a trackpad there is no such gesture, so while zoomed a horizontal swipe —
+// or Shift + scroll on hardware with no horizontal wheel — gets its own path
+// through panByFraction. Both keep the window's width exactly.
+//
 // Gestures deliberately NOT implemented (declined; see ARCHITECTURE.md §13):
-// one-finger drag-to-pan, double-tap-to-reset, long-press readout. Two-finger
-// pan is not among them — it arrives free from the anchored solve, since
-// moving both fingers together leaves the solved width unchanged.
+// one-finger drag-to-pan, mouse click-and-drag-to-pan, double-tap-to-reset,
+// long-press readout.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { pinchDomain, resolveDomain, valueAtFraction, zoomAtFraction } from '../domain/zoomDomain.js'
+import {
+  isFullDomain,
+  panByFraction,
+  pinchDomain,
+  resolveDomain,
+  valueAtFraction,
+  zoomAtFraction,
+} from '../domain/zoomDomain.js'
 import { clampFraction, fractionAcross, plotRectOf } from './chartGeometry.js'
 
 // Two fingers closer together than this can't specify a window steadily —
@@ -33,19 +45,33 @@ const WHEEL_SCALE_LIMIT = 2
 
 const HINT_DURATION_MS = 1500
 
-/** Pixels of scroll intent behind one wheel event, whatever unit it came in. */
-function wheelPixels(e) {
-  if (e.deltaMode === 1) return e.deltaY * WHEEL_LINE_HEIGHT_PX
-  if (e.deltaMode === 2) return e.deltaY * WHEEL_PAGE_HEIGHT_PX
-  return e.deltaY
+/** Pixels of scroll intent behind one wheel delta, whatever unit it came in.
+ *  Takes the delta rather than the event because both axes need the identical
+ *  deltaMode handling — Firefox's line-mode deltas are just as real sideways. */
+function wheelPixels(delta, deltaMode) {
+  if (deltaMode === 1) return delta * WHEEL_LINE_HEIGHT_PX
+  if (deltaMode === 2) return delta * WHEEL_PAGE_HEIGHT_PX
+  return delta
 }
 
 /** Per-event zoom factor: <1 zooms in (wheel/pinch up), >1 zooms out. Clamped
  *  so one violent flick can't jump from full to max zoom in a single frame. */
 function wheelScale(e) {
-  const scale = Math.exp(wheelPixels(e) * WHEEL_SENSITIVITY)
+  const scale = Math.exp(wheelPixels(e.deltaY, e.deltaMode) * WHEEL_SENSITIVITY)
   if (!Number.isFinite(scale)) return 1
   return Math.min(WHEEL_SCALE_LIMIT, Math.max(1 / WHEEL_SCALE_LIMIT, scale))
+}
+
+/** Signed pixels of horizontal intent, or 0 if this wheel event isn't one. */
+function panPixels(e) {
+  // Chrome swaps the axis itself under Shift; Firefox leaves the value in
+  // deltaY. The `||` covers both without sniffing the browser.
+  if (e.shiftKey) return wheelPixels(e.deltaY || e.deltaX, e.deltaMode)
+  // DOMINANCE, not `deltaX !== 0`: a macOS two-finger scroll is always
+  // slightly diagonal, so panning on any horizontal component at all would
+  // make an ordinary vertical read-through jitter the window sideways.
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return 0
+  return wheelPixels(e.deltaX, e.deltaMode)
 }
 
 function sameDomain(a, b) {
@@ -188,15 +214,40 @@ export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
       g.hintTimer = setTimeout(() => setWheelHint(false), HINT_DURATION_MS)
     }
 
+    // A horizontal swipe (or Shift + scroll) slides the zoomed window sideways
+    // at constant width. Returns false on every bail, so the caller can fall
+    // through to the hint path exactly as if this had never run.
+    function tryPan(e) {
+      const { domain: current, fullExtent: extent } = latest.current
+      // "When zoomed in" is the whole feature: with the full activity on screen
+      // there is nowhere to pan to, and swiping there must keep its default
+      // browser behaviour rather than being silently swallowed.
+      if (!extent || isFullDomain(current)) return false
+      const pixels = panPixels(e)
+      if (pixels === 0) return false
+      const plotRect = plotRectOf(node)
+      if (!plotRect) return false
+      // preventDefault ONLY once a pan is certain. It does double duty here: as
+      // well as suppressing the default scroll, it is what stops Safari and
+      // Chrome turning a horizontal swipe into a back-navigation, which would
+      // throw away the loaded activity.
+      e.preventDefault()
+      const next = panByFraction(current, extent, pixels / plotRect.width)
+      if (next !== null) emit(next)
+      return true
+    }
+
     function handleWheel(e) {
       const { domain: current, fullExtent: extent } = latest.current
       // ⌘ as well as ctrl: a macOS trackpad pinch already arrives as a wheel
       // event with ctrlKey set, so Mac users get the phone's gesture for free.
+      // Tested first, so ctrl + a diagonal scroll still zooms rather than pans.
       if (!e.ctrlKey && !e.metaKey) {
-        // Plain wheel scrolls the page — deliberately NOT preventDefault'd.
-        // The stack fills the viewport, so the cursor is over a chart
-        // essentially always; if plain wheel zoomed, reaching the footer would
-        // be impossible.
+        if (tryPan(e)) return
+        // Plain vertical wheel scrolls the page — deliberately NOT
+        // preventDefault'd. The stack fills the viewport, so the cursor is over
+        // a chart essentially always; if plain wheel zoomed, reaching the
+        // footer would be impossible.
         showHint()
         return
       }

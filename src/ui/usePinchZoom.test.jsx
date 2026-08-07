@@ -29,8 +29,26 @@ function touch(clientX, pointerId) {
   return { pointerId, pointerType: 'touch', clientX, clientY: 100 }
 }
 
-function wheelEvent({ deltaY, deltaMode = 0, ctrlKey = false, metaKey = false, clientX = X.f50 }) {
-  return new WheelEvent('wheel', { deltaY, deltaMode, ctrlKey, metaKey, clientX, cancelable: true, bubbles: true })
+function wheelEvent({
+  deltaY,
+  deltaX = 0,
+  deltaMode = 0,
+  ctrlKey = false,
+  metaKey = false,
+  shiftKey = false,
+  clientX = X.f50,
+}) {
+  return new WheelEvent('wheel', {
+    deltaY,
+    deltaX,
+    deltaMode,
+    ctrlKey,
+    metaKey,
+    shiftKey,
+    clientX,
+    cancelable: true,
+    bubbles: true,
+  })
 }
 
 // jsdom 30 has no Touch constructor (it does have TouchEvent), and the guard
@@ -347,6 +365,108 @@ describe('usePinchZoom — desktop wheel', () => {
   })
 })
 
+// The wheel path is not rAF-coalesced (only the pinch path is), so every
+// assertion below is synchronous — no nextFrame().
+describe('usePinchZoom — trackpad pan', () => {
+  it('slides the zoomed window by exactly the swipe distance as a fraction of the plot', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [20, 60] })
+
+    // 91px of the 728px plot is exactly an eighth; an eighth of the 40-wide
+    // window is 5. Positive deltaX moves the window forward, like a scrollbar.
+    const event = wheelEvent({ deltaY: 0, deltaX: 91 })
+    fireEvent(stack, event)
+
+    expect(onZoomChange).toHaveBeenCalledTimes(1)
+    expect(onZoomChange.mock.calls[0][0]).toEqual([25, 65])
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('pans backward on a negative deltaX', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [20, 60] })
+
+    fireEvent(stack, wheelEvent({ deltaY: 0, deltaX: -91 }))
+
+    expect(onZoomChange.mock.calls[0][0]).toEqual([15, 55])
+  })
+
+  it('keeps the width bit-identical even at a deep zoom', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [30, 31] })
+
+    fireEvent(stack, wheelEvent({ deltaY: 0, deltaX: 91 }))
+
+    const emitted = onZoomChange.mock.calls[0][0]
+    expect(emitted[1] - emitted[0]).toBe(1)
+  })
+
+  it('ignores a vertical-dominant wheel, so an ordinary read-through does not jitter the window sideways', () => {
+    const { stack, onZoomChange, queryByTestId } = renderHarness({ domain: [20, 60] })
+
+    // A macOS two-finger scroll is always slightly diagonal — panning on any
+    // deltaX at all would make reading down the page drag the chart.
+    const event = wheelEvent({ deltaY: 50, deltaX: 5 })
+    fireEvent(stack, event)
+
+    expect(onZoomChange).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+    expect(queryByTestId('hint')).toBeInTheDocument()
+  })
+
+  it('does not pan while unzoomed, and leaves the swipe to the browser', () => {
+    // There is nowhere to pan to with the whole activity on screen, and
+    // swallowing the gesture there would break nothing visibly while stopping
+    // whatever the browser wanted to do with it.
+    const { stack, onZoomChange } = renderHarness()
+
+    const event = wheelEvent({ deltaY: 0, deltaX: 91 })
+    fireEvent(stack, event)
+
+    expect(onZoomChange).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('pans on Shift + vertical wheel, the Firefox shape of a horizontal scroll', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [20, 60] })
+
+    // Chrome swaps the axis itself under Shift and would send this as deltaX;
+    // Firefox leaves it in deltaY. Both must pan.
+    fireEvent(stack, wheelEvent({ deltaY: 91, shiftKey: true }))
+
+    expect(onZoomChange.mock.calls[0][0]).toEqual([25, 65])
+  })
+
+  it('normalises a line-mode horizontal delta, just like the zoom path does', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [20, 60] })
+
+    // 3 lines × 16px = 48px sideways — Firefox's units are just as real on
+    // this axis as on the other one.
+    fireEvent(stack, wheelEvent({ deltaY: 0, deltaX: 3, deltaMode: 1 }))
+
+    const emitted = onZoomChange.mock.calls[0][0]
+    expect(emitted[0]).toBeCloseTo(20 + (48 / 728) * 40, 9)
+  })
+
+  it('still zooms on ctrl + a diagonal scroll, rather than panning it', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [20, 60] })
+
+    fireEvent(stack, wheelEvent({ deltaY: -50, deltaX: -100, ctrlKey: true }))
+
+    // A pan preserves width exactly, so a narrower window proves the ctrl test
+    // ran first and the zoom path took the event.
+    const emitted = onZoomChange.mock.calls[0][0]
+    expect(emitted[1] - emitted[0]).toBeLessThan(40)
+  })
+
+  it('stops dead at the end of the activity instead of running off it', () => {
+    const { stack, onZoomChange } = renderHarness({ domain: [50, 90] })
+
+    fireEvent(stack, wheelEvent({ deltaY: 0, deltaX: 728 })) // a full plot width
+
+    const emitted = onZoomChange.mock.calls[0][0]
+    expect(emitted).toEqual([60, 100])
+    expect(emitted[1] - emitted[0]).toBe(40)
+  })
+})
+
 describe('usePinchZoom — multi-touch guard', () => {
   it('swallows a two-finger touchstart so Recharts tooltip handlers never see it', () => {
     const { stack } = renderHarness()
@@ -411,3 +531,9 @@ describe('usePinchZoom — safety', () => {
 // this file green while ctrl+wheel silently started zooming the whole browser
 // page instead of the chart. That difference is only observable in a real
 // browser — see the manual checks in README.md.
+//
+// The pan tests lean on the same illusion twice over: jsdom has no history
+// gesture either, so nothing here can catch the pan's *other* job — a
+// horizontal swipe is a back-navigation in Safari and Chrome, and only that
+// preventDefault stops a pan past the end of the activity from throwing the
+// loaded file away. Check it in a browser.

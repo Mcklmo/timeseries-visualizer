@@ -6,6 +6,7 @@ import {
   fullDomain,
   isFullDomain,
   minSpanFor,
+  panByFraction,
   pinchDomain,
   resolveDomain,
   snapToFull,
@@ -351,5 +352,56 @@ describe('zoomAtFraction', () => {
     expect(zoomAtFraction([0, 40], extent, NaN, 0.5)).toBeNull()
     expect(zoomAtFraction([0, 40], extent, 0.5, NaN)).toBeNull()
     expect(zoomAtFraction([0, 40], extent, 0.5, 0)).toBeNull()
+  })
+})
+
+describe('panByFraction', () => {
+  const extent = /** @type {[number, number]} */ ([0, 100])
+
+  it('translates the window without changing its width at all', () => {
+    const result = panByFraction([20, 60], extent, 0.25)
+    // Exact, not toBeCloseTo: a pan that loses width by a rounding error would
+    // creep the zoom level on every event of a momentum swipe.
+    expect(result[1] - result[0]).toBe(40)
+    expect(result).toEqual([30, 70])
+  })
+
+  it('scales the delta by the CURRENT span, so travel stays 1:1 at every zoom', () => {
+    // Same quarter-of-the-plot gesture, a window a tenth as wide: the content
+    // must move a tenth as far, not the same distance.
+    const result = panByFraction([20, 24], extent, 0.25)
+    expect(result).toEqual([21, 25])
+  })
+
+  it('moves forward on a positive delta and backward on a negative one', () => {
+    expect(panByFraction([20, 60], extent, 0.5)[0]).toBeGreaterThan(20)
+    expect(panByFraction([20, 60], extent, -0.5)[0]).toBeLessThan(20)
+  })
+
+  it('pins to the right edge AT FULL WIDTH rather than truncating against it', () => {
+    // The property that would break if clampDomain ever truncated instead of
+    // translating: overshooting the end must still show a 40-wide window.
+    const result = panByFraction([50, 90], extent, 1)
+    expect(result).toEqual([60, 100])
+    expect(result[1] - result[0]).toBe(40)
+  })
+
+  it('pins to the left edge at full width too', () => {
+    const result = panByFraction([10, 50], extent, -1)
+    expect(result).toEqual([0, 40])
+    expect(result[1] - result[0]).toBe(40)
+  })
+
+  it('is a self-cancelling no-op at full zoom, returning the sentinel', () => {
+    // There is nowhere to pan to, so the clamp slides it straight back and
+    // snapToFull restores the one representation of "unzoomed". The hook's
+    // emit dedupe swallows the result, which is why no special case is needed.
+    expect(isFullDomain(panByFraction(fullDomain(), extent, 0.25))).toBe(true)
+  })
+
+  it('is total: a non-finite or zero delta gives null', () => {
+    expect(panByFraction([20, 60], extent, NaN)).toBeNull()
+    expect(panByFraction([20, 60], extent, Infinity)).toBeNull()
+    expect(panByFraction([20, 60], extent, 0)).toBeNull()
   })
 })

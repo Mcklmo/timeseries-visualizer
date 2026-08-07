@@ -52,8 +52,8 @@ export function ChartStack() {
       // role="group" is what makes the aria-label reachable at all: a bare div
       // is `generic`, and an accessible name on a generic element is dropped.
       role="group"
-      title="Pinch, or Ctrl + scroll, to zoom"
-      aria-label="Activity charts. Pinch, or Ctrl and scroll, to zoom the time axis."
+      title="Pinch, or Ctrl + scroll, to zoom. While zoomed, scroll sideways to pan"
+      aria-label="Activity charts. Pinch, or Ctrl and scroll, to zoom the time axis. While zoomed, scroll sideways to pan."
     >
       {visibleMetrics.map((metricId, i) => {
         const isBottom = i === visibleMetrics.length - 1

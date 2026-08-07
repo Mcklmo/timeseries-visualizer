@@ -25,7 +25,9 @@ This project is **functional end-to-end, including real Garmin file upload** —
   rendered Recharts SVG output, not just context state.
 - Zooming is a **two-finger pinch** anywhere on the chart stack, or **ctrl/⌘ + scroll** on a
   desktop, writing one shared controlled `zoomDomain` so every panel zooms and pans in sync.
-  Moving both fingers together pans; a **Reset zoom** button appears only while zoomed;
+  Moving both fingers together pans, and on a desktop a **two-finger horizontal swipe**
+  (or **Shift + scroll**) pans the zoomed window sideways at constant width; a **Reset
+  zoom** button appears only while zoomed;
   switching x-axis mode resets the zoom (a numeric range in seconds is meaningless once
   re-read as metres). Verified by simulating real pointer sequences against rendered SVG
   output, not just calling the state setter directly. This replaced Recharts' `Brush`, whose
@@ -319,6 +321,13 @@ path, though (see step 9 below).
    §7). Scroll **without** Ctrl → the page scrolls normally and a centred "Use Ctrl + scroll
    to zoom" hint appears **once**, not on every scroll past the charts. While zoomed, switch
    Time ⇄ Distance → zoom should reset to full range (not carry over a stale numeric range).
+   Then, still zoomed, **swipe two fingers left and right** (or hold **Shift** and scroll) →
+   all panels slide together at a window width that never changes, the crosshair keeps
+   tracking, and the pan **stops dead** at both ends with no rubber-banding and — the trap
+   worth checking every time — **no browser back-navigation** throwing the activity away.
+   Scroll vertically over a zoomed chart → the page scrolls and the window must not drift
+   sideways with it. Swipe sideways while **unzoomed** → nothing happens, and again the
+   browser does not navigate back. Ctrl + a diagonal scroll → still zooms, never pans.
 9. **Swap and error paths** — with charts up, drop `fixtures/23870166877_ACTIVITY.fit` on the
    **header** control → it swaps to the FIT activity (a Power panel appears, since the FIT
    file carries Stryd power the TCX export drops). Then drop a non-TCX file (or a `.tcx` with
