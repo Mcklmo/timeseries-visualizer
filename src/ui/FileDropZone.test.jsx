@@ -11,7 +11,7 @@ describe('FileDropZone', () => {
     render(<FileDropZone onFileSelected={() => {}} />)
     const input = screen.getByLabelText(/drop a tcx file|click to browse/i)
     expect(input).toHaveAttribute('type', 'file')
-    expect(input).toHaveAttribute('accept', '.tcx')
+    expect(input).toHaveAttribute('accept', '.tcx,.fit')
   })
 
   it('calls onFileSelected with the chosen file when picked via the input', () => {

@@ -3,6 +3,7 @@
 // nothing else in the tree touches a concrete adapter.
 import { useCallback, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
+import { FitActivitySource } from './data/fit/FitActivitySource.js'
 import { MockActivitySource } from './data/mock/MockActivitySource.js'
 import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
@@ -56,14 +57,20 @@ export function AppShell() {
 }
 
 // Composition-root dispatcher: a dropped/browsed file (`{type:'file'}`) goes
-// to the real TCX parser; the "Load sample activity" button (`{type:'id'}`)
-// still resolves the bundled mock fixture. Both concrete adapters are
-// instantiated only here — see ARCHITECTURE.md §5.
+// to the real TCX or FIT parser (by extension); the "Load sample activity"
+// button (`{type:'id'}`) still resolves the bundled mock fixture. All
+// concrete adapters are instantiated only here — see ARCHITECTURE.md §5.
+const isFitFile = (file) => file.name.toLowerCase().endsWith('.fit')
+
 const tcxSource = new TcxActivitySource()
+const fitSource = new FitActivitySource()
 const mockSource = new MockActivitySource()
 const defaultSource = {
   kind: 'tcx',
-  load: (ref) => (ref.type === 'file' ? tcxSource.load(ref) : mockSource.load(ref)),
+  load: (ref) => {
+    if (ref.type !== 'file') return mockSource.load(ref)
+    return isFitFile(ref.file) ? fitSource.load(ref) : tcxSource.load(ref)
+  },
 }
 
 export default function App() {

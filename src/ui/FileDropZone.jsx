@@ -1,4 +1,4 @@
-// Click-to-browse + drag-and-drop TCX file picker. Only ever hands a raw
+// Click-to-browse + drag-and-drop TCX/FIT file picker. Only ever hands a raw
 // File up to its parent via onFileSelected — no parsing here, see
 // ARCHITECTURE.md §5 (adapters, not components, own interpretation).
 import { useState } from 'react'
@@ -32,9 +32,9 @@ export function FileDropZone({ onFileSelected }) {
       onDrop={handleDrop}
     >
       <label htmlFor="tcx-file-input">
-        <strong>Drop a TCX file</strong> here, or click to browse
+        <strong>Drop a TCX or FIT file</strong> here, or click to browse
       </label>
-      <input id="tcx-file-input" type="file" accept=".tcx" onChange={handleChange} />
+      <input id="tcx-file-input" type="file" accept=".tcx,.fit" onChange={handleChange} />
     </div>
   )
 }

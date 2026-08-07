@@ -12,7 +12,7 @@ import { createContext, createElement, useContext } from 'react'
 
 /**
  * @typedef {object} ActivitySource
- * @property {'tcx'|'http'|'mock'} kind
+ * @property {'tcx'|'fit'|'http'|'mock'} kind
  * @property {(ref: ActivityRef) => Promise<import('../domain/types.js').Activity>} load
  */
 
