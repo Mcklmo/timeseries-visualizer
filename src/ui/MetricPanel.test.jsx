@@ -154,11 +154,20 @@ describe('MetricPanel', () => {
     expect(container.querySelectorAll('.recharts-reference-line')).toHaveLength(0)
   })
 
-  it('labels each reference line with the metric label, formatted value, and unit', () => {
+  it('labels each reference line with the stat kind, formatted value, and unit', () => {
     const { container } = renderPanel({ metricId: 'heartRate', enabledStats: ['avg'] })
     // time-weighted avg: the last sample carries 0 weight (no "next" gap),
     // so it's (120+130+150+140)*10 / 40 = 135, not the plain mean of 130.
-    expect(container.textContent).toContain('Heart rate 135 bpm')
+    expect(container.textContent).toContain('AVG 135 bpm')
+  })
+
+  it('keeps stat labels a minimum distance apart even when their values are pixels apart', () => {
+    // avg and median land within a couple of bpm of each other here, which
+    // would put their labels almost on top of one another without decluttering.
+    const { container } = renderPanel({ metricId: 'heartRate', enabledStats: ['avg', 'median'] })
+    const ys = [...container.querySelectorAll('.stat-labels text')].map((el) => Number(el.getAttribute('y')))
+    expect(ys).toHaveLength(2)
+    expect(Math.abs(ys[0] - ys[1])).toBeGreaterThanOrEqual(16)
   })
 
   it('distinguishes stat kinds by dash pattern: max dashed, avg solid, median differently dashed', () => {
