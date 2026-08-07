@@ -74,6 +74,25 @@ npm test             # vitest run (single pass)
 npm run test:watch   # vitest, watch mode
 ```
 
+### Dev server vs. local production preview
+
+`npm run dev` and `npm run preview` serve different things — reach for `preview` before
+shipping, since `dev` mode hides bugs that only show up once the code is minified/bundled.
+
+- `npm run dev` — Vite dev server with hot module reload and unminified code. Use this for
+  day-to-day development.
+- `npm run build` then `npm run preview` — builds the real `dist/` bundle (same output
+  Cloudflare Pages deploys) and serves it locally, so you're testing what actually ships:
+
+  ```bash
+  npm run build
+  npm run preview -- --port 4173
+  ```
+
+  Open the printed URL (`http://localhost:4173` above) and click through the app as you
+  would the deployed site — file upload/parsing in particular is worth re-checking here,
+  since minification/tree-shaking can occasionally break something `dev` mode wouldn't catch.
+
 ## Project structure
 
 ```
@@ -163,6 +182,24 @@ path, though (see step 9 below).
    XML) to see the error state instead — `ErrorState` shows the parser's specific message.
 10. **Responsive layout** — narrow the window below ~720px → each metric's toggle +
     stat-checkboxes row should stack instead of staying side-by-side.
+
+## Deploying (Cloudflare Pages)
+
+The app is a static build with no backend — Cloudflare Pages connected to the GitHub repo
+is the easiest way to host it publicly, with auto-deploy on every push to `main`.
+
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
+2. Select the `timeseries-visualizer` repo.
+3. Build settings:
+   - Framework preset: **Vite**
+   - Build command: `npm run build`
+   - Build output directory: `dist`
+4. Deploy. Cloudflare gives you a `*.pages.dev` URL immediately; every subsequent push to
+   `main` redeploys automatically. A custom domain can be attached later under the project's
+   **Custom domains** tab.
+
+No `base` path needs setting in `vite.config.ts` — Cloudflare Pages serves from the domain
+root (unlike GitHub Pages, which would need a repo-subpath `base` if used instead).
 
 ## Contributing / continuing the build
 
