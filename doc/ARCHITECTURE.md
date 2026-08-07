@@ -41,6 +41,7 @@ Kept in sync after each feature lands — see build order in §11.
 - [x] **2026-08-07: stat labels moved below the chart** — `MetricPanel` reserved a fixed 200px right margin (`LineChart margin.right`) to fit avg/max/median labels as SVG `<text>` positioned at each stat's real y-value, decluttered vertically (`declutter`/`STAT_LABEL_GAP`/`MIN_STAT_LABEL_SPACING`) so close values (e.g. avg ≈ median) didn't overlap. On mobile that column ate a large share of viewport width, leaving little room for the plotted line itself. Fixed by shrinking `margin.right` to `12` and rendering the same text (`StatSummary`, a plain-HTML flex row of `.stat-chip`s) below the chart, outside the SVG — a flex row can't overlap, so the decluttering machinery (`StatLabels`/`declutter`/`STAT_LABEL_GAP`/`MIN_STAT_LABEL_SPACING`) was deleted outright rather than ported. `<ReferenceLine>`s are unchanged (still show the horizontal indicator); only the label moved. No show/hide toggle was added — chips are unconditional, same as the reference lines they annotate. The `.metric-panel` wrapper kept the old fixed pixel `height` from `ChartStack` (still driving `<ResponsiveContainer height>` for the chart itself), which left `.stat-summary` no room of its own — it overflowed the wrapper's bottom edge and painted over the next panel down. Fixed by switching the wrapper to `minHeight` instead of `height`: the chart keeps its exact prior height, but the box now grows to fit the chip row (single or wrapped) rather than clipping it.
 - [x] **2026-08-07: added a `min` stat** — mirrors `max` rather than always being the literal numeric minimum: decided with the product owner that `min` is the *opposite* extreme from `max` on each metric's own (possibly inverted) axis, not literally "smallest number." For ordinary metrics this is identical to the literal minimum (`invertAxis: false`), but for `pace` (`invertAxis: true`) it's the slowest/worst moment — numerically the *largest* s/km — the mirror image of `max`'s fastest-moment behavior. The rejected alternative (literal numeric minimum always) would have made `min`/`max` show the identical value for pace, reading as a bug. Implemented as `extreme(samples, accessor, { invert: !invertAxis })` in `aggregate.js`, the boolean-flipped counterpart of `max`'s `invert: !!invertAxis`. Wired through `computeMetricStat`, `useMetricStats`, `StatKind`, `MetricPanel`'s `STAT_ORDER`/`STAT_DASH` (new `1 2` dash pattern), and `StatCheckboxes`' `STAT_KINDS` — all four stat-kind lists updated per the existing hardcoded-per-place pattern (no shared registry).
 - [x] **2026-08-07: persistent sticky "Load an activity" bar** — the load controls (`FileDropZone` + "Load sample activity" button) used to live only in `EmptyState`, gated to `status === 'idle'`, so loading a *different* activity after one was already loaded (or after landing on `ErrorState`) meant fixing/retrying from the error screen or reloading the page. `EmptyState.jsx` is now `ui/LoadActivityBar.jsx` — controls-only, no heading/"or" separator — rendered unconditionally in `AppShell`'s `<header>` next to the `<h1>`, outside the `status` switch, so it's visible and usable across idle/loading/error/ready. `.app-header` became `position: sticky; top: 0` (the first sticky/`z-index` usage in the codebase) with an opaque `background: var(--bg)` so scrolled content doesn't show through, plus a flex-row layout (`flex-wrap: wrap`) so the bar drops under the title on narrow viewports without extra markup. `FileDropZone`'s label copy and `.file-drop-zone` styling shrank from a tall dashed drop card to an inline compact control to fit the header row.
+- [x] **2026-08-07: feedback → GitHub issue, and with it the project's first server-side code.** A "Feedback" trigger in a new persistent `<footer>` (outside the `status` switch, like the header — someone staring at an error is exactly who most needs to report it) opens a native `<dialog>`; submitting `POST /api/feedback` files a labelled issue on `Mcklmo/timeseries-visualizer`. This breaks §1's "no server-side anything" non-goal *for this one route only* — the activity pipeline is untouched and still runs entirely client-side, which is what that non-goal was actually protecting. Two new top-level folders sit outside `src/`: `worker/` (the Cloudflare Worker — `index.js` routes `/api/feedback` and hands everything else to `env.ASSETS.fetch`) and `shared/` (`feedbackLimits.js`, plain values). **New dependency rule, extending §3:** `shared/` holds environment-agnostic values only — no Workers globals, no DOM, no React — and `worker/` and `src/` may each import from it, never from each other. That's what lets the length limits be defined once and still leave the server authoritative (the client's `maxLength` is a UX hint; `worker/lib/validateFeedback.js` re-checks everything). **Abuse protection is two-layer:** Cloudflare Turnstile is the "is this a human" gate, and the native Rate Limiting binding (5/60s keyed on `CF-Connecting-IP`) only caps blast radius behind it — deliberately *not* a hand-rolled KV counter, whose get-then-put races exactly like the thing it would replace (true atomicity would need a Durable Object, disproportionate here). **Non-obvious pieces:** (1) this is the "Workers with static assets" deploy model, not Cloudflare Pages, so Pages' `functions/` auto-routing convention does not exist and routing is explicit in `worker/index.js` — the README's old Pages-dashboard flow *could not have served this route at all* and was replaced, not amended. (2) `src/lib/feedbackClient.js` returns a discriminated result instead of throwing, breaking the `ActivitySource` adapters' throw-on-failure convention on purpose: the UI has to render a 422's per-field map inline but a 429/502/network error as one banner, a distinction a single thrown `Error` carries badly. (3) The Turnstile widget is lazy-loaded via a module-level singleton promise and rendered *explicitly* (`turnstile.render(el, …)`), not via the implicit `data-sitekey` div — only the explicit API returns a widget id, which is what `remove()` (no leaked hidden iframes across repeated opens) and `reset()` (tokens are single-use, so every failed submit needs a fresh one) require. (4) `<dialog>`'s `close` listener is attached with `addEventListener`, not a JSX `onClose` prop, since React's synthetic handling of that native event is inconsistent — this also funnels the "×" button and a real Escape keypress through one path. (5) jsdom 30 still has no `showModal`/`close`, so `setupTests.js` gained a stub; it *does* apply the UA `dialog:not([open]){display:none}` rule and map `<dialog>` to role `"dialog"`, so that stub alone is enough for role-based queries. Escape-to-close itself is browser behaviour jsdom won't simulate — left to the manual walkthrough rather than chased with more stubs. (6) Watch out: "Feedback" contains "back", which silently broke the pre-existing `getByRole('button', {name: /back/i})` in `App.test.jsx`'s About test.
 - [ ] `domain/downsample.js` (LTTB) — deferred until a long activity is actually sluggish
 
 ---
@@ -160,6 +161,8 @@ src/
   state/
     ActivityContext.jsx
     ChartViewContext.jsx
+  lib/
+    feedbackClient.js        # POST /api/feedback; returns a discriminated result, never throws
   ui/
     ChartStack.jsx
     MetricPanel.jsx
@@ -171,12 +174,35 @@ src/
     SyncedTooltip.jsx
     EmptyState.jsx
     ErrorState.jsx
+    AboutPage.jsx
+    FeedbackWidget.jsx       # footer trigger; owns isOpen
+    FeedbackDialog.jsx       # <dialog> shell; form mounted only while open
+    FeedbackForm.jsx         # fields + Turnstile mount point + result states
+    useTurnstile.js          # lazy script load, explicit render/remove/reset
   styles/
     tokens.css
     global.css
+shared/
+  feedbackLimits.js          # plain values, imported by BOTH worker/ and src/
+worker/                      # Cloudflare Worker (wrangler.jsonc `main`)
+  index.js                   # /api/feedback -> route; everything else -> env.ASSETS.fetch
+  routes/
+    feedback.js              # method -> size -> parse -> validate -> rate limit -> Turnstile -> GitHub
+  lib/
+    validateFeedback.js      # server-authoritative; the client's maxLength is only a hint
+    buildIssuePayload.js     # pure: submission + metadata -> {title, body, labels}
+    verifyTurnstile.js       # injectable fetchImpl; fails closed
+    githubClient.js          # injectable fetchImpl; never returns GitHub's body or the token
+    rateLimit.js             # wrapper over env.FEEDBACK_RATE_LIMITER.limit()
+    httpResponses.js
 fixtures/
   sample-run.tcx
 ```
+
+**Dependency rule for the two new top-level folders:** `shared/` holds
+environment-agnostic *values* only — no Workers globals (`Response`, `env`), no
+DOM, no React. `worker/` and `src/` may each import from `shared/`; neither may
+import from the other.
 
 ---
 
