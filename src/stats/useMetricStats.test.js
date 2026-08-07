@@ -15,20 +15,23 @@ const activity = {
 describe('useMetricStats', () => {
   it('returns null stats when there is no activity yet', () => {
     const { result } = renderHook(() => useMetricStats(null, 'pace'))
-    expect(result.current).toEqual({ max: null, avg: null, median: null })
+    expect(result.current).toEqual({ max: null, min: null, avg: null, median: null })
   })
 
-  it('computes max/avg/median for the requested metric via stats/aggregate.js', () => {
+  it('computes max/min/avg/median for the requested metric via stats/aggregate.js', () => {
     const { result } = renderHook(() => useMetricStats(activity, 'pace'))
     // avg must be the weighted-pace formula (same case as aggregate.test.js): 285.71 s/km
     expect(result.current.avg).toBeCloseTo(285.714, 2)
     // max pace = fastest instantaneous moment = smallest s/km = 200
     expect(result.current.max).toBeCloseTo(200, 6)
+    // min pace = slowest instantaneous moment = largest s/km = 500 (invertAxis-aware, mirrors max)
+    expect(result.current.min).toBeCloseTo(500, 6)
   })
 
   it('computes heart rate stats independently of pace', () => {
     const { result } = renderHook(() => useMetricStats(activity, 'heartRate'))
     expect(result.current.max).toBe(160)
+    expect(result.current.min).toBe(140)
   })
 
   it('memoizes: same activity + metricId across re-renders returns the same object', () => {

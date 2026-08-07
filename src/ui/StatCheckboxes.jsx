@@ -6,7 +6,7 @@
 import { metricRegistry } from '../metrics/metricRegistry.js'
 import { useChartView } from '../state/ChartViewContext.jsx'
 
-const STAT_KINDS = ['max', 'avg', 'median']
+const STAT_KINDS = ['max', 'min', 'avg', 'median']
 
 export function StatCheckboxes({ metricId }) {
   const metric = metricRegistry[metricId]

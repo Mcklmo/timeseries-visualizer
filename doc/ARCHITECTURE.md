@@ -39,13 +39,14 @@ Kept in sync after each feature lands — see build order in §11.
 - [x] **Inferred workout name + sport chip** — added `Activity.name` (§5), computed in `normalizeActivity` by the new `domain/deriveWorkoutName.js` (TDD) from a time-of-day bucket (viewer's local browser time, i.e. `Date.prototype.getHours()`, not UTC — neither file format carries a timezone offset, and this is usually close enough since people tend to view an activity from roughly where they recorded it) plus a sport label. FIT's `sportLabel` (see §8) is used when present (e.g. "Morning Trail Run"); TCX and profile-less FIT files fall back to a generic `'running'`/`'cycling'` → `"Run"`/`"Ride"` map (e.g. "Morning Run") — so FIT and TCX exports of the *same* activity can get different names. New `ui/ActivityHeader.jsx` renders the name plus a separate, stable sport chip ("Running"/"Cycling", i.e. `activity.sport` capitalized) — deliberately **not** `sportLabel` again, which would just duplicate the name; the chip is the broad classification that also drives unit conventions elsewhere (spm vs rpm), the name is the specific, richer title.
 - [x] **Cadence Y-axis zoom** — `stats/aggregate.js` gained `computeYDomain()`, which wires up the previously-dead `domainPadding` field (§6) into a real per-metric `<YAxis domain>` in `MetricPanel.jsx`, reusing the same `movingOnly` exclusion `extreme()`/`timeWeightedMean()` already use for stat lines so paused zero-cadence samples (`sample.moving === false`) stop dragging the computed min down to 0 and Recharts' "nice tick" rounding stops inflating the max to 220. Enabled for `cadence` (`domainPadding: 0.08`, matching `pace`/`speed`); `pace` and `speed` pick up the behavior for free since they already declared the field with nothing reading it. `heartRate`/`power`/`altitude` are untouched (no `domainPadding` → `computeYDomain` returns `undefined` → Recharts' current auto-domain, unchanged). **Non-obvious Recharts wrinkle:** an explicit `domain` alone was not enough — `<YAxis>`'s default `allowDataOverflow={false}` silently re-expands any explicit domain to cover *every* plotted data point, including the excluded-from-the-domain-calc paused `cadence: 0` samples (they're still in `data`, just skipped when computing `yDomain`), which snapped the axis straight back to ~0 in testing. Fixed with `allowDataOverflow={yDomain != null}` — only clips for metrics that opted into an explicit domain, so `heartRate`/`power`/`altitude` (still `domain={undefined}`) keep their exact prior auto-domain behavior.
 - [x] **2026-08-07: stat labels moved below the chart** — `MetricPanel` reserved a fixed 200px right margin (`LineChart margin.right`) to fit avg/max/median labels as SVG `<text>` positioned at each stat's real y-value, decluttered vertically (`declutter`/`STAT_LABEL_GAP`/`MIN_STAT_LABEL_SPACING`) so close values (e.g. avg ≈ median) didn't overlap. On mobile that column ate a large share of viewport width, leaving little room for the plotted line itself. Fixed by shrinking `margin.right` to `12` and rendering the same text (`StatSummary`, a plain-HTML flex row of `.stat-chip`s) below the chart, outside the SVG — a flex row can't overlap, so the decluttering machinery (`StatLabels`/`declutter`/`STAT_LABEL_GAP`/`MIN_STAT_LABEL_SPACING`) was deleted outright rather than ported. `<ReferenceLine>`s are unchanged (still show the horizontal indicator); only the label moved. No show/hide toggle was added — chips are unconditional, same as the reference lines they annotate. The `.metric-panel` wrapper kept the old fixed pixel `height` from `ChartStack` (still driving `<ResponsiveContainer height>` for the chart itself), which left `.stat-summary` no room of its own — it overflowed the wrapper's bottom edge and painted over the next panel down. Fixed by switching the wrapper to `minHeight` instead of `height`: the chart keeps its exact prior height, but the box now grows to fit the chip row (single or wrapped) rather than clipping it.
+- [x] **2026-08-07: added a `min` stat** — mirrors `max` rather than always being the literal numeric minimum: decided with the product owner that `min` is the *opposite* extreme from `max` on each metric's own (possibly inverted) axis, not literally "smallest number." For ordinary metrics this is identical to the literal minimum (`invertAxis: false`), but for `pace` (`invertAxis: true`) it's the slowest/worst moment — numerically the *largest* s/km — the mirror image of `max`'s fastest-moment behavior. The rejected alternative (literal numeric minimum always) would have made `min`/`max` show the identical value for pace, reading as a bug. Implemented as `extreme(samples, accessor, { invert: !invertAxis })` in `aggregate.js`, the boolean-flipped counterpart of `max`'s `invert: !!invertAxis`. Wired through `computeMetricStat`, `useMetricStats`, `StatKind`, `MetricPanel`'s `STAT_ORDER`/`STAT_DASH` (new `1 2` dash pattern), and `StatCheckboxes`' `STAT_KINDS` — all four stat-kind lists updated per the existing hardcoded-per-place pattern (no shared registry).
 - [ ] `domain/downsample.js` (LTTB) — deferred until a long activity is actually sluggish
 
 ---
 
 ## 1. Purpose
 
-A web UI in the spirit of Intervals.ICU / Garmin Connect: load a single running activity and inspect several metrics as **vertically stacked, time-synced line charts** sharing one x-axis (elapsed time or distance). The user toggles which metrics are shown, and toggles **max / avg / median** horizontal reference lines per metric.
+A web UI in the spirit of Intervals.ICU / Garmin Connect: load a single running activity and inspect several metrics as **vertically stacked, time-synced line charts** sharing one x-axis (elapsed time or distance). The user toggles which metrics are shown, and toggles **max / min / avg / median** horizontal reference lines per metric.
 
 **Explicit non-goals for v1:** swimming, imperial units, multi-activity comparison, persistence, auth, tests, server-side anything.
 
@@ -69,7 +70,7 @@ A web UI in the spirit of Intervals.ICU / Garmin Connect: load a single running 
 flowchart TB
   subgraph UI["4 · UI Layer (React + Recharts)"]
     App[App]
-    Ctl[ControlPanel<br/>x-axis mode · metric toggles · max-avg-median checkboxes]
+    Ctl[ControlPanel<br/>x-axis mode · metric toggles · max-min-avg-median checkboxes]
     Stack[ChartStack<br/>shared syncId + shared x-domain]
     Panel["MetricPanel xN<br/>LineChart + ReferenceLine per active stat"]
     Brush[BrushControl<br/>bottom panel only · writes zoom domain]
@@ -83,7 +84,7 @@ flowchart TB
     AC[ActivityContext<br/>activity · status · error]
     VC[ChartViewContext<br/>xMode · zoomDomain · enabledMetrics · enabledStats]
     REG[metricRegistry<br/>id · label · unit · color · accessor · format · invert · aggStrategy]
-    STATS[useMetricStats<br/>memoized max-avg-median]
+    STATS[useMetricStats<br/>memoized max-min-avg-median]
   end
 
   subgraph DOMAIN["2 · Domain Pipeline (pure, framework-free)"]
@@ -151,7 +152,7 @@ src/
     downsample.js            # LTTB for display; domain stays full-resolution
     units.js                 # SI conversions + formatters (mm:ss, km, bpm...)
   stats/
-    aggregate.js             # max / avg / median, strategy-aware
+    aggregate.js             # max / min / avg / median, strategy-aware
     useMetricStats.js        # memoized hook over activity + registry
   metrics/
     metricRegistry.js        # THE extension point — see §6
@@ -185,7 +186,7 @@ Types are given as TypeScript for precision. If the project stays JavaScript, ex
 ```ts
 type Sport = 'running' | 'cycling';           // union grows later (swimming, ...)
 type MetricId = 'pace' | 'speed' | 'heartRate' | 'cadence' | 'power' | 'altitude';
-type StatKind = 'max' | 'avg' | 'median';
+type StatKind = 'max' | 'min' | 'avg' | 'median';
 type XAxisMode = 'time' | 'distance';
 
 /** One normalized sample. SI units, always. */
@@ -312,7 +313,7 @@ Stats are computed over the **whole activity**, not the zoom window. Keep this f
 
 **MetricPanel**
 - `<LineChart>` with `dot={false}`, `isAnimationActive={false}` (animation on 10k points is a jank generator), `connectNulls={false}` so sensor dropouts render as gaps rather than invented straight lines.
-- For each enabled `StatKind`, render a `<ReferenceLine y={value}>` (no inline label) so the horizontal indicator still shows where the stat sits relative to the line; dash patterns distinguish kinds: max `4 4`, avg solid-thin, median `2 3`. The stat's text (`` `${label} ${format(value)} ${unit}` ``) renders as a "chip" in a plain-HTML row below the chart (`StatSummary`, outside the SVG) rather than as a positioned label — always shown for every enabled stat, no show/hide toggle.
+- For each enabled `StatKind`, render a `<ReferenceLine y={value}>` (no inline label) so the horizontal indicator still shows where the stat sits relative to the line; dash patterns distinguish kinds: max `4 4`, min `1 2`, avg solid-thin, median `2 3`. The stat's text (`` `${label} ${format(value)} ${unit}` ``) renders as a "chip" in a plain-HTML row below the chart (`StatSummary`, outside the SVG) rather than as a positioned label — always shown for every enabled stat, no show/hide toggle.
 - `invertAxis: true` → `<YAxis reversed />` plus reversed domain calculation.
 
 **Tooltip**
@@ -419,7 +420,7 @@ Quality floor: visible keyboard focus rings, all toggles reachable by keyboard, 
 8. `data/tcx/parseTcx.js` + `TcxActivitySource`, then swap the provider from mock to TCX. Test with a real Garmin export containing pauses and at least one missing metric.
 9. `domain/downsample.js` once a long activity (>2 h) feels sluggish.
 
-**Definition of done for v1:** drop a TCX file, see ≥4 aligned synced panels, switch x-axis between elapsed time and distance, toggle any metric on/off, toggle max/avg/median lines per metric, brush-zoom all panels together, and have average pace match what Garmin Connect reports for the same file.
+**Definition of done for v1:** drop a TCX file, see ≥4 aligned synced panels, switch x-axis between elapsed time and distance, toggle any metric on/off, toggle max/min/avg/median lines per metric, brush-zoom all panels together, and have average pace match what Garmin Connect reports for the same file.
 
 ---
 

@@ -12,8 +12,8 @@ import { SyncedTooltip } from './SyncedTooltip.jsx'
 const SYNC_ID = 'activity'
 const Y_AXIS_WIDTH = 56 // matches --y-axis-width token; fixed so panels align
 
-const STAT_ORDER = ['max', 'avg', 'median']
-const STAT_DASH = { max: '4 4', avg: undefined, median: '2 3' }
+const STAT_ORDER = ['max', 'min', 'avg', 'median']
+const STAT_DASH = { max: '4 4', min: '1 2', avg: undefined, median: '2 3' }
 const BRUSH_HEIGHT = 24
 
 // Plain-HTML summary row below the chart — a flex row naturally avoids

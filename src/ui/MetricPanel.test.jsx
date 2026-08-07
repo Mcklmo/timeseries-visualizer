@@ -145,8 +145,8 @@ describe('MetricPanel', () => {
   })
 
   it('renders one reference line per enabled stat, and none for a disabled stat', () => {
-    const { container } = renderPanel({ enabledStats: ['avg', 'max'] })
-    expect(container.querySelectorAll('.recharts-reference-line')).toHaveLength(2)
+    const { container } = renderPanel({ enabledStats: ['avg', 'max', 'min'] })
+    expect(container.querySelectorAll('.recharts-reference-line')).toHaveLength(3)
   })
 
   it('renders no reference lines when no stat is enabled', () => {
@@ -185,20 +185,22 @@ describe('MetricPanel', () => {
     // avg and median land within a couple of bpm of each other here — a flex
     // row can't overlap the way SVG-positioned labels could, so both must
     // still render as distinct elements.
-    const { container } = renderPanel({ metricId: 'heartRate', enabledStats: ['avg', 'median'] })
+    const { container } = renderPanel({ metricId: 'heartRate', enabledStats: ['avg', 'median', 'min'] })
     const chips = [...container.querySelectorAll('.stat-chip')]
-    expect(chips).toHaveLength(2)
+    expect(chips).toHaveLength(3)
     expect(chips.map((el) => el.textContent)).toEqual([
+      expect.stringContaining('MIN'),
       expect.stringContaining('AVG'),
       expect.stringContaining('MEDIAN'),
     ])
   })
 
-  it('distinguishes stat kinds by dash pattern: max dashed, avg solid, median differently dashed', () => {
-    const { container } = renderPanel({ enabledStats: ['max', 'avg', 'median'] })
+  it('distinguishes stat kinds by dash pattern: max dashed, min tightly dotted, avg solid, median differently dashed', () => {
+    const { container } = renderPanel({ enabledStats: ['max', 'min', 'avg', 'median'] })
     const lines = [...container.querySelectorAll('.recharts-reference-line-line')]
     const dashes = lines.map((l) => l.getAttribute('stroke-dasharray'))
     expect(dashes).toContain('4 4')
+    expect(dashes).toContain('1 2')
     expect(dashes).toContain('2 3')
     expect(dashes.some((d) => d == null || d === 'none')).toBe(true)
   })

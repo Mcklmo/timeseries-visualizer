@@ -3,7 +3,7 @@
 
 /** @typedef {'running'|'cycling'} Sport */
 /** @typedef {'pace'|'speed'|'heartRate'|'cadence'|'power'|'altitude'} MetricId */
-/** @typedef {'max'|'avg'|'median'} StatKind */
+/** @typedef {'max'|'min'|'avg'|'median'} StatKind */
 /** @typedef {'time'|'distance'} XAxisMode */
 
 /**

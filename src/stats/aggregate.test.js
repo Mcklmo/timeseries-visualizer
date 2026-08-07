@@ -39,11 +39,17 @@ describe('weightedPace avg — the one that must match Garmin', () => {
     expect(result).not.toBeCloseTo(350, 2)
   })
 
-  it('max/median still read instantaneous pace per sample (fastest/typical moment, not the total)', () => {
+  it('max/min/median still read instantaneous pace per sample (fastest/slowest/typical moment, not the total)', () => {
     const max = computeMetricStat({
       samples,
       metric: paceMetric,
       statKind: 'max',
+      ...totals,
+    })
+    const min = computeMetricStat({
+      samples,
+      metric: paceMetric,
+      statKind: 'min',
       ...totals,
     })
     const median = computeMetricStat({
@@ -54,7 +60,9 @@ describe('weightedPace avg — the one that must match Garmin', () => {
     })
     // "max" pace = fastest moment = smallest s/km value = 200 (invertAxis-aware)
     expect(max).toBeCloseTo(200, 6)
-    // median is NOT direction-aware (only `max` is, per spec) — plain sorted
+    // "min" pace = slowest moment = largest s/km value = 500 (invertAxis-aware, mirrors max)
+    expect(min).toBeCloseTo(500, 6)
+    // median is NOT direction-aware (only `max`/`min` are, per spec) — plain sorted
     // middle of [200, 500, 500] is 500, even though that's the "slower" value
     expect(median).toBeCloseTo(500, 6)
   })
@@ -130,6 +138,40 @@ describe('movingOnly avg (cadence)', () => {
       totalDistance: 100,
     })
     expect(result).toBe(175)
+  })
+
+  it('excludes paused samples from min too', () => {
+    const samples = [
+      { t: 0, cadence: 170, moving: true },
+      { t: 10, cadence: 1, moving: false }, // sensor noise while stopped, would wrongly win min if not excluded
+      { t: 20, cadence: 175, moving: true },
+    ]
+    const result = computeMetricStat({
+      samples,
+      metric: { accessor: (s) => s.cadence, aggStrategy: 'movingOnly' },
+      statKind: 'min',
+      totalMovingTime: 20,
+      totalDistance: 100,
+    })
+    expect(result).toBe(170)
+  })
+})
+
+describe('min — literal minimum for non-inverted metrics, mirrored max for pace', () => {
+  it('is the literal smallest value when the metric has no invertAxis', () => {
+    const samples = [
+      { t: 0, hr: 140, moving: true },
+      { t: 10, hr: 90, moving: true },
+      { t: 20, hr: 160, moving: true },
+    ]
+    const result = computeMetricStat({
+      samples,
+      metric: { accessor: (s) => s.hr, aggStrategy: 'timeWeighted' },
+      statKind: 'min',
+      totalMovingTime: 20,
+      totalDistance: 100,
+    })
+    expect(result).toBe(90)
   })
 })
 
@@ -235,6 +277,17 @@ describe('null handling', () => {
       samples: [{ t: 0, power: null, moving: true }],
       metric: { accessor: (s) => s.power, aggStrategy: 'timeWeighted' },
       statKind: 'avg',
+      totalMovingTime: 0,
+      totalDistance: 0,
+    })
+    expect(result).toBeNull()
+  })
+
+  it('min returns null when there is nothing to aggregate', () => {
+    const result = computeMetricStat({
+      samples: [{ t: 0, power: null, moving: true }],
+      metric: { accessor: (s) => s.power, aggStrategy: 'timeWeighted' },
+      statKind: 'min',
       totalMovingTime: 0,
       totalDistance: 0,
     })

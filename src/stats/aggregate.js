@@ -41,7 +41,9 @@ function median(samples, accessor) {
 // "Max" is the extreme value in the direction that reads as the peak on the
 // metric's own (possibly reversed) axis — for invertAxis metrics like pace,
 // where faster reads higher, that is the numeric MINIMUM (fastest moment),
-// not the largest s/km. Only `max` is directional; avg and median are not.
+// not the largest s/km. "Min" is max's mirror image: the extreme that reads
+// as the trough (worst moment) — numeric MAXIMUM for invertAxis metrics.
+// avg and median are not direction-aware.
 function extreme(samples, accessor, { movingOnly = false, invert = false } = {}) {
   let best = null
   for (const s of samples) {
@@ -87,7 +89,7 @@ export function computeYDomain({ samples, metric }) {
  * @param {object} args
  * @param {import('../domain/types.js').Sample[]} args.samples
  * @param {{accessor: (s: import('../domain/types.js').Sample) => number|null, aggStrategy: 'timeWeighted'|'movingOnly'|'weightedPace', invertAxis?: boolean}} args.metric
- * @param {'max'|'avg'|'median'} args.statKind
+ * @param {'max'|'min'|'avg'|'median'} args.statKind
  * @param {number} args.totalMovingTime - s, whole-activity total (weightedPace avg only)
  * @param {number} args.totalDistance - m, whole-activity total (weightedPace avg only)
  * @returns {number|null}
@@ -98,6 +100,8 @@ export function computeMetricStat({ samples, metric, statKind, totalMovingTime, 
   if (statKind === 'median') return median(samples, accessor)
   if (statKind === 'max')
     return extreme(samples, accessor, { movingOnly: aggStrategy === 'movingOnly', invert: !!invertAxis })
+  if (statKind === 'min')
+    return extreme(samples, accessor, { movingOnly: aggStrategy === 'movingOnly', invert: !invertAxis })
 
   // avg
   if (aggStrategy === 'weightedPace') {

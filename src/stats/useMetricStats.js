@@ -2,10 +2,10 @@ import { useMemo } from 'react'
 import { metricRegistry } from '../metrics/metricRegistry.js'
 import { computeMetricStat } from './aggregate.js'
 
-const EMPTY = { max: null, avg: null, median: null }
+const EMPTY = { max: null, min: null, avg: null, median: null }
 
 /**
- * Memoized max/avg/median for one metric, over the WHOLE activity — never
+ * Memoized max/min/avg/median for one metric, over the WHOLE activity — never
  * the zoom window (ARCHITECTURE.md §6: drifting reference lines are
  * disorienting). Recomputes only when the activity or metricId changes, so
  * hover/zoom interactions never retrigger aggregation.
@@ -24,6 +24,7 @@ export function useMetricStats(activity, metricId) {
     }
     return {
       max: computeMetricStat({ ...base, statKind: 'max' }),
+      min: computeMetricStat({ ...base, statKind: 'min' }),
       avg: computeMetricStat({ ...base, statKind: 'avg' }),
       median: computeMetricStat({ ...base, statKind: 'median' }),
     }
