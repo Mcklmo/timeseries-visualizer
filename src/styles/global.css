@@ -266,6 +266,23 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+.stat-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 4px 0;
+}
+
+.stat-chip {
+  color: var(--text);
+  background: var(--grid);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  font-family: var(--font-data);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Synced tooltip */
 .synced-tooltip {
   background: var(--panel);

@@ -181,13 +181,17 @@ describe('MetricPanel', () => {
     expect(cyclingContainer.textContent).not.toContain('spm')
   })
 
-  it('keeps stat labels a minimum distance apart even when their values are pixels apart', () => {
-    // avg and median land within a couple of bpm of each other here, which
-    // would put their labels almost on top of one another without decluttering.
+  it('renders every enabled stat as its own chip below the chart, even when values are pixels apart', () => {
+    // avg and median land within a couple of bpm of each other here — a flex
+    // row can't overlap the way SVG-positioned labels could, so both must
+    // still render as distinct elements.
     const { container } = renderPanel({ metricId: 'heartRate', enabledStats: ['avg', 'median'] })
-    const ys = [...container.querySelectorAll('.stat-labels text')].map((el) => Number(el.getAttribute('y')))
-    expect(ys).toHaveLength(2)
-    expect(Math.abs(ys[0] - ys[1])).toBeGreaterThanOrEqual(16)
+    const chips = [...container.querySelectorAll('.stat-chip')]
+    expect(chips).toHaveLength(2)
+    expect(chips.map((el) => el.textContent)).toEqual([
+      expect.stringContaining('AVG'),
+      expect.stringContaining('MEDIAN'),
+    ])
   })
 
   it('distinguishes stat kinds by dash pattern: max dashed, avg solid, median differently dashed', () => {

@@ -3,19 +3,7 @@
 // siblings in ChartStack so plot areas align pixel-for-pixel and the
 // tooltip/crosshair stays in sync across the whole stack.
 import { useMemo } from 'react'
-import {
-  Brush,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  usePlotArea,
-  useYAxisScale,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { Brush, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { metricRegistry, metricUnit } from '../metrics/metricRegistry.js'
 import { computeYDomain } from '../stats/aggregate.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
@@ -27,43 +15,21 @@ const Y_AXIS_WIDTH = 56 // matches --y-axis-width token; fixed so panels align
 const STAT_ORDER = ['max', 'avg', 'median']
 const STAT_DASH = { max: '4 4', avg: undefined, median: '2 3' }
 const BRUSH_HEIGHT = 24
-const STAT_LABEL_GAP = 8 // px between the plot area and the label text
-const MIN_STAT_LABEL_SPACING = 16 // px, so nearby stat values don't overlap
 
-// Reference lines can land pixels apart (e.g. avg ~= median), which crowds
-// their labels together. Nudge each label's y away from its neighbors,
-// keeping the sorted order, so every stat stays legible.
-function declutter(positions) {
-  const sorted = [...positions].sort((a, b) => a.y - b.y)
-  for (let i = 1; i < sorted.length; i++) {
-    sorted[i] = { ...sorted[i], y: Math.max(sorted[i].y, sorted[i - 1].y + MIN_STAT_LABEL_SPACING) }
-  }
-  for (let i = sorted.length - 2; i >= 0; i--) {
-    sorted[i] = { ...sorted[i], y: Math.min(sorted[i].y, sorted[i + 1].y - MIN_STAT_LABEL_SPACING) }
-  }
-  return sorted
-}
-
-// Labels for all enabled stats of one metric, positioned from the real
-// y-scale and decluttered together — a per-ReferenceLine `label` prop can't
-// coordinate with its siblings, so this renders them as one overlay instead.
-function StatLabels({ metric, entries, sport }) {
-  const yScale = useYAxisScale()
-  const plotArea = usePlotArea()
-  if (!yScale || !plotArea || entries.length === 0) return null
-
-  const x = plotArea.x + plotArea.width + STAT_LABEL_GAP
-  const positioned = declutter(entries.map(({ kind, value }) => ({ kind, value, y: yScale(value) })))
+// Plain-HTML summary row below the chart — a flex row naturally avoids
+// overlap between stat values, unlike the old SVG-positioned labels.
+function StatSummary({ metric, entries, sport }) {
+  if (entries.length === 0) return null
   const unit = metricUnit(metric, sport)
 
   return (
-    <g className="stat-labels">
-      {positioned.map(({ kind, value, y }) => (
-        <text key={kind} x={x} y={y} dominantBaseline="central" fill="var(--stat-line)" fontFamily="var(--font-data)">
+    <div className="stat-summary">
+      {entries.map(({ kind, value }) => (
+        <span key={kind} className="stat-chip">
           {kind.toUpperCase()} {metric.format(value)} {unit}
-        </text>
+        </span>
       ))}
-    </g>
+    </div>
   )
 }
 
@@ -107,9 +73,9 @@ export function MetricPanel({
   )
 
   return (
-    <div className="metric-panel" style={{ height }}>
+    <div className="metric-panel" style={{ minHeight: height }}>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} syncId={SYNC_ID} margin={{ top: 8, right: 200, bottom: 16, left: 4 }}>
+        <LineChart data={data} syncId={SYNC_ID} margin={{ top: 8, right: 12, bottom: 16, left: 4 }}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />
           <XAxis type="number" dataKey={xKey} domain={zoomDomain} hide={!showXAxis} interval={0} />
           <YAxis
@@ -131,7 +97,6 @@ export function MetricPanel({
           {statEntries.map(({ kind, value }) => (
             <ReferenceLine key={kind} y={value} stroke="var(--stat-line)" strokeDasharray={STAT_DASH[kind]} />
           ))}
-          <StatLabels metric={metric} entries={statEntries} sport={activity.sport} />
           <Line
             dataKey={metricId}
             stroke={metric.color}
@@ -154,6 +119,7 @@ export function MetricPanel({
           )}
         </LineChart>
       </ResponsiveContainer>
+      <StatSummary metric={metric} entries={statEntries} sport={activity.sport} />
     </div>
   )
 }

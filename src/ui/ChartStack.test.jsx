@@ -136,7 +136,9 @@ describe('ChartStack', () => {
   it('gives the first panel more height than the rest, and the bottom panel extra room for the brush', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
-    const heights = panels.map((p) => p.style.height)
+    // minHeight (not height) so the panel can grow past the chart's own
+    // height to fit the stat-chip row below it, instead of clipping it.
+    const heights = panels.map((p) => p.style.minHeight)
     expect(heights[0]).toBe('200px')
     expect(heights.slice(1, -1)).toEqual(['140px', '140px'])
     // Bottom panel (altitude) hosts the Brush, which needs its own space so
