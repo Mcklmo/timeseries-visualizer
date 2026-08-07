@@ -6,7 +6,8 @@ import { buildDistanceAxis } from './buildDistanceAxis.js'
 import { deriveSpeed } from './deriveSpeed.js'
 import { deriveWorkoutName } from './deriveWorkoutName.js'
 import { detectPauses } from './detectPauses.js'
-import { medianIntervalOf } from './samplingInterval.js'
+import { totalMovingTimeOf } from './sampleDurations.js'
+import { gapThresholdFor, medianIntervalOf } from './samplingInterval.js'
 
 // A trackpoint with only a timestamp and nothing else carries no signal —
 // drop it here rather than let it become a sample full of nulls. "Nothing
@@ -21,15 +22,6 @@ function hasAnyData(tp) {
     tp.speedMps != null ||
     (tp.lat != null && tp.lon != null)
   )
-}
-
-/** Duration (s) each sample represents: the gap to the next sample, 0 for the last. */
-function movingTimeOf(samples) {
-  let sum = 0
-  for (let i = 0; i < samples.length - 1; i++) {
-    if (samples[i].moving) sum += samples[i + 1].t - samples[i].t
-  }
-  return sum
 }
 
 /** @param {import('./types.js').Sample[]} samples @returns {import('./types.js').MetricId[]} */
@@ -88,7 +80,7 @@ export function normalizeActivity({ id, sport, sportLabel, trackpoints }) {
     name: deriveWorkoutName({ sport, sportLabel, startTime, totalTime }),
     startTime,
     totalTime,
-    totalMovingTime: movingTimeOf(samples),
+    totalMovingTime: totalMovingTimeOf(samples, gapThresholdFor(intervalS)),
     totalDistance: samples.length > 0 ? samples[samples.length - 1].d : 0,
     samples,
     samplingIntervalS: intervalS,

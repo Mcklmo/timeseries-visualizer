@@ -104,6 +104,43 @@ describe('timeWeighted avg (heart rate, power, altitude)', () => {
     })
     expect(result).toBeCloseTo(100, 6)
   })
+
+  it('gives a recording gap no weight once gapThresholdS is passed', () => {
+    // Without the threshold the hr=100 sample holds across the whole hour-long
+    // dropout and drags the mean to ~100.3. The gap is not data.
+    const samples = [
+      { t: 0, hr: 100, moving: true },
+      { t: 10, hr: 100, moving: true },
+      { t: 3610, hr: 200, moving: true }, // resumes an hour later
+      { t: 3620, hr: 200, moving: true },
+    ]
+    const metric = { accessor: (s) => s.hr, aggStrategy: 'timeWeighted' }
+    const base = { samples, metric, statKind: 'avg', totalMovingTime: 20, totalDistance: 100 }
+
+    expect(computeMetricStat({ ...base, gapThresholdS: 10 })).toBeCloseTo(150, 6)
+    // The unthresholded call is what the defect looked like, pinned for contrast.
+    expect(computeMetricStat(base)).toBeCloseTo(100.276, 2)
+  })
+
+  it('still weighs a paused stretch the device DID record (paused heart rate is real data)', () => {
+    // The gap rule drops unrecorded time; it must not drop recorded time that
+    // merely happens to be stopped. That distinction is the whole point.
+    const samples = [
+      { t: 0, hr: 100, moving: true },
+      { t: 10, hr: 160, moving: false },
+      { t: 20, hr: 160, moving: false },
+      { t: 30, hr: 100, moving: true },
+    ]
+    const result = computeMetricStat({
+      samples,
+      metric: { accessor: (s) => s.hr, aggStrategy: 'timeWeighted' },
+      statKind: 'avg',
+      totalMovingTime: 10,
+      totalDistance: 100,
+      gapThresholdS: 10,
+    })
+    expect(result).toBeCloseTo(140, 6)
+  })
 })
 
 describe('movingOnly avg (cadence)', () => {

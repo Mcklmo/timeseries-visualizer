@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { gapThresholdFor } from '../domain/samplingInterval.js'
 import { metricRegistry } from '../metrics/metricRegistry.js'
 import { computeMetricStat } from './aggregate.js'
 
@@ -21,6 +22,11 @@ export function useMetricStats(activity, metricId) {
       metric,
       totalMovingTime: activity.totalMovingTime,
       totalDistance: activity.totalDistance,
+      // Guarded, not defensive styling: gapThresholdFor(undefined) is 10, not
+      // Infinity, so an activity with no measured cadence would have every
+      // interval read as a gap and every weight zeroed.
+      gapThresholdS:
+        activity.samplingIntervalS != null ? gapThresholdFor(activity.samplingIntervalS) : undefined,
     }
     return {
       max: computeMetricStat({ ...base, statKind: 'max' }),

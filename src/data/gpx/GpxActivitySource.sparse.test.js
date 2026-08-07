@@ -51,7 +51,12 @@ describe('sparse multi-day GPX (fixtures/sparse-multiday.gpx)', () => {
     const paused = activity.samples.filter((s) => !s.moving)
 
     expect(paused.length).toBe(4) // the sample resuming after each night/dropout
-    expect(activity.totalMovingTime).toBeGreaterThan(0)
+
+    // 44 intervals, less the 4 that span a night or the dropout: 40 x 600s.
+    // `> 0` passed on the old answer of 71.33h, which was 12x wrong — the
+    // three nights and the outage were all being counted as moving time.
+    expect(activity.totalMovingTime).toBe(24000)
+    expect(activity.totalTime).toBe(259200) // 72h elapsed, for contrast
   })
 
   it('reports a plausible average speed — the number that used to read 0:02 min/km as pace', async () => {
@@ -67,6 +72,22 @@ describe('sparse multi-day GPX (fixtures/sparse-multiday.gpx)', () => {
     // Walking pace over a 3-day, ~49 km trek.
     expect(avgKmh).toBeGreaterThan(2)
     expect(avgKmh).toBeLessThan(8)
+  })
+
+  it('reports a walkable average pace — the stat that read 90:04 min/km while nights counted as moving', async () => {
+    const activity = await loadFixtureActivity()
+    const avgPaceSPerKm = computeMetricStat({
+      samples: activity.samples,
+      metric: metricRegistry.pace,
+      statKind: 'avg',
+      totalMovingTime: activity.totalMovingTime,
+      totalDistance: activity.totalDistance,
+      gapThresholdS: gapThresholdFor(activity.samplingIntervalS),
+    })
+
+    // 24000s over 47.52 km (haversine) = 505.01 s/km, i.e. 8:25 min/km.
+    expect(avgPaceSPerKm).toBeCloseTo(505.01, 1)
+    expect(formatDuration(Math.round(avgPaceSPerKm))).toBe('8:25')
   })
 
   it('gives the speed panel a real y-domain instead of collapsing to a single sample', async () => {

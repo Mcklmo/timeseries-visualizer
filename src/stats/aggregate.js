@@ -5,14 +5,10 @@
 // slower than reality whenever speed varies, and it will visibly disagree
 // with Garmin/Strava/every other app for the same file. Average pace is
 // always totalMovingTime / totalDistance.
+import { sampleDurations } from '../domain/sampleDurations.js'
 
-/** Duration (s) each sample represents: the gap to the next sample, 0 for the last. */
-function sampleDurations(samples) {
-  return samples.map((s, i) => (i === samples.length - 1 ? 0 : Math.max(0, samples[i + 1].t - s.t)))
-}
-
-function timeWeightedMean(samples, accessor, { movingOnly = false } = {}) {
-  const durations = sampleDurations(samples)
+function timeWeightedMean(samples, accessor, { movingOnly = false, gapThresholdS } = {}) {
+  const durations = sampleDurations(samples, { gapThresholdS, movingOnly })
   let weightedSum = 0
   let totalWeight = 0
   samples.forEach((s, i) => {
@@ -92,9 +88,18 @@ export function computeYDomain({ samples, metric }) {
  * @param {'max'|'min'|'avg'|'median'} args.statKind
  * @param {number} args.totalMovingTime - s, whole-activity total (weightedPace avg only)
  * @param {number} args.totalDistance - m, whole-activity total (weightedPace avg only)
+ * @param {number} [args.gapThresholdS] - a t delta above this is a recording gap and carries no
+ *   weight (avg only); omitted means count every interval, see domain/sampleDurations.js
  * @returns {number|null}
  */
-export function computeMetricStat({ samples, metric, statKind, totalMovingTime, totalDistance }) {
+export function computeMetricStat({
+  samples,
+  metric,
+  statKind,
+  totalMovingTime,
+  totalDistance,
+  gapThresholdS,
+}) {
   const { accessor, aggStrategy, invertAxis } = metric
 
   if (statKind === 'median') return median(samples, accessor)
@@ -108,6 +113,7 @@ export function computeMetricStat({ samples, metric, statKind, totalMovingTime, 
     if (!(totalDistance > 0)) return null
     return (totalMovingTime / totalDistance) * 1000 // s per km, matching the pace accessor's units
   }
-  if (aggStrategy === 'movingOnly') return timeWeightedMean(samples, accessor, { movingOnly: true })
-  return timeWeightedMean(samples, accessor)
+  if (aggStrategy === 'movingOnly')
+    return timeWeightedMean(samples, accessor, { movingOnly: true, gapThresholdS })
+  return timeWeightedMean(samples, accessor, { gapThresholdS })
 }
