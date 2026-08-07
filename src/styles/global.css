@@ -84,6 +84,29 @@ input {
   letter-spacing: -0.2px;
 }
 
+/* Keeps the h1 and the About link together on the left, so space-between
+   only pushes against the load-activity bar. */
+.app-header__title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* Quiet text-style link — must not compete with the load-activity CTA. */
+.about-link {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.about-link:hover {
+  color: var(--text);
+}
+
 main {
   flex: 1;
   padding: 24px;
@@ -367,6 +390,42 @@ main {
 
 .synced-tooltip-value {
   color: var(--text);
+}
+
+/* About page — prose column, so left-aligned with a roomier line-height,
+   unlike .error-state's short centered card. */
+.about-page {
+  max-width: 640px;
+  margin: 48px auto;
+  width: 100%;
+}
+
+.about-page h2 {
+  margin: 24px 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.about-page p {
+  margin: 0 0 16px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.about-page__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.about-page__back {
+  font: inherit;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  cursor: pointer;
 }
 
 @media (max-width: 720px) {

@@ -7,6 +7,7 @@ import { FitActivitySource } from './data/fit/FitActivitySource.js'
 import { MockActivitySource } from './data/mock/MockActivitySource.js'
 import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
+import { AboutPage } from './ui/AboutPage.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
 import { ControlPanel } from './ui/ControlPanel.jsx'
@@ -44,6 +45,9 @@ export function AppShell() {
   const { activity, status, error, load } = useActivity()
   const lastRef = useRef(SAMPLE_REF)
   const isScrolled = useIsScrolled()
+  // No router here (see AboutPage.jsx) — About overlays <main> via state,
+  // leaving the status-driven branches untouched underneath.
+  const [showAbout, setShowAbout] = useState(false)
 
   const loadRef = useCallback(
     (ref) => {
@@ -59,21 +63,32 @@ export function AppShell() {
   return (
     <div className="app">
       <header className={`app-header${isScrolled ? ' app-header--faded' : ''}`}>
-        <h1>Activity Visualiser</h1>
+        <div className="app-header__title">
+          <h1>Activity Visualiser</h1>
+          <button type="button" className="about-link" onClick={() => setShowAbout(true)}>
+            About
+          </button>
+        </div>
         <LoadActivityBar onFileSelected={handleFileSelected} onLoadSample={handleLoadSample} />
       </header>
       <main>
-        {status === 'loading' && (
-          <p className="loading-indicator" role="status">
-            Loading activity…
-          </p>
-        )}
-        {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
-        {status === 'ready' && activity && (
+        {showAbout ? (
+          <AboutPage onBack={() => setShowAbout(false)} />
+        ) : (
           <>
-            <ActivityHeader />
-            <ControlPanel />
-            <ChartStack />
+            {status === 'loading' && (
+              <p className="loading-indicator" role="status">
+                Loading activity…
+              </p>
+            )}
+            {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
+            {status === 'ready' && activity && (
+              <>
+                <ActivityHeader />
+                <ControlPanel />
+                <ChartStack />
+              </>
+            )}
           </>
         )}
       </main>

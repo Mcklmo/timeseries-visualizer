@@ -88,6 +88,20 @@ describe('App (wired against the real MockActivitySource)', () => {
     expect(header).not.toHaveClass('app-header--faded')
   })
 
+  it('shows the About page from the header link and returns via Back', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /^about$/i }))
+    expect(screen.getByText(/runs entirely in your browser/i)).toBeInTheDocument()
+    // only <main> swaps — the header and its load-activity controls stay put
+    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /back/i }))
+    expect(screen.queryByText(/runs entirely in your browser/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
+  })
+
   it('loads the sample activity end-to-end into synced, controllable chart panels', async () => {
     const user = userEvent.setup()
     const { container } = render(<App />)
