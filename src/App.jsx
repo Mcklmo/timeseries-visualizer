@@ -1,7 +1,7 @@
 // Composition root. See ARCHITECTURE.md §5: swapping the ActivitySource is
 // exactly changing the `source` instance passed to AppProviders below —
 // nothing else in the tree touches a concrete adapter.
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
 import { FitActivitySource } from './data/fit/FitActivitySource.js'
 import { MockActivitySource } from './data/mock/MockActivitySource.js'
@@ -15,12 +15,35 @@ import { LoadActivityBar } from './ui/LoadActivityBar.jsx'
 
 const SAMPLE_REF = { type: 'id', id: 'sample' }
 
+// Below this, the header stays fully opaque — only fades once the user has
+// actually scrolled away from the top, not on a stray 1px wheel tick.
+const HEADER_FADE_SCROLL_THRESHOLD = 8
+
+// Drives .app-header--faded (see global.css): once scrolled, the header's
+// background/border and the load-activity-bar collapse away entirely,
+// giving that space back to the charts — only the h1 stays put, as a
+// persistent watermark/logo. Hovering or focusing the header brings
+// everything back without needing to scroll to the top first.
+function useIsScrolled(threshold = HEADER_FADE_SCROLL_THRESHOLD) {
+  const [isScrolled, setIsScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > threshold)
+    handleScroll()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [threshold])
+
+  return isScrolled
+}
+
 // Exported (not just default-exported App) so tests can drive states the
 // real MockActivitySource never produces — e.g. a rejected load — by
 // wrapping it in AppProviders with a source double instead. See App.test.jsx.
 export function AppShell() {
   const { activity, status, error, load } = useActivity()
   const lastRef = useRef(SAMPLE_REF)
+  const isScrolled = useIsScrolled()
 
   const loadRef = useCallback(
     (ref) => {
@@ -35,7 +58,7 @@ export function AppShell() {
 
   return (
     <div className="app">
-      <header className="app-header">
+      <header className={`app-header${isScrolled ? ' app-header--faded' : ''}`}>
         <h1>Activity Visualiser</h1>
         <LoadActivityBar onFileSelected={handleFileSelected} onLoadSample={handleLoadSample} />
       </header>

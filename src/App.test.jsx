@@ -35,6 +35,12 @@ function makeFile(name = 'run.tcx') {
   return new File([validTcxXml], name, { type: 'application/vnd.garmin.tcx+xml' })
 }
 
+// jsdom doesn't implement window.scrollTo, and window.scrollY has no setter —
+// redefine it directly so tests can simulate a scroll position.
+function setScrollY(value) {
+  Object.defineProperty(window, 'scrollY', { value, writable: true, configurable: true })
+}
+
 // Small hand-built fixture (same shape as ControlPanel.test.jsx's) for the
 // tests below that need control over the ActivitySource itself (loading /
 // error timing) — the real App wiring is exercised separately against the
@@ -59,6 +65,27 @@ describe('App (wired against the real MockActivitySource)', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: /activity visualiser/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sample activity/i })).toBeInTheDocument()
+  })
+
+  it('marks the header faded once the page scrolls (collapsing the load-activity bar, per global.css), and un-fades back at the top', () => {
+    render(<App />)
+    const heading = screen.getByRole('heading', { name: /activity visualiser/i })
+    const header = heading.closest('header')
+    expect(header).not.toHaveClass('app-header--faded')
+
+    // jsdom doesn't implement window.scrollTo/layout, so drive the scroll
+    // position `useIsScrolled` reads directly, same as a real scroll would.
+    setScrollY(200)
+    fireEvent.scroll(window)
+    expect(header).toHaveClass('app-header--faded')
+    // The h1 itself is exempt from the fade — it stays put as a watermark —
+    // only the load-activity-bar collapses away (via the CSS descendant
+    // selector `.app-header--faded .load-activity-bar`, not React state).
+    expect(heading).toBeVisible()
+
+    setScrollY(0)
+    fireEvent.scroll(window)
+    expect(header).not.toHaveClass('app-header--faded')
   })
 
   it('loads the sample activity end-to-end into synced, controllable chart panels', async () => {
