@@ -17,6 +17,7 @@ import {
   YAxis,
 } from 'recharts'
 import { metricRegistry, metricUnit } from '../metrics/metricRegistry.js'
+import { computeYDomain } from '../stats/aggregate.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
 import { SyncedTooltip } from './SyncedTooltip.jsx'
 
@@ -86,6 +87,8 @@ export function MetricPanel({
     [activity.samples, metricId, metric],
   )
 
+  const yDomain = useMemo(() => computeYDomain({ samples: activity.samples, metric }), [activity.samples, metric])
+
   // Recharts' <Brush> tracks its own selected index range independently of
   // our zoomDomain (it drives what 'dataMin'/'dataMax' resolve to for every
   // synced panel). Left uncontrolled, that index range survives an xMode
@@ -109,7 +112,17 @@ export function MetricPanel({
         <LineChart data={data} syncId={SYNC_ID} margin={{ top: 8, right: 200, bottom: 16, left: 4 }}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />
           <XAxis type="number" dataKey={xKey} domain={zoomDomain} hide={!showXAxis} interval={0} />
-          <YAxis width={Y_AXIS_WIDTH} reversed={!!metric.invertAxis} tickFormatter={metric.format} interval={0} />
+          <YAxis
+            width={Y_AXIS_WIDTH}
+            reversed={!!metric.invertAxis}
+            tickFormatter={metric.format}
+            interval={0}
+            domain={yDomain}
+            // Without this, Recharts silently re-expands an explicit domain to cover
+            // any out-of-range plotted point (e.g. a paused cadence=0 sample, excluded
+            // from yDomain's calc but still present in `data`), which would undo the zoom.
+            allowDataOverflow={yDomain != null}
+          />
           <Tooltip
             content={<SyncedTooltip metric={metric} sport={activity.sport} />}
             cursor={{ stroke: 'var(--stat-line)' }}

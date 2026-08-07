@@ -54,6 +54,36 @@ function extreme(samples, accessor, { movingOnly = false, invert = false } = {})
 }
 
 /**
+ * Y-axis domain for a metric's chart panel, computed from the real data
+ * range rather than left to Recharts' auto-domain — opt-in per metric via
+ * `metric.domainPadding` (see metricRegistry.js). Applies the same
+ * `movingOnly` exclusion as `extreme()`/`timeWeightedMean()` above, so
+ * paused samples (e.g. cadence reading 0 while stopped) don't drag the
+ * range down to 0. Returns undefined for metrics that don't opt in, so
+ * `<YAxis domain={...}>` falls through to Recharts' current behavior.
+ * @param {object} args
+ * @param {import('../domain/types.js').Sample[]} args.samples
+ * @param {{accessor: (s: import('../domain/types.js').Sample) => number|null, aggStrategy?: string, domainPadding?: number}} args.metric
+ * @returns {[number, number]|undefined}
+ */
+export function computeYDomain({ samples, metric }) {
+  if (metric.domainPadding == null) return undefined
+  const { accessor, aggStrategy, domainPadding } = metric
+  let min = null
+  let max = null
+  for (const s of samples) {
+    if (aggStrategy === 'movingOnly' && s.moving === false) continue
+    const v = accessor(s)
+    if (v == null || !Number.isFinite(v)) continue
+    if (min === null || v < min) min = v
+    if (max === null || v > max) max = v
+  }
+  if (min === null) return undefined
+  const pad = (max - min) * domainPadding || 1
+  return [Math.max(0, min - pad), max + pad]
+}
+
+/**
  * @param {object} args
  * @param {import('../domain/types.js').Sample[]} args.samples
  * @param {{accessor: (s: import('../domain/types.js').Sample) => number|null, aggStrategy: 'timeWeighted'|'movingOnly'|'weightedPace', invertAxis?: boolean}} args.metric

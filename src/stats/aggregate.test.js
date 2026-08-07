@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMetricStat } from './aggregate.js'
+import { computeMetricStat, computeYDomain } from './aggregate.js'
 
 const paceAccessor = (s) => (s.speed && s.speed > 0.3 ? 1000 / s.speed : null)
 const paceMetric = { accessor: paceAccessor, aggStrategy: 'weightedPace', invertAxis: true }
@@ -149,6 +149,83 @@ describe('median — always moving-only, unweighted, raw', () => {
       totalDistance: 100,
     })
     expect(result).toBe(150)
+  })
+})
+
+describe('computeYDomain', () => {
+  it('returns undefined when the metric does not opt in via domainPadding', () => {
+    const samples = [
+      { t: 0, cadence: 170, moving: true },
+      { t: 10, cadence: 180, moving: true },
+    ]
+    const result = computeYDomain({
+      samples,
+      metric: { accessor: (s) => s.cadence, aggStrategy: 'movingOnly' },
+    })
+    expect(result).toBeUndefined()
+  })
+
+  it('excludes moving:false samples for a movingOnly metric, so a paused 0 does not lower the min', () => {
+    const samples = [
+      { t: 0, cadence: 165, moving: true },
+      { t: 10, cadence: 0, moving: false }, // standing at a light
+      { t: 20, cadence: 190, moving: true },
+    ]
+    const result = computeYDomain({
+      samples,
+      metric: { accessor: (s) => s.cadence, aggStrategy: 'movingOnly', domainPadding: 0.08 },
+    })
+    // range = 190 - 165 = 25, pad = 25 * 0.08 = 2
+    expect(result).toEqual([163, 192])
+  })
+
+  it('pads [min, max] by the given fraction of the range', () => {
+    const samples = [
+      { t: 0, v: 100, moving: true },
+      { t: 10, v: 200, moving: true },
+    ]
+    const result = computeYDomain({
+      samples,
+      metric: { accessor: (s) => s.v, domainPadding: 0.1 },
+    })
+    // range = 100, pad = 10
+    expect(result).toEqual([90, 210])
+  })
+
+  it('clamps the lower bound at 0', () => {
+    const samples = [
+      { t: 0, v: 5, moving: true },
+      { t: 10, v: 10, moving: true },
+    ]
+    const result = computeYDomain({
+      samples,
+      metric: { accessor: (s) => s.v, domainPadding: 1 }, // pad = (10-5)*1 = 5 -> min - pad = 0, still clamp path
+    })
+    expect(result[0]).toBe(0)
+  })
+
+  it('falls back to a fixed pad of 1 when min equals max (constant value)', () => {
+    const samples = [
+      { t: 0, v: 150, moving: true },
+      { t: 10, v: 150, moving: true },
+    ]
+    const result = computeYDomain({
+      samples,
+      metric: { accessor: (s) => s.v, domainPadding: 0.08 },
+    })
+    expect(result).toEqual([149, 151])
+  })
+
+  it('returns undefined when there are no valid (non-null, finite) values', () => {
+    const samples = [
+      { t: 0, v: null, moving: true },
+      { t: 10, v: undefined, moving: true },
+    ]
+    const result = computeYDomain({
+      samples,
+      metric: { accessor: (s) => s.v, domainPadding: 0.08 },
+    })
+    expect(result).toBeUndefined()
   })
 })
 

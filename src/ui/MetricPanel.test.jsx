@@ -199,6 +199,33 @@ describe('MetricPanel', () => {
     expect(dashes.some((d) => d == null || d === 'none')).toBe(true)
   })
 
+  it('zooms the cadence y-axis to the real moving band, excluding paused zero samples from the domain', () => {
+    const withPause = {
+      ...activity,
+      samples: [
+        { t: 0, d: 0, cadence: 165, moving: true },
+        { t: 10, d: 50, cadence: 190, moving: true },
+        { t: 20, d: 60, cadence: 0, moving: false }, // stopped at a light
+        { t: 30, d: 110, cadence: 178, moving: true },
+      ],
+    }
+    const { container } = render(
+      <MetricPanel
+        activity={withPause}
+        metricId="cadence"
+        xMode="time"
+        zoomDomain={['dataMin', 'dataMax']}
+        enabledStats={[]}
+        showXAxis={false}
+        height={200}
+      />,
+    )
+    const labels = [
+      ...container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value tspan'),
+    ].map((el) => Number(el.textContent))
+    expect(labels.every((v) => v >= 100)).toBe(true)
+  })
+
   it('gives every panel the same syncId so crosshairs sync across panels', () => {
     // syncId is not a rendered DOM attribute; cross-panel sync itself is
     // verified at the ChartStack level. Here we just confirm hovering

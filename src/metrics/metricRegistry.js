@@ -53,6 +53,7 @@ export const metricRegistry = {
     format: round,
     invertAxis: false,
     aggStrategy: 'movingOnly',
+    domainPadding: 0.08,
     sports: ['running', 'cycling'],
   },
   power: {
