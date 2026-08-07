@@ -93,6 +93,22 @@ shipping, since `dev` mode hides bugs that only show up once the code is minifie
   would the deployed site — file upload/parsing in particular is worth re-checking here,
   since minification/tree-shaking can occasionally break something `dev` mode wouldn't catch.
 
+### Testing the Cloudflare deploy locally (`wrangler dev`)
+
+Deployment runs through Wrangler (see `wrangler.jsonc` and the Deploying section below), not
+plain static hosting, so it's worth a local pass through Wrangler's own runtime before
+pushing — it's the closest local simulation of the actual Cloudflare environment, closer than
+`vite preview`:
+
+```bash
+npm run build
+npx wrangler dev
+```
+
+Open the printed URL (defaults to `http://localhost:8788`). This serves `dist/` through the
+same Workers runtime Cloudflare runs in production, so it also catches any `wrangler.jsonc`
+misconfiguration (e.g. a wrong `assets.directory`) before it reaches a real deploy.
+
 ## Project structure
 
 ```
