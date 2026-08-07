@@ -3,6 +3,7 @@
 // §10. Stats themselves (§6) are computed over the whole activity regardless
 // of zoomDomain — this context only tracks which lines are *visible*.
 import { createContext, useCallback, useContext, useState } from 'react'
+import { fullDomain } from '../domain/zoomDomain.js'
 import { metricOrder } from '../metrics/metricRegistry.js'
 
 const ChartViewContext = createContext(undefined)
@@ -10,7 +11,10 @@ const ChartViewContext = createContext(undefined)
 function initialState() {
   return {
     xMode: 'time',
-    zoomDomain: ['dataMin', 'dataMax'],
+    // One definition of "unzoomed" (domain/zoomDomain.js), shared with
+    // ChartStack, MetricPanel and the reset control, rather than this literal
+    // written out in four places.
+    zoomDomain: fullDomain(),
     enabledMetrics: [...metricOrder],
     enabledStats: Object.fromEntries(metricOrder.map((id) => [id, ['avg']])),
     hoverIndex: null,
@@ -23,7 +27,7 @@ export function ChartViewProvider({ children }) {
   // A numeric zoomDomain is meaningless across modes (seconds vs metres), so
   // switching axes resets zoom rather than silently misreading stale bounds.
   const setXMode = useCallback(
-    (xMode) => setState((s) => ({ ...s, xMode, zoomDomain: initialState().zoomDomain })),
+    (xMode) => setState((s) => ({ ...s, xMode, zoomDomain: fullDomain() })),
     [],
   )
   const setZoomDomain = useCallback((zoomDomain) => setState((s) => ({ ...s, zoomDomain })), [])

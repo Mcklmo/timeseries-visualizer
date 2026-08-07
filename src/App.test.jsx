@@ -124,6 +124,19 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     expect(header).not.toHaveClass('app-header--faded')
   })
 
+  // The lockup is what makes a mid-scroll screenshot attributable: once
+  // faded, the header's bar is gone and the h1 plus its mark is all that's
+  // left identifying the app. The mark lives *inside* the heading so it
+  // travels with it, and is aria-hidden so it adds nothing to the accessible
+  // name every other test queries by.
+  it('renders the brand mark inside the h1, hidden from the accessible name', () => {
+    render(<App />)
+    const heading = screen.getByRole('heading', { name: /^activity visualiser$/i })
+    const mark = heading.querySelector('svg.brand-mark')
+    expect(mark).toBeInTheDocument()
+    expect(mark).toHaveAttribute('aria-hidden', 'true')
+  })
+
   it('shows the About page from the header link and returns via Back', async () => {
     const user = userEvent.setup()
     const { container } = render(<App />)

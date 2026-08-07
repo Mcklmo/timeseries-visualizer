@@ -21,7 +21,11 @@
   --success: #06d6a0;
 
   --panel-gap: 4px; /* tight — panels must read as one instrument */
-  --y-axis-width: 56px; /* FIXED, shared by all panels for alignment */
+  /* The *faded* header height (12px padding × 2 + the 20px h1 line), which is
+     the one that matters: scrolling is what causes the fade, and this is what
+     the sticky .activity-header offsets itself by. Locked to .app-header's
+     min-height so the two can't drift. */
+  --app-header-h: 48px;
   --radius: 6px;
   --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-data: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;

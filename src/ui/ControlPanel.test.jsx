@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
@@ -166,5 +166,63 @@ describe('ControlPanel', () => {
     await waitFor(() => expect(bottomTickLabels().at(-1)).toBe('200m')) // matches fixture's last sample d
     expect(screen.getByRole('button', { name: 'Distance' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Time' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('starts expanded on a wide viewport, so the controls are visible without a click', async () => {
+    const { container } = await renderApp()
+    expect(container.querySelector('details.control-panel')).toHaveAttribute('open')
+  })
+})
+
+// setupTests.js stubs matchMedia to matches:false (i.e. "not narrow") because
+// that's the branch every assertion above expects. The narrow branch has to
+// reassign it — and restore it, or every later file in this run inherits a
+// phone-sized viewport.
+describe('ControlPanel on a narrow viewport', () => {
+  const realMatchMedia = window.matchMedia
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia
+  })
+
+  function goNarrow() {
+    window.matchMedia = (query) => ({
+      matches: query.includes('max-width: 720px'),
+      media: query,
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent: () => false,
+    })
+  }
+
+  it('starts collapsed, giving the charts the screen instead of five rows of chrome', async () => {
+    goNarrow()
+    const { container } = await renderApp()
+    expect(container.querySelector('details.control-panel')).not.toHaveAttribute('open')
+  })
+
+  // Asserted on the attribute above rather than on a role query going absent,
+  // because jsdom 30 does not apply the UA rule that hides a closed <details>'s
+  // contents — every control stays queryable here even while collapsed. In a
+  // real browser they are genuinely hidden; that difference is only observable
+  // in one, so don't write a test that claims otherwise.
+  it('still renders the controls in the DOM while collapsed (jsdom applies no <details> hiding)', async () => {
+    goNarrow()
+    await renderApp()
+    expect(screen.getByRole('checkbox', { name: 'Cadence' })).toBeInTheDocument()
+  })
+
+  it('opens on the summary, restoring every control', async () => {
+    goNarrow()
+    await renderApp()
+
+    await userEvent.click(screen.getByText('Chart settings'))
+
+    for (const id of visibleOrder) {
+      expect(screen.getByRole('checkbox', { name: metricRegistry[id].label })).toBeInTheDocument()
+    }
   })
 })

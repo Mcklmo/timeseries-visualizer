@@ -11,6 +11,7 @@ import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { AboutPage } from './ui/AboutPage.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
+import { BrandMark } from './ui/BrandMark.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
 import { ControlPanel } from './ui/ControlPanel.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
@@ -92,7 +93,9 @@ export function AppShell() {
     <div className="app">
       <header className={`app-header${isScrolled ? ' app-header--faded' : ''}`}>
         <div className="app-header__title">
-          <h1>Activity Visualiser</h1>
+          <h1>
+            <BrandMark /> Activity Visualiser
+          </h1>
           {/* Quiet text buttons, deliberately not drop zones — the file path
               stays the single loud CTA. "intervals.icu" is also chosen to
               match none of the tests' button queries: not /back/i (the trap

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useEffect } from 'react'
 import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
@@ -45,23 +45,44 @@ function SwitchXMode({ mode }) {
   return <button onClick={() => setXMode(mode)}>switch-x-{mode}</button>
 }
 
-// Drags a recharts <Brush> traveller by simulating the real mouse sequence
-// it listens for (mousedown on the traveller, mousemove/mouseup on window).
-// jsdom's MouseEvent only honors `clientX` — `pageX` is a getter that just
-// returns `clientX` (no scroll-offset support) — so the delta must be passed
-// as `clientX` or Brush's internal drag math silently sees no movement.
-function dragBrushEndTraveller(panel, deltaX) {
-  const travellers = [...panel.querySelectorAll('.recharts-brush-traveller')]
-  const endTraveller = travellers[1]
-  const startX = Number(endTraveller.querySelector('rect').getAttribute('x'))
-  fireEvent.mouseDown(endTraveller, { clientX: startX, clientY: 0 })
-  fireEvent.mouseMove(window, { clientX: startX + deltaX, clientY: 0 })
-  fireEvent.mouseUp(window)
+// Pinches the stack: two touch pointers down, then both moved, then a frame.
+// setupTests.js hard-assigns one fixed {left:0, width:800} rect to EVERY
+// element, so the plot area is {left: 60, width: 728} — and 728 = 8 × 91, so
+// eighth-fractions land on integer clientX: 0.125→151, 0.25→242, 0.5→424,
+// 0.75→606, 0.875→697.
+//
+// Pointer (not Touch) events, because jsdom 30 has no Touch constructor —
+// which is one of the reasons the gesture is built on Pointer Events in the
+// first place. See usePinchZoom.test.jsx for the gesture's own coverage.
+async function pinchStack(container, { from, to }) {
+  const stack = container.querySelector('.chart-stack')
+  const touch = (clientX, pointerId) => ({ pointerId, pointerType: 'touch', clientX, clientY: 100 })
+  fireEvent.pointerDown(stack, touch(from[0], 1))
+  fireEvent.pointerDown(stack, touch(from[1], 2))
+  fireEvent.pointerMove(window, touch(to[0], 1))
+  fireEvent.pointerMove(window, touch(to[1], 2))
+  // Emission is rAF-coalesced (usePinchZoom), so nothing has been written to
+  // zoomDomain until a frame passes.
+  await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
 }
 
-function linePointCount(panel) {
+// The x coordinates of the rendered curve, read back out of the path `d`.
+//
+// This replaces the old point-COUNT technique, which rested on a mechanism
+// that never existed: Recharts' computeLinePoints maps every row through the
+// scale and filters only nullish *values*, and a d3 linear scale extrapolates
+// — so out-of-domain points keep coordinates and stay in the path. Points used
+// to disappear because the Brush sliced the data array, not because of the
+// domain. Comparing positions is also strictly stronger than comparing counts:
+// it pins where the samples actually landed, in pixels.
+function pathXs(panel) {
   const d = panel.querySelector('.recharts-line .recharts-curve').getAttribute('d')
-  return [...d.matchAll(/[ML]/g)].length
+  return [...d.matchAll(/[ML](-?[\d.]+),/g)].map(([, x]) => Number(x))
+}
+
+function xSpread(panel) {
+  const xs = pathXs(panel)
+  return Math.max(...xs) - Math.min(...xs)
 }
 
 function tickLabels(panel) {
@@ -141,17 +162,13 @@ describe('ChartStack', () => {
     expect(panels[0].textContent).not.toContain('min/km')
   })
 
-  it('gives the first panel more height than the rest, and the bottom panel extra room for the brush', async () => {
+  it('gives the first panel more height than the rest, and every other panel the same', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
     // minHeight (not height) so the panel can grow past the chart's own
     // height to fit the stat-chip row below it, instead of clipping it.
     const heights = panels.map((p) => p.style.minHeight)
-    expect(heights[0]).toBe('200px')
-    expect(heights.slice(1, -1)).toEqual(['140px', '140px'])
-    // Bottom panel (altitude) hosts the Brush, which needs its own space so
-    // it doesn't eat into the plot area's usual height.
-    expect(heights.at(-1)).toBe('170px')
+    expect(heights).toEqual(['200px', '140px', '140px', '140px'])
   })
 
   it('shows x-axis tick labels only on the bottom panel', async () => {
@@ -201,37 +218,73 @@ describe('ChartStack', () => {
     expect(colors).not.toContain(metricRegistry.cadence.color)
   })
 
-  it('renders a Brush control only on the bottom panel', async () => {
+  // Kept as a negative regression guard rather than deleted: the Brush was
+  // replaced by pinch-to-zoom because its ~5px travellers are unusable on
+  // touch (ARCHITECTURE.md §13 Route B), and a stray `showBrush` prop
+  // creeping back in would otherwise go unnoticed.
+  it('renders no Brush on any panel', async () => {
     const { container } = await renderStack()
-    const panels = [...container.querySelectorAll('.metric-panel')]
-    const brushCounts = panels.map((p) => p.querySelectorAll('.recharts-brush').length)
-    expect(brushCounts.slice(0, -1)).toEqual([0, 0, 0])
-    expect(brushCounts.at(-1)).toBe(1)
+    expect(container.querySelectorAll('.recharts-brush')).toHaveLength(0)
   })
 
-  it('dragging the brush narrows the x-domain identically across every panel', async () => {
+  it('pinching narrows the x-domain identically across every panel', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
-    expect(panels.map(linePointCount)).toEqual([5, 5, 5, 5])
+    const spreadBefore = panels.map(xSpread)
 
-    dragBrushEndTraveller(panels.at(-1), -300)
+    // Fingers spread from the quarter points out towards the edges.
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
 
     await waitFor(() => {
-      // Recharts drops samples outside the XAxis domain from the line path
-      // entirely rather than clamping them, so a narrower domain shows up
-      // as fewer points — and all four panels must drop to the exact same
-      // count, since they share one controlled zoomDomain.
-      const counts = panels.map(linePointCount)
-      expect(counts.every((c) => c < 5)).toBe(true)
-      expect(new Set(counts).size).toBe(1)
+      const panelsNow = [...container.querySelectorAll('.metric-panel')]
+      // Points spreading further apart in pixels means the scale narrowed —
+      // the same samples now occupy more of the plot.
+      panelsNow.forEach((panel, i) => expect(xSpread(panel)).toBeGreaterThan(spreadBefore[i]))
+      // And every panel must land on the IDENTICAL x positions, since they
+      // share one controlled zoomDomain. Comparing pixel positions rather than
+      // point counts is what makes this a real synchronisation assertion.
+      const xs = panelsNow.map((panel) => pathXs(panel).join(','))
+      expect(new Set(xs).size).toBe(1)
     })
+  })
+
+  it('shows a Reset zoom control only once zoomed, and restores the full domain', async () => {
+    const { container } = await renderStack()
+    const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
+    // Absent at rest, so it never lands in an idle screenshot.
+    expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
+
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
+
+    fireEvent.click(screen.getByRole('button', { name: /reset zoom/i }))
+
+    await waitFor(() => expect(tickLabels(bottomPanel())).toEqual(['0:00', '0:10', '0:20', '0:30', '0:40']))
+    expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
+  })
+
+  // Encodes the decision that there is no one-finger drag-to-pan, so it can't
+  // be reintroduced by accident: one finger on a chart must stay page scroll.
+  it('ignores a single-finger drag', async () => {
+    const { container } = await renderStack()
+    const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
+    const before = pathXs(bottomPanel())
+
+    const stack = container.querySelector('.chart-stack')
+    const touch = (clientX) => ({ pointerId: 1, pointerType: 'touch', clientX, clientY: 100 })
+    fireEvent.pointerDown(stack, touch(606))
+    fireEvent.pointerMove(window, touch(242))
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+
+    expect(pathXs(bottomPanel())).toEqual(before)
+    expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
   })
 
   it('resets the zoom to the full domain when the x-axis mode switches', async () => {
     const { container } = await renderStack({ extra: <SwitchXMode mode="distance" /> })
     const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
 
-    dragBrushEndTraveller(bottomPanel(), -300)
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
     await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
 
     fireEvent.click(screen.getByText('switch-x-distance'))
@@ -243,6 +296,37 @@ describe('ChartStack', () => {
     await waitFor(() =>
       expect(tickLabels(bottomPanel())).toEqual(['0m', '50m', '100m', '150m', '200m']),
     )
-    await waitFor(() => expect(linePointCount(bottomPanel())).toBe(5))
+    await waitFor(() => expect(pathXs(bottomPanel())).toHaveLength(5))
+  })
+})
+
+// setupTests.js stubs matchMedia to matches:false ("not narrow"), which is the
+// branch every assertion above expects. This block reassigns it and restores
+// it in an afterEach — without the restore, every later test file in the run
+// would inherit a phone-sized viewport.
+describe('ChartStack on a narrow viewport', () => {
+  const realMatchMedia = window.matchMedia
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia
+  })
+
+  it('cuts panel heights by ~25%, keeping the §9 promise the Brush-era constants never did', async () => {
+    window.matchMedia = (query) => ({
+      matches: query.includes('max-width: 720px'),
+      media: query,
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent: () => false,
+    })
+
+    const { container } = await renderStack()
+    const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.minHeight)
+    // 200→150 and 140→105: exactly 25% off both, and no Brush allowance on the
+    // bottom panel any more.
+    expect(heights).toEqual(['150px', '105px', '105px', '105px'])
   })
 })

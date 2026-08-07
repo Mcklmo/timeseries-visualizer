@@ -3,21 +3,25 @@
 // siblings in ChartStack so plot areas align pixel-for-pixel and the
 // tooltip/crosshair stays in sync across the whole stack.
 import { useMemo } from 'react'
-import { Brush, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { insertGapBreaks } from '../domain/insertGapBreaks.js'
 import { gapThresholdFor } from '../domain/samplingInterval.js'
 import { makeDistanceTickFormatter, makeElapsedTickFormatter } from '../domain/units.js'
+import { isFullDomain } from '../domain/zoomDomain.js'
 import { metricRegistry, metricUnit } from '../metrics/metricRegistry.js'
 import { computeYDomain } from '../stats/aggregate.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
+import { CHART_MARGIN, Y_AXIS_WIDTH } from './chartGeometry.js'
 import { SyncedTooltip } from './SyncedTooltip.jsx'
 
+// Y_AXIS_WIDTH and CHART_MARGIN are imported, not declared here, because the
+// pinch gesture measures the plot area by subtracting exactly these numbers
+// from the chart's rect (see chartGeometry.js). Two copies would drift and the
+// gesture would quietly grab a few pixels off the line it looks like it's on.
 const SYNC_ID = 'activity'
-const Y_AXIS_WIDTH = 56 // matches --y-axis-width token; fixed so panels align
 
 const STAT_ORDER = ['max', 'min', 'avg', 'median']
 const STAT_DASH = { max: '4 4', min: '1 2', avg: undefined, median: '2 3' }
-const BRUSH_HEIGHT = 24
 
 // Plain-HTML summary row below the chart — a flex row naturally avoids
 // overlap between stat values, unlike the old SVG-positioned labels.
@@ -36,24 +40,16 @@ function StatSummary({ metric, entries, sport }) {
   )
 }
 
-export function MetricPanel({
-  activity,
-  metricId,
-  xMode,
-  zoomDomain,
-  enabledStats,
-  showXAxis,
-  showBrush,
-  onZoomChange,
-  height,
-}) {
+export function MetricPanel({ activity, metricId, xMode, zoomDomain, enabledStats, showXAxis, height }) {
   const metric = metricRegistry[metricId]
   const stats = useMetricStats(activity, metricId)
   const xKey = xMode === 'distance' ? 'd' : 't'
 
   // Every panel builds its rows from the same samples with the same gap
-  // threshold, so the synthetic break rows land at the same indices in all of
-  // them and the Brush's index range stays meaningful across the stack.
+  // threshold, so the synthetic break rows land at the same index in all of
+  // them. That still matters after the Brush's removal: Recharts' syncId
+  // pairs panels by data index, so a row present in one panel and absent from
+  // another would put the shared crosshair on different samples per panel.
   const data = useMemo(() => {
     const rows = activity.samples.map((s) => ({ t: s.t, d: s.d, [metricId]: metric.accessor(s) }))
     return insertGapBreaks(rows, { metricId, gapThresholdS: gapThresholdFor(activity.samplingIntervalS) })
@@ -69,19 +65,6 @@ export function MetricPanel({
 
   const yDomain = useMemo(() => computeYDomain({ samples: activity.samples, metric }), [activity.samples, metric])
 
-  // Recharts' <Brush> tracks its own selected index range independently of
-  // our zoomDomain (it drives what 'dataMin'/'dataMax' resolve to for every
-  // synced panel). Left uncontrolled, that index range survives an xMode
-  // switch even after zoomDomain resets, silently re-narrowing the "full"
-  // domain to whatever was last brushed. Deriving indices from zoomDomain
-  // keeps the two in lockstep.
-  const lastIndex = data.length - 1
-  const [zoomStart, zoomEnd] = zoomDomain
-  const startFound = zoomStart === 'dataMin' ? -1 : data.findIndex((s) => s[xKey] === zoomStart)
-  const endFound = zoomEnd === 'dataMax' ? -1 : data.findIndex((s) => s[xKey] === zoomEnd)
-  const brushStartIndex = startFound === -1 ? 0 : startFound
-  const brushEndIndex = endFound === -1 ? lastIndex : endFound
-
   const statEntries = STAT_ORDER.filter((kind) => enabledStats.includes(kind) && stats[kind] != null).map(
     (kind) => ({ kind, value: stats[kind] }),
   )
@@ -89,7 +72,7 @@ export function MetricPanel({
   return (
     <div className="metric-panel" style={{ minHeight: height }}>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} syncId={SYNC_ID} margin={{ top: 8, right: 12, bottom: 16, left: 4 }}>
+        <LineChart data={data} syncId={SYNC_ID} margin={CHART_MARGIN}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />
           <XAxis
             type="number"
@@ -98,6 +81,17 @@ export function MetricPanel({
             hide={!showXAxis}
             interval={0}
             tickFormatter={xTickFormatter}
+            // WITHOUT THIS, A NUMERIC domain DOES NOTHING. Recharts'
+            // extendDomain() (util/isDomainSpecifiedByUser.js) widens any
+            // user-supplied domain back out to the data extent unless
+            // allowDataOverflow is set — silently, with no error. Same reason
+            // the YAxis below sets it. It also switches on Recharts' plot-rect
+            // clipPath, so the line clips at the plot edge instead of drawing
+            // into the axis gutter.
+            //
+            // Conditional rather than unconditional so the unzoomed render
+            // stays byte-identical to what it was before zoom existed.
+            allowDataOverflow={!isFullDomain(zoomDomain)}
           />
           <YAxis
             width={Y_AXIS_WIDTH}
@@ -125,19 +119,6 @@ export function MetricPanel({
             isAnimationActive={false}
             connectNulls={false}
           />
-          {showBrush && (
-            <Brush
-              dataKey={xKey}
-              height={BRUSH_HEIGHT}
-              stroke="var(--stat-line)"
-              travellerWidth={8}
-              startIndex={brushStartIndex}
-              endIndex={brushEndIndex}
-              onChange={({ startIndex, endIndex }) => {
-                onZoomChange?.([data[startIndex][xKey], data[endIndex][xKey]])
-              }}
-            />
-          )}
         </LineChart>
       </ResponsiveContainer>
       <StatSummary metric={metric} entries={statEntries} sport={activity.sport} />

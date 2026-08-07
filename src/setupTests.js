@@ -34,6 +34,30 @@ if (!HTMLDialogElement.prototype.showModal) {
   }
 }
 
+// jsdom implements no matchMedia at all, and useIsNarrow() (ChartStack's
+// panel heights, ControlPanel's collapse) calls it during render — so without
+// this every chart test throws at once. See ARCHITECTURE.md §13 Route A.
+//
+// `matches: false` is load-bearing, not just a convenient default: it means
+// "not narrow", which is the branch every existing panel-height assertion and
+// every ControlPanel role query already expects (a closed <details> hides its
+// contents from getByRole). A test wanting the narrow branch reassigns
+// window.matchMedia itself and restores it in an afterEach.
+window.matchMedia = function (query) {
+  return {
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return false
+    },
+  }
+}
+
 // ResponsiveContainer measures its container with getBoundingClientRect on
 // mount to turn width="100%" into a pixel width; jsdom never computes real
 // layout, so every rect is 0 by default and charts render at 0x0 with none

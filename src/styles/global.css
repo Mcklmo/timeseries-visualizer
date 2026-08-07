@@ -52,6 +52,9 @@ input {
   flex-wrap: wrap;
   gap: 12px 24px;
   padding: 12px 24px;
+  /* Locked to --app-header-h, which is what .activity-header sticks below —
+     a shared token rather than the same magic number written twice. */
+  min-height: var(--app-header-h);
   background: var(--bg);
   border-bottom: 1px solid var(--grid);
   transition:
@@ -82,6 +85,55 @@ input {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.2px;
+  /* inline-flex, not inline: the BrandMark must sit on the text's centre line,
+     and an inline <svg> would sit on its baseline with a descender gap. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The mark's own fill is `currentColor`, so its colour lives here with the
+   rest of the palette rather than baked into the component. Accent cyan, the
+   same hue as the favicon it's cut from. */
+.brand-mark {
+  color: var(--metric-pace);
+  flex: none;
+}
+
+/* Sharing this app means taking an OS screenshot, so whatever is on screen
+   mid-scroll has to already be a good image — and on touch there is no
+   :hover, which makes the faded state the *permanent* state once scrolled.
+   The lockup therefore gets its own translucent chip so it stays legible over
+   chart ink instead of reading as unstyled text floating over the lines. The
+   negative margin cancels the padding exactly, so adding the chip shifts
+   nothing in the unfaded layout. Only the lockup persists — .about-link is
+   chrome and fades away with the bar. */
+.app-header--faded h1 {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  margin: -4px -10px;
+}
+
+/* Hover/focus restores the opaque bar, so the chip would double-darken a
+   strip behind the title — drop it and the hovered header reads exactly like
+   the top-of-page one. */
+.app-header--faded:hover h1,
+.app-header--faded:focus-within h1 {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.app-header--faded .about-link {
+  opacity: 0;
+}
+
+/* Opacity rather than display/visibility, so the links keep their place in
+   the tab order and :focus-within can bring them back for a keyboard user. */
+.app-header--faded:hover .about-link,
+.app-header--faded:focus-within .about-link {
+  opacity: 1;
 }
 
 /* Keeps the h1 and the About link together on the left, so space-between
@@ -101,6 +153,9 @@ input {
   border: none;
   padding: 0;
   cursor: pointer;
+  /* Matches .app-header's own background transition, so the links and the bar
+     they belong to fade together rather than one snapping and one easing. */
+  transition: opacity 0.2s ease;
 }
 
 .about-link:hover {
@@ -312,15 +367,36 @@ main {
   padding: 2px 10px;
 }
 
-/* Control panel */
+/* Control panel — a <details> so it can start collapsed on a phone, where
+   five metric rows would otherwise push the first chart off the screen. */
 .control-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   padding: 16px;
   background: var(--panel);
   border: 1px solid var(--grid);
   border-radius: var(--radius);
+}
+
+.control-panel__summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-dim);
+  /* Comfortably past the 44px touch floor once the panel's own 16px padding
+     is counted, since this is the only way back to the controls on a phone. */
+  padding: 4px 0;
+}
+
+.control-panel__summary:hover {
+  color: var(--text);
+}
+
+.control-panel[open] .control-panel__summary {
+  margin-bottom: 12px;
+}
+
+.control-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .metric-controls {
@@ -399,6 +475,61 @@ main {
   border: 1px solid var(--grid);
   border-radius: var(--radius);
   padding: 8px;
+  /* Positioning context for the reset-zoom control, which sits inside the
+     stack rather than in the ControlPanel — it acts on what the user is
+     looking at, and a conditional button in that always-present panel would
+     change its height and reflow every chart below it on the first pinch. */
+  position: relative;
+  /* One-finger vertical page scroll still works; pinch is NOT permitted under
+     pan-y, which is exactly what suppresses iOS Safari's own page zoom and
+     leaves the gesture to usePinchZoom. Not inherited, but the effective value
+     is the intersection up the ancestor chain, so this one declaration covers
+     every panel inside. Known limit, accepted: touch-action only governs
+     gestures whose touches START in the element, so a pinch begun on the
+     ControlPanel still page-zooms. */
+  touch-action: pan-y;
+}
+
+/* Sits over the top-right of the plot, only while zoomed. Opaque --panel
+   rather than a translucent chip, since it lands directly on top of the line
+   it's offering to reset. 44px min-height is the touch-target floor — this is
+   the escape hatch from a deep pinch, so it must not be fiddly. */
+.zoom-reset {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  min-height: 44px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.zoom-reset:hover {
+  border-color: var(--metric-pace);
+}
+
+/* Transient, and deliberately not interactive: it must never eat the scroll
+   it is a reaction to. */
+.zoom-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  margin: 0;
+  pointer-events: none;
+  font-size: 14px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 10px 16px;
 }
 
 .metric-panel .recharts-cartesian-axis-tick text,
@@ -936,6 +1067,25 @@ main {
 
   main {
     padding: 16px;
+  }
+
+  /* The activity name is the *content* of a screenshot — it says which ride
+     the charts belong to — so on a phone it rides along under the header
+     instead of scrolling away. z-index sits below .app-header's 10 so the
+     header still wins where they meet. The negative margin bleeds the
+     background past main's 16px gutters, or chart content peeks through at
+     the edges while sliding underneath.
+
+     Cosmetic imperfection, accepted: while the header is mid-transition from
+     unfaded (taller, load bar still expanded) to faded, this offset is briefly
+     short by the collapsing bar's height and the chip slides up a few pixels. */
+  .activity-header {
+    position: sticky;
+    top: var(--app-header-h);
+    z-index: 9;
+    background: var(--bg);
+    margin: 0 -16px;
+    padding: 8px 16px;
   }
 
   .empty-state {

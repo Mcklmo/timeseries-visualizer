@@ -106,6 +106,20 @@ describe('MetricPanel', () => {
     expect(labels.at(-1)).toBe('200m')
   })
 
+  // The cheapest possible guard on the finding that a numeric `domain` alone
+  // is a no-op: Recharts' extendDomain() widens a user-supplied domain back
+  // out to the data extent unless allowDataOverflow is set, so without that
+  // prop this axis would still read 0:00–0:40 and every pinch in the app
+  // would do nothing at all — with no error anywhere.
+  it('narrows the x-axis to a numeric zoomDomain (allowDataOverflow, or the domain is ignored)', () => {
+    const { container } = renderPanel({ zoomDomain: [10, 30] })
+    const labels = [
+      ...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan'),
+    ].map((el) => el.textContent)
+    expect(labels[0]).toBe('0:10')
+    expect(labels.at(-1)).toBe('0:30')
+  })
+
   it('hides x-axis tick labels on non-bottom panels', () => {
     const { container } = renderPanel({ showXAxis: false })
     expect(container.querySelectorAll('.recharts-xAxis-tick-labels')).toHaveLength(0)

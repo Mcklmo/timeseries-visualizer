@@ -23,11 +23,13 @@ This project is **functional end-to-end, including real Garmin file upload** —
 - `ControlPanel` and its children (`MetricToggle`, `StatCheckboxes`, `XAxisModeSwitch`) drive
   metric visibility, per-metric stat lines, and x-axis mode — also verified against real
   rendered Recharts SVG output, not just context state.
-- The bottom panel of `ChartStack` renders a `Brush` wired to a shared, controlled
-  `zoomDomain` — dragging it zooms/pans every panel in sync, and switching x-axis mode resets
-  the zoom (a numeric range in seconds is meaningless once re-read as metres). Verified by
-  simulating a real Recharts drag against rendered SVG output, not just calling the state
-  setter directly.
+- Zooming is a **two-finger pinch** anywhere on the chart stack, or **ctrl/⌘ + scroll** on a
+  desktop, writing one shared controlled `zoomDomain` so every panel zooms and pans in sync.
+  Moving both fingers together pans; a **Reset zoom** button appears only while zoomed;
+  switching x-axis mode resets the zoom (a numeric range in seconds is meaningless once
+  re-read as metres). Verified by simulating real pointer sequences against rendered SVG
+  output, not just calling the state setter directly. This replaced Recharts' `Brush`, whose
+  ~5px drag handles were unusable on touch — see ARCHITECTURE.md §13 Route B.
 - `App.jsx` is wired end-to-end: drop a file on the idle page's `EmptyState` hero (or on the
   compact control that takes its place in the header once something is loaded), watch
   `ActivityContext` cycle through `loading`, and land on `ControlPanel` + `ChartStack` (or
@@ -308,9 +310,15 @@ path, though (see step 9 below).
    heart-rate panel only. Uncheck "avg" on any metric → its solid reference line disappears.
 7. **X-axis mode** — click **Distance** → the bottom axis ticks switch from seconds to
    metres on every panel. Click **Time** to switch back.
-8. **Brush / zoom** — drag the brush handles under the bottom chart → all panels zoom to the
-   same range together. While zoomed, switch Time ⇄ Distance → zoom should reset to full
-   range (not carry over a stale numeric range).
+8. **Zoom** — hold **Ctrl** (or ⌘) and scroll over the charts, or pinch on a trackpad → all
+   panels zoom to the same range together, anchored under the cursor, and the crosshair keeps
+   tracking. A **Reset zoom** button appears at the top-right of the stack only while zoomed;
+   click it to go back to the full range. Zoom in hard and check the line **clips at the plot
+   edge** rather than bleeding into the axis gutter — that clipping is `allowDataOverflow`,
+   and its absence is the tell that the numeric-domain path has regressed (ARCHITECTURE.md
+   §7). Scroll **without** Ctrl → the page scrolls normally and a centred "Use Ctrl + scroll
+   to zoom" hint appears **once**, not on every scroll past the charts. While zoomed, switch
+   Time ⇄ Distance → zoom should reset to full range (not carry over a stale numeric range).
 9. **Swap and error paths** — with charts up, drop `fixtures/23870166877_ACTIVITY.fit` on the
    **header** control → it swaps to the FIT activity (a Power panel appears, since the FIT
    file carries Stryd power the TCX export drops). Then drop a non-TCX file (or a `.tcx` with
@@ -326,8 +334,11 @@ path, though (see step 9 below).
     ticks read `0h · 1d0h · 2d0h` (not `259200`), avg speed is a plausible walking figure,
     and **both lines break visibly** at the 6-hour dropout and at each of the three nights
     in camp rather than running a straight diagonal across them. Hover anywhere: the
-    tooltip header shows elapsed time in days (e.g. `2d 4:15:30`). Brush-zoom into one day
-    and confirm the crosshair still syncs across both panels.
+    tooltip header shows elapsed time in days (e.g. `2d 4:15:30`). Ctrl+scroll into one day
+    and confirm the crosshair still syncs across both panels, the ticks stay real dates
+    rather than `NaN`, and the zoom doesn't hit its floor prematurely — the max-zoom limit is
+    a fraction of the span, so a 3-day breadcrumb track zooms exactly as far as a 1 Hz watch
+    file does.
 12. **GPX with no timestamps** — drop any route/waypoint `.gpx` (a planned route exported
     from a mapping app, or hand-edit a copy of a fixture to remove every `<time>`): expect
     the specific "looks like a route or waypoint list, not a recorded track" error, not the
@@ -358,11 +369,23 @@ path, though (see step 9 below).
     - DevTools → Network: requests go to `intervals.icu` **only**, and dropping a local file
       issues **zero** network requests.
 14. **Responsive layout** — narrow the window below ~720px → the hero and header should both
-    stay readable with no horizontal overflow, and each metric's toggle + stat-checkboxes row
-    should stack instead of staying side-by-side. In the intervals.icu view, activity rows
-    should be comfortable thumb targets, and focusing the API-key field **or the search box**
-    must **not** zoom the page on an iPhone.
-15. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
+    stay readable with no horizontal overflow, each metric's toggle + stat-checkboxes row
+    should stack instead of staying side-by-side, **"Chart settings" should be collapsed**
+    (tap it to open; it stays open), and panel heights should drop ~25%. In the intervals.icu
+    view, activity rows should be comfortable thumb targets, and focusing the API-key field
+    **or the search box** must **not** zoom the page on an iPhone.
+15. **On a real phone — the acceptance test for the mobile work, and it cannot be done in the
+    simulator alone.** Run `npm run dev -- --host` and open the printed LAN URL on an iPhone.
+    - **Gestures:** two-finger pinch zooms; moving both fingers together pans; a one-finger
+      vertical drag still scrolls the page; and the browser never page-zooms while the
+      gesture starts on a chart. (Known limit: a pinch *starting* on the control panel still
+      page-zooms — `touch-action` only governs gestures whose touches start in the element.)
+    - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take
+      one. It must show the bolt + "Activity Visualiser" legible against chart ink in the
+      upper left, the activity name and sport chip beneath it, charts filling the rest, no
+      half-collapsed chrome, and a **dark** Safari address bar. Repeat at the top of the page
+      and while zoomed in — **all three should be sharable as-is**.
+16. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile
     widget, and a **Send feedback** button that stays disabled until the challenge is
@@ -371,7 +394,7 @@ path, though (see step 9 below).
     page URL / timestamp / user agent. Then check the failure paths: submit with the fields
     empty (expect inline per-field errors, not a banner), and submit ~6 times in a minute
     (expect the "too many submissions" banner).
-16. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
+17. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
     `<dialog>` behaviour that jsdom does not simulate, so it is *only* covered here, never
     by the automated suite. Re-opening afterwards should show empty fields, not the previous
     attempt.
