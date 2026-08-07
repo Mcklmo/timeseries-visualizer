@@ -10,8 +10,8 @@ build order, and rationale — this README is the practical "how do I run/build 
 
 ## Status
 
-This project is **under active development, not yet functional end-to-end**. What exists
-today:
+This project is **functional end-to-end against the bundled mock activity** — TCX file
+upload is not wired to a real parser yet (see below). What exists today:
 
 - Domain pipeline (`src/domain/`), stats/aggregation (`src/stats/`), the metric registry
   (`src/metrics/`), and the `ActivitySource` port + `MockActivitySource` + JSON fixture
@@ -27,10 +27,16 @@ today:
   the zoom (a numeric range in seconds is meaningless once re-read as metres). Verified by
   simulating a real Recharts drag against rendered SVG output, not just calling the state
   setter directly.
-- `App.jsx` is still the default Vite starter page — it is **not yet wired** to the chart
-  stack or control panel. `FileDropZone`, `EmptyState`, `ErrorState`, TCX parsing
-  (`data/tcx/`), the HTTP source stub, and `downsample.js` are all placeholder files
-  (`// TODO: see ARCHITECTURE.md`) or unbuilt — not implemented yet.
+- `App.jsx` is wired end-to-end: drop a file or click "Load sample activity" on the
+  `EmptyState`, watch `ActivityContext` cycle through `loading`, and land on `ControlPanel` +
+  `ChartStack` (or `ErrorState`, with a "Try again" that replays the same load). It runs
+  against `MockActivitySource`, so any file dropped resolves the same bundled fixture —
+  real TCX parsing is the next step, not wired yet.
+- The dark, chart-forward visual theme from ARCHITECTURE.md §9 is applied
+  (`styles/tokens.css` + `styles/global.css`); the old default-Vite-template files
+  (`App.css`, `index.css`, starter assets) are gone.
+- TCX parsing (`data/tcx/`), the HTTP source stub, and `downsample.js` are still placeholder
+  files (`// TODO: see ARCHITECTURE.md`) or unbuilt — not implemented yet.
 
 Check the checklist at the top of [ARCHITECTURE.md](ARCHITECTURE.md#0-implementation-progress)
 for the up-to-date build status.
@@ -66,13 +72,16 @@ npm run test:watch   # vitest, watch mode
 
 ```
 src/
+  App.jsx     # composition root: AppShell (by ActivityContext.status) + AppProviders
   app/        # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
   data/       # ActivitySource port + adapters (mock built; tcx/http are stubs)
   domain/     # pure, framework-free normalization pipeline (types, units, ...)
   stats/      # max/avg/median aggregation, strategy-aware, memoized hook
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
-  ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch
+  ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
+              # EmptyState, ErrorState, FileDropZone
+  styles/     # tokens.css (dark theme + metric hues), global.css (layout, chrome)
 fixtures/
   sample-run.json   # activity used by MockActivitySource in dev/tests
 ```

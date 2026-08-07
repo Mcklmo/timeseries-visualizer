@@ -1,122 +1,65 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+// Composition root. See ARCHITECTURE.md §5: swapping the ActivitySource is
+// exactly changing the `source` instance passed to AppProviders below —
+// nothing else in the tree touches a concrete adapter.
+import { useCallback, useRef, useState } from 'react'
+import { AppProviders } from './app/providers.jsx'
+import { MockActivitySource } from './data/mock/MockActivitySource.js'
+import { useActivity } from './state/ActivityContext.jsx'
+import { ChartStack } from './ui/ChartStack.jsx'
+import { ControlPanel } from './ui/ControlPanel.jsx'
+import { EmptyState } from './ui/EmptyState.jsx'
+import { ErrorState } from './ui/ErrorState.jsx'
 
-function App() {
-  const [count, setCount] = useState(0)
+const SAMPLE_REF = { type: 'id', id: 'sample' }
+
+// Exported (not just default-exported App) so tests can drive states the
+// real MockActivitySource never produces — e.g. a rejected load — by
+// wrapping it in AppProviders with a source double instead. See App.test.jsx.
+export function AppShell() {
+  const { activity, status, error, load } = useActivity()
+  const lastRef = useRef(SAMPLE_REF)
+
+  const loadRef = useCallback(
+    (ref) => {
+      lastRef.current = ref
+      load(ref)
+    },
+    [load],
+  )
+  const handleFileSelected = useCallback((file) => loadRef({ type: 'file', file }), [loadRef])
+  const handleLoadSample = useCallback(() => loadRef(SAMPLE_REF), [loadRef])
+  const handleRetry = useCallback(() => load(lastRef.current), [load])
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+    <div className="app">
+      <header className="app-header">
+        <h1>Activity Visualiser</h1>
+      </header>
+      <main>
+        {status === 'idle' && <EmptyState onFileSelected={handleFileSelected} onLoadSample={handleLoadSample} />}
+        {status === 'loading' && (
+          <p className="loading-indicator" role="status">
+            Loading activity…
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+        )}
+        {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
+        {status === 'ready' && activity && (
+          <>
+            <ControlPanel />
+            <ChartStack />
+          </>
+        )}
+      </main>
+    </div>
   )
 }
 
-export default App
+const defaultSource = new MockActivitySource()
+
+export default function App() {
+  return (
+    <AppProviders source={defaultSource}>
+      <AppShell />
+    </AppProviders>
+  )
+}

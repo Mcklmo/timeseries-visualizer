@@ -1,1 +1,22 @@
-// TODO: see ARCHITECTURE.md
+/* Visual tokens — see ARCHITECTURE.md §9. The chart is the interface: dark
+   neutral ground, one hue per metric, everything else greyscale. */
+:root {
+  --bg: #12151a;
+  --panel: #171b22;
+  --grid: #232935;
+  --text: #e6e9ef;
+  --text-dim: #8b93a3;
+  --stat-line: #6f7889;
+
+  --metric-pace: #4cc9f0;
+  --metric-heartrate: #ef476f;
+  --metric-power: #ffd166;
+  --metric-cadence: #06d6a0;
+  --metric-altitude: #9b8cff;
+
+  --panel-gap: 4px; /* tight — panels must read as one instrument */
+  --y-axis-width: 56px; /* FIXED, shared by all panels for alignment */
+  --radius: 6px;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+}
