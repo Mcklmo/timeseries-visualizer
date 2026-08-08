@@ -236,20 +236,39 @@ describe('MetricPanel', () => {
   const derivActivity = { ...activity, samplingIntervalS: 10 }
   const withOverlay = { activity: derivActivity, enabledStats: ['d1'], rightInset: Y_AXIS_RIGHT_WIDTH }
 
+  // Selected by class, not by index: the overlay is two marks now (casing +
+  // core) and an index would have to be renumbered every time a mark is added.
   function derivPath(container) {
-    return [...container.querySelectorAll('.recharts-line .recharts-curve')][1]
+    return container.querySelector('.deriv-line .recharts-curve')
   }
 
-  it('draws the derivative as a second, dashed line on the metric’s own panel', () => {
+  it('draws the derivative as a cased line on the metric’s own panel', () => {
     const { container } = renderPanel(withOverlay)
-    const curves = container.querySelectorAll('.recharts-line .recharts-curve')
+    const curves = [...container.querySelectorAll('.recharts-line .recharts-curve')]
+    const casing = container.querySelector('.deriv-casing .recharts-curve')
+    const core = derivPath(container)
 
-    expect(curves).toHaveLength(2)
-    // The metric's own hue, dimmed and dashed — §9 allows one hue per metric,
+    // A lighter step of the metric's own hue — §9 allows one hue per metric,
     // and this IS that metric, seen as a rate.
-    expect(derivPath(container).getAttribute('stroke')).toBe(metricRegistry.heartRate.color)
-    expect(derivPath(container).getAttribute('stroke-dasharray')).toBe('3 3')
+    expect(core.getAttribute('stroke')).toBe(`color-mix(in oklab, ${metricRegistry.heartRate.color} 72%, white)`)
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2)
+
+    // The casing is the app accent, and is wider — that is what puts blue on
+    // both sides of the core rather than replacing it.
+    expect(casing.getAttribute('stroke')).toBe('var(--accent)')
+    expect(Number(casing.getAttribute('stroke-width'))).toBeGreaterThan(Number(core.getAttribute('stroke-width')))
+
+    // Draw order: main line first (every other test's `querySelector` means it),
+    // then casing, then core over the top of it.
+    expect(curves.indexOf(casing)).toBe(1)
+    expect(curves.indexOf(core)).toBe(2)
+
+    // The main line is untouched by any of this: solid, and its own flat hue.
+    expect(curves[0].getAttribute('stroke')).toBe(metricRegistry.heartRate.color)
     expect(curves[0].getAttribute('stroke-dasharray')).toBeNull()
+    // Solid overlay too — the casing carries "derived", so the dash is gone.
+    expect(core.getAttribute('stroke-dasharray')).toBeNull()
+    expect(casing.getAttribute('stroke-dasharray')).toBeNull()
   })
 
   it('draws no overlay when no derivative is enabled, whatever the gutter says', () => {

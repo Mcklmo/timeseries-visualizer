@@ -261,18 +261,16 @@ describe('ChartStack', () => {
     const { container } = await renderStack({
       extra: <ToggleStat metricId="heartRate" statKind="d1" />,
     })
-    const curveCounts = () =>
-      [...container.querySelectorAll('.metric-panel')].map(
-        (p) => p.querySelectorAll('.recharts-line .recharts-curve').length,
-      )
+    const overlayCounts = () =>
+      [...container.querySelectorAll('.metric-panel')].map((p) => p.querySelectorAll('.deriv-line').length)
 
-    expect(curveCounts()).toEqual([1, 1, 1, 1])
+    expect(overlayCounts()).toEqual([0, 0, 0, 0])
 
     fireEvent.click(screen.getByText('toggle-heartRate-d1'))
 
-    // panels are pace, heartRate, cadence, altitude — only heartRate gains a
-    // second line, even though every panel gained the axis.
-    await waitFor(() => expect(curveCounts()).toEqual([1, 2, 1, 1]))
+    // panels are pace, heartRate, cadence, altitude — only heartRate gains the
+    // overlay, even though every panel gained the axis.
+    await waitFor(() => expect(overlayCounts()).toEqual([0, 1, 0, 0]))
   })
 
   it('gives the gutter back when the last overlay is switched off', async () => {

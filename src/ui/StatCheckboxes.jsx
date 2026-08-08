@@ -38,17 +38,24 @@ export function StatCheckboxes({ metricId }) {
 
   return (
     <span className="stat-checkboxes">
-      {statKindsFor(metric).map((kind) => (
-        <label key={kind} className="stat-checkbox">
-          <input
-            type="checkbox"
-            aria-label={statCheckboxLabel(metric, kind)}
-            checked={enabled.includes(kind)}
-            onChange={() => toggleStat(metricId, kind)}
-          />
-          <span aria-hidden="true">{KIND_LABEL[kind] ?? kind}</span>
-        </label>
-      ))}
+      {statKindsFor(metric).map((kind) => {
+        const checked = enabled.includes(kind)
+        // Derivative kinds only. The accent means "derived", not "checked" —
+        // the four scalar kinds stay dim when on, exactly as they are now.
+        const isDeriv = metric.derivative?.[kind] != null
+
+        return (
+          <label key={kind} className={`stat-checkbox${isDeriv && checked ? ' stat-checkbox--active' : ''}`}>
+            <input
+              type="checkbox"
+              aria-label={statCheckboxLabel(metric, kind)}
+              checked={checked}
+              onChange={() => toggleStat(metricId, kind)}
+            />
+            <span aria-hidden="true">{KIND_LABEL[kind] ?? kind}</span>
+          </label>
+        )
+      })}
     </span>
   )
 }

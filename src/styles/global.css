@@ -96,7 +96,7 @@ input {
    rest of the palette rather than baked into the component. Accent cyan, the
    same hue as the favicon it's cut from. */
 .brand-mark {
-  color: var(--metric-pace);
+  color: var(--accent);
   flex: none;
 }
 
@@ -498,6 +498,11 @@ main {
   gap: 4px;
   cursor: pointer;
 }
+
+/* The accent marks a derived series wherever it appears — the overlay's casing
+   in the chart, and the checkbox that switched it on. */
+.stat-checkbox--active { color: var(--accent); }
+.stat-checkbox--active input { accent-color: var(--accent); }
 
 .x-axis-mode-switch {
   display: inline-flex;

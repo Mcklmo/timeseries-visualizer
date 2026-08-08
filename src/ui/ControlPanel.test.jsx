@@ -169,19 +169,34 @@ describe('ControlPanel', () => {
     expect(rampAccel).not.toBeChecked()
   })
 
-  it('draws the derivative overlay as a second line on that panel only', async () => {
+  it('draws the derivative overlay on that panel only', async () => {
     const { container } = await renderApp()
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Heart rate ramp' }))
 
-    await waitFor(() =>
-      expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-line .recharts-curve')).toHaveLength(2),
-    )
-    expect(panelFor(container, 'cadence').querySelectorAll('.recharts-line .recharts-curve')).toHaveLength(1)
+    await waitFor(() => expect(panelFor(container, 'heartRate').querySelector('.deriv-line')).not.toBeNull())
+    expect(panelFor(container, 'cadence').querySelector('.deriv-line')).toBeNull()
     // A derivative draws no chip and no horizontal reference line except the
     // zero crossing — it is a series, not a scalar (§2.2/§2.6).
     expect(panelFor(container, 'heartRate').querySelectorAll('.stat-chip')).toHaveLength(0)
     expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(1)
+  })
+
+  it('lights a checked derivative box in the accent, and leaves the scalar boxes dim', async () => {
+    // The accent means "derived", not "checked": it is the same blue as the
+    // overlay's casing, so the control and the mark it draws read as one thing.
+    await renderApp()
+    const ramp = screen.getByRole('checkbox', { name: 'Heart rate ramp' })
+    const max = screen.getByRole('checkbox', { name: 'Heart rate max' })
+
+    expect(ramp.closest('.stat-checkbox')).not.toHaveClass('stat-checkbox--active')
+
+    await userEvent.click(ramp)
+    await waitFor(() => expect(ramp.closest('.stat-checkbox')).toHaveClass('stat-checkbox--active'))
+
+    await userEvent.click(max)
+    await waitFor(() => expect(max).toBeChecked())
+    expect(max.closest('.stat-checkbox')).not.toHaveClass('stat-checkbox--active')
   })
 
   it('checking max adds a reference line to that metric only', async () => {
