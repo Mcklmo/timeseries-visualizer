@@ -1,22 +1,36 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { createCredentialStore } from '../data/intervals/credentialStore.js'
+import { defaultRange, formatRangeLabel } from '../data/intervals/activityDateRange.js'
+import { DATE_RANGE_STORAGE_KEY } from '../data/intervals/dateRangeStore.js'
+import { toApiDate } from '../data/intervals/intervalsApi.js'
 import { IntervalsPage } from './IntervalsPage.jsx'
+
+// The list filters to the last 90 days by default, so every fixture — and
+// every range these tests type into the fields — has to be expressed relative
+// to now, or the whole file starts failing on some future run date. Pinning
+// the clock is the obvious alternative and is not available here: fake timers
+// hang RTL's `waitFor` under `globals: false` (see the searching block).
+const dayAgo = (n) => {
+  const date = new Date()
+  date.setDate(date.getDate() - n)
+  return toApiDate(date)
+}
+const daysAgo = (n) => `${dayAgo(n)}T09:00:00`
 
 const activities = [
   {
     id: 'i1',
     name: 'Tempo 5×1k',
     type: 'Run',
-    start_date_local: '2026-08-11T17:04:00',
+    start_date_local: daysAgo(1),
     icu_distance: 12400,
     moving_time: 3492,
     file_type: 'fit',
     source: 'GARMIN_CONNECT',
     device_name: 'Forerunner 965',
   },
-  { id: 'i2', name: 'Sunday ride', type: 'Ride', start_date_local: '2026-08-09T09:00:00', source: 'STRAVA' },
+  { id: 'i2', name: 'Sunday ride', type: 'Ride', start_date_local: daysAgo(3), source: 'STRAVA' },
 ]
 
 function fakeStore(initialKey = null) {
@@ -130,10 +144,11 @@ describe('IntervalsPage — connected', () => {
     renderPage({ store: fakeStore('stored-key'), fetchImpl })
 
     await waitFor(() => expect(screen.getByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument())
-    // oldest is always sent, newest never — see intervalsApi.js
+    // Both bounds are sent now that the filter is on by default — the date
+    // range block pins which days they are.
     const listUrl = new URL(fetchImpl.mock.calls.find(([url]) => url.includes('/activities'))[0])
     expect(listUrl.searchParams.get('oldest')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(listUrl.searchParams.has('newest')).toBe(false)
+    expect(listUrl.searchParams.get('newest')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   it('dispatches an id ref carrying the real activity name when a row is picked', async () => {
@@ -164,7 +179,7 @@ describe('IntervalsPage — connected', () => {
   })
 
   it('leaves the Garmin credit off when nothing on screen came from Garmin', async () => {
-    const list = [{ id: 'i9', name: 'Manual entry', type: 'Run', start_date_local: '2026-08-11T17:04:00' }]
+    const list = [{ id: 'i9', name: 'Manual entry', type: 'Run', start_date_local: daysAgo(1) }]
     renderPage({ store: fakeStore('stored-key'), fetchImpl: stubApi({ list }) })
 
     await screen.findByRole('button', { name: /Manual entry/ })
@@ -173,7 +188,9 @@ describe('IntervalsPage — connected', () => {
 
   it('widens the window backwards and merges without duplicating the overlap', async () => {
     const user = userEvent.setup()
-    const older = { id: 'i3', name: 'Long run', type: 'Run', start_date_local: '2026-05-02T08:00:00' }
+    // Outside the default 90-day floor, inside the widened one: paging is now
+    // a 90-day step back from the oldest row held (3 days ago), i.e. 93.
+    const older = { id: 'i3', name: 'Long run', type: 'Run', start_date_local: daysAgo(91) }
     // Second call re-returns the first window entirely — it must not double up.
     const fetchImpl = vi
       .fn()
@@ -262,11 +279,15 @@ describe('IntervalsPage — searching', () => {
   const settleDebounce = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
   const searchCalls = (fetchImpl) => fetchImpl.mock.calls.filter(([url]) => url.includes('/search-full'))
 
+  // Not in the browse fixture at all, which is what makes these tests about
+  // searching the whole history. Its *date* still has to sit inside the
+  // default range: hits go through the same client-side predicate the browse
+  // list does, and a range that empties them has its own test further down.
   const hillRepeats = {
     id: 'i7',
     name: 'Hill repeats',
     type: 'Run',
-    start_date_local: '2024-03-02T07:30:00',
+    start_date_local: daysAgo(45),
     icu_distance: 8000,
     moving_time: 2400,
     file_type: 'fit',
@@ -319,8 +340,9 @@ describe('IntervalsPage — searching', () => {
     expect(new URL(searchCalls(fetchImpl)[0][0]).searchParams.get('q')).toBe('#threshold')
   })
 
-  // The browse effect keys on windowStart, so it never re-fired — the window
-  // is simply still there underneath, with no second list request.
+  // The browse effect keys on the request bounds, which searching never
+  // touches, so it never re-fired — the window is simply still there
+  // underneath, with no second list request.
   it('restores the browse list when the box is cleared, without refetching it', async () => {
     const user = typist()
     const fetchImpl = await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
@@ -359,20 +381,28 @@ describe('IntervalsPage — searching', () => {
     // newest answer first, then the stale one it must not be overwritten by
     pending[1].resolve(jsonResponse([hillRepeats]))
     await screen.findByRole('button', { name: /Hill repeats/ })
-    pending[0].resolve(jsonResponse([{ id: 'i8', name: 'Hilly commute', type: 'Ride' }]))
+    // dated inside the default range on purpose: the *only* reason this row
+    // must not appear is the `cancelled` guard, not the date predicate
+    pending[0].resolve(
+      jsonResponse([{ id: 'i8', name: 'Hilly commute', type: 'Ride', start_date_local: daysAgo(5) }]),
+    )
     await settleDebounce()
 
     expect(screen.getByRole('button', { name: /Hill repeats/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Hilly commute/ })).not.toBeInTheDocument()
   })
 
-  it('says nothing matched, rather than claiming the window was empty', async () => {
+  // The default range is a real range, so the empty message names it — which
+  // is honest about *why* nothing matched, where "the last few months" would
+  // not be.
+  it('says nothing matched, naming the range rather than claiming the window was empty', async () => {
     const user = typist()
     await renderConnected({ fetchImpl: stubApi({ hits: [] }) })
 
     await user.type(searchBox(), 'kayak')
 
-    expect(await screen.findByText('No activities match "kayak".')).toBeInTheDocument()
+    const label = formatRangeLabel(defaultRange())
+    expect(await screen.findByText(`No activities match "kayak" ${label}.`)).toBeInTheDocument()
     expect(screen.queryByText(/last few months/i)).not.toBeInTheDocument()
   })
 
@@ -391,7 +421,7 @@ describe('IntervalsPage — searching', () => {
   // /search rows carry no `source`, so this row would have looked pickable.
   it('greys out a Strava hit with its reason, exactly as in the browse list', async () => {
     const user = typist()
-    const strava = { id: 'i9', name: 'Strava import', type: 'Ride', source: 'STRAVA' }
+    const strava = { id: 'i9', name: 'Strava import', type: 'Ride', source: 'STRAVA', start_date_local: daysAgo(2) }
     await renderConnected({ fetchImpl: stubApi({ hits: [strava] }) })
 
     await user.type(searchBox(), 'strava')
@@ -477,40 +507,51 @@ describe('IntervalsPage — date range', () => {
     return fetchImpl
   }
 
-  it('asks for the named start day instead of the rolling window', async () => {
+  // The filter is on before anyone touches it, and `newest` being *tomorrow*
+  // is the easy half to miss: the `+1` rule applies to the default `to` too,
+  // or the very first list drops everything recorded today.
+  it('browses the last 90 days on first paint, ending tomorrow so today counts', async () => {
     const fetchImpl = await renderConnected()
-    const windowOldest = paramsOf(listCalls(fetchImpl)[0]).get('oldest')
 
-    setRange({ from: '2026-08-10' })
+    const params = paramsOf(listCalls(fetchImpl)[0])
+    expect(params.get('oldest')).toBe(dayAgo(90))
+    expect(params.get('newest')).toBe(dayAgo(-1))
+    expect(screen.getByLabelText('From')).toHaveValue(dayAgo(90))
+    expect(screen.getByLabelText('To')).toHaveValue(dayAgo(0))
+  })
+
+  it('asks for the named start day instead of the default floor', async () => {
+    const fetchImpl = await renderConnected()
+    const defaultOldest = paramsOf(listCalls(fetchImpl)[0]).get('oldest')
+
+    setRange({ from: dayAgo(2) })
 
     await waitFor(() => expect(listCalls(fetchImpl)).toHaveLength(2))
     const params = paramsOf(listCalls(fetchImpl)[1])
-    expect(params.get('oldest')).toBe('2026-08-10')
-    expect(params.get('oldest')).not.toBe(windowOldest)
-    expect(params.has('newest')).toBe(false)
+    expect(params.get('oldest')).toBe(dayAgo(2))
+    expect(params.get('oldest')).not.toBe(defaultOldest)
   })
 
   // The §5 rule, end to end: `newest` is midnight at the *start* of its day,
-  // so an inclusive end has to leave here as the day after.
-  it('sends the end day plus one, and keeps the window floor when no start was named', async () => {
+  // so an inclusive end has to leave here as the day after. "No start named"
+  // now means the From field was emptied by hand — the only way back to an
+  // open start, since ↺ restores the default rather than clearing.
+  it('sends the end day plus one, and falls back to the 90-day floor when the start is emptied', async () => {
     const fetchImpl = await renderConnected()
-    const windowOldest = paramsOf(listCalls(fetchImpl)[0]).get('oldest')
 
-    setRange({ to: '2026-08-11' })
+    setRange({ from: '', to: dayAgo(1) })
 
-    await waitFor(() => expect(listCalls(fetchImpl)).toHaveLength(2))
-    const params = paramsOf(listCalls(fetchImpl)[1])
-    expect(params.get('newest')).toBe('2026-08-12')
-    expect(params.get('oldest')).toBe(windowOldest)
+    await waitFor(() => expect(paramsOf(listCalls(fetchImpl).at(-1)).get('newest')).toBe(dayAgo(0)))
+    expect(paramsOf(listCalls(fetchImpl).at(-1)).get('oldest')).toBe(dayAgo(90))
   })
 
   // The same rule seen from the athlete's side: a one-day range around an
-  // activity has to return that activity. Sending `newest=2026-08-11` would
-  // have dropped it.
+  // activity has to return that activity. Sending `newest` as that same day
+  // would have dropped it.
   it('keeps an activity inside a single-day range', async () => {
     await renderConnected()
 
-    setRange({ from: '2026-08-11', to: '2026-08-11' })
+    setRange({ from: dayAgo(1), to: dayAgo(1) })
 
     expect(await screen.findByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument()
@@ -522,43 +563,44 @@ describe('IntervalsPage — date range', () => {
     await renderConnected()
     expect(screen.getByRole('button', { name: /Sunday ride/ })).toBeInTheDocument()
 
-    setRange({ from: '2026-08-10' })
+    setRange({ from: dayAgo(2) })
 
     await waitFor(() => expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument()
   })
 
-  it('brings the held rows straight back when the range is cleared', async () => {
+  it('brings the held rows straight back when the range is reset', async () => {
     await renderConnected()
-    setRange({ from: '2026-08-10' })
+    setRange({ from: dayAgo(2) })
     await waitFor(() => expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /clear date range/i }))
+    fireEvent.click(screen.getByRole('button', { name: /reset to the last 90 days/i }))
 
     // synchronously, from `activities` — no response has to land first
     expect(screen.getByRole('button', { name: /Sunday ride/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('From')).toHaveValue(dayAgo(90))
   })
 
-  it('drops "Load earlier activities" once a start day is named, and restores it on clear', async () => {
-    await renderConnected()
-    expect(screen.getByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+  // The inversion of the old rule, decided deliberately: with the filter on by
+  // default, hiding the button whenever `from` is set would remove paging
+  // entirely. The range *is* the window now, so widening it is what paging is.
+  it('pushes the From field back 90 days when "Load earlier activities" is pressed', async () => {
+    const fetchImpl = await renderConnected()
+    expect(screen.getByLabelText('From')).toHaveValue(dayAgo(90))
 
-    setRange({ from: '2026-08-10' })
+    fireEvent.click(screen.getByRole('button', { name: /load earlier activities/i }))
 
-    // gone, not merely disabled — the widened-window request in flight would
-    // otherwise leave it on screen reading "Loading…"
-    expect(screen.queryByRole('button', { name: /load earlier activities|loading…/i })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /clear date range/i }))
-    expect(await screen.findByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+    // anchored on the oldest row held (i2, 3 days ago), so the floor lands at 93
+    expect(screen.getByLabelText('From')).toHaveValue(dayAgo(93))
+    await waitFor(() => expect(paramsOf(listCalls(fetchImpl).at(-1)).get('oldest')).toBe(dayAgo(93)))
+    // and it is still offered — there is always more history to reach for
+    expect(screen.getByRole('button', { name: /load earlier activities|loading…/i })).toBeInTheDocument()
   })
 
-  // With only an end day the rolling window is still the floor underneath, so
-  // there is something left to widen.
-  it('keeps paging available when only an end day is named', async () => {
+  it('keeps paging available whatever the range says, as long as we are browsing', async () => {
     await renderConnected()
 
-    setRange({ to: '2026-08-11' })
+    setRange({ from: dayAgo(2), to: dayAgo(1) })
 
     expect(await screen.findByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
   })
@@ -577,32 +619,61 @@ describe('IntervalsPage — date range', () => {
   // definition.
   it('fires no request for a range that ends before it starts', async () => {
     const fetchImpl = await renderConnected()
-    setRange({ from: '2026-08-11' })
+    setRange({ from: dayAgo(1) })
     await waitFor(() => expect(listCalls(fetchImpl)).toHaveLength(2))
 
-    setRange({ to: '2026-08-01' })
+    setRange({ to: dayAgo(30) })
 
     expect(screen.getByRole('alert')).toHaveTextContent(/end date is before the start date/i)
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(listCalls(fetchImpl)).toHaveLength(2)
   })
 
+  // Read in the state initialiser rather than an effect, which is what makes
+  // the *first* request use the remembered range instead of the default. Uses
+  // jsdom's real sessionStorage — setupTests.js clears it between tests.
+  it('remembers a range across a remount, and requests it before the default', async () => {
+    const first = await renderConnected()
+    setRange({ from: dayAgo(2) })
+    await waitFor(() => expect(paramsOf(listCalls(first).at(-1)).get('oldest')).toBe(dayAgo(2)))
+
+    cleanup()
+    const second = await renderConnected()
+
+    expect(screen.getByLabelText('From')).toHaveValue(dayAgo(2))
+    expect(paramsOf(listCalls(second)[0]).get('oldest')).toBe(dayAgo(2))
+  })
+
+  it('boots straight into a stored range rather than the default', async () => {
+    sessionStorage.setItem(
+      DATE_RANGE_STORAGE_KEY,
+      JSON.stringify({ v: 1, from: dayAgo(2), to: dayAgo(1) }),
+    )
+
+    const fetchImpl = await renderConnected()
+
+    const params = paramsOf(listCalls(fetchImpl)[0])
+    expect(params.get('oldest')).toBe(dayAgo(2))
+    expect(params.get('newest')).toBe(dayAgo(0))
+    expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument()
+  })
+
   // /search-full takes no date params, so the range can only be applied to the
   // hits it did return — see the comment on `shown` in IntervalsPage.jsx.
   it('filters search hits client-side and says which range emptied them', async () => {
     const user = userEvent.setup({ delay: null })
-    const hillRepeats = { id: 'i7', name: 'Hill repeats', type: 'Run', start_date_local: '2024-03-02T07:30:00' }
+    const hillRepeats = { id: 'i7', name: 'Hill repeats', type: 'Run', start_date_local: daysAgo(10) }
     const fetchImpl = await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
 
     await user.type(screen.getByLabelText(/search activities/i), 'hill')
     await screen.findByRole('button', { name: /Hill repeats/ })
 
-    setRange({ from: '2026-03-01' })
+    setRange({ from: '2026-03-01', to: '2026-03-31' })
 
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /Hill repeats/ })).not.toBeInTheDocument(),
     )
-    expect(screen.getByText('No activities match "hill" on or after 1 Mar 2026.')).toBeInTheDocument()
+    expect(screen.getByText('No activities match "hill" between 1 Mar and 31 Mar 2026.')).toBeInTheDocument()
     // and the search itself was not re-run for a range it cannot express
     expect(fetchImpl.mock.calls.filter(([url]) => url.includes('/search-full'))).toHaveLength(1)
   })

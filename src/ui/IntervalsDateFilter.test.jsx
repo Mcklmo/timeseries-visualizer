@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { EMPTY_RANGE, PRESETS } from '../data/intervals/activityDateRange.js'
+import { EMPTY_RANGE, PRESETS, defaultRange } from '../data/intervals/activityDateRange.js'
 import { toApiDate } from '../data/intervals/intervalsApi.js'
 import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
 
@@ -67,14 +67,34 @@ describe('IntervalsDateFilter', () => {
     expect(screen.getByRole('group', { name: /date range presets/i })).toBeInTheDocument()
   })
 
-  it('offers the ✕ only once a range is set, and clears both bounds with it', () => {
-    renderFilter()
-    expect(screen.queryByRole('button', { name: /clear date range/i })).not.toBeInTheDocument()
+  // The filter is on by default, so the *3 months* chip is what says so — it
+  // reads as pressed before anyone has touched anything.
+  it('shows the 3 months chip as pressed at the default range', () => {
+    renderFilter(defaultRange())
+
+    expect(screen.getByRole('button', { name: '3 months' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '30 days' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  // Reset, not clear: there is no "filtering off" state to return to. A button
+  // that is always there and sometimes a no-op is worse than one that appears
+  // exactly when there is something to undo.
+  it('offers the ↺ only once the range differs from the default, and resets to it', () => {
+    renderFilter(defaultRange())
+    expect(screen.queryByRole('button', { name: /reset to the last 90 days/i })).not.toBeInTheDocument()
 
     const onChange = renderFilter({ from: '2026-03-01', to: null })
-    fireEvent.click(screen.getByRole('button', { name: /clear date range/i }))
+    fireEvent.click(screen.getByRole('button', { name: /reset to the last 90 days/i }))
 
-    expect(onChange).toHaveBeenCalledWith(EMPTY_RANGE)
+    expect(onChange).toHaveBeenCalledWith(defaultRange())
+  })
+
+  // Emptying both fields by hand is still reachable, and is not the default —
+  // so the reset stays offered rather than the control claiming there is
+  // nothing to undo.
+  it('still offers the ↺ for a manually emptied pair of fields', () => {
+    renderFilter(EMPTY_RANGE)
+    expect(screen.getByRole('button', { name: /reset to the last 90 days/i })).toBeInTheDocument()
   })
 
   // The native calendar greys these days out itself, which is most of the

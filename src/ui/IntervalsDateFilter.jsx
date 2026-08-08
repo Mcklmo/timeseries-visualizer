@@ -16,9 +16,10 @@
 // that choice removes the timezone class of bug entirely.
 import { useId } from 'react'
 import {
-  EMPTY_RANGE,
+  DEFAULT_RANGE_DAYS,
   PRESETS,
-  isRangeActive,
+  defaultRange,
+  isSameRange,
   isValidRange,
 } from '../data/intervals/activityDateRange.js'
 import { toApiDate } from '../data/intervals/intervalsApi.js'
@@ -34,7 +35,12 @@ export function IntervalsDateFilter({ range, onChange }) {
   const toId = useId()
   const errorId = useId()
 
-  const today = toApiDate(new Date())
+  // The day is computed once and threaded everywhere below, so every
+  // comparison in one render is against the same day — a fresh `new Date()`
+  // per chip could straddle midnight and make two of them disagree.
+  const todayDate = new Date()
+  const today = toApiDate(todayDate)
+  const theDefault = defaultRange(todayDate)
   const isValid = isValidRange(range)
   // Bounds so the native calendar itself refuses an inverted range. `today`
   // caps both because there are no future activities to browse — and it caps
@@ -52,7 +58,7 @@ export function IntervalsDateFilter({ range, onChange }) {
     <div className="intervals-date-filter">
       <div className="intervals-date-filter__presets" role="group" aria-label="Date range presets">
         {PRESETS.map(({ id, label, rangeFor }) => {
-          const preset = rangeFor(new Date())
+          const preset = rangeFor(todayDate)
           return (
             <button
               key={id}
@@ -60,8 +66,10 @@ export function IntervalsDateFilter({ range, onChange }) {
               className="intervals-date-filter__preset"
               // Pressed reflects the range, not the last button tapped: a
               // preset typed by hand into the two fields still reads as
-              // active, and the state stays the single source of truth.
-              aria-pressed={range.from === preset.from && range.to === preset.to}
+              // active, and the state stays the single source of truth. It is
+              // also what makes *3 months* read as pressed on first paint,
+              // which is how the athlete is told the filter is already on.
+              aria-pressed={isSameRange(range, preset)}
               onClick={() => onChange(preset)}
             >
               {label}
@@ -97,17 +105,22 @@ export function IntervalsDateFilter({ range, onChange }) {
         />
       </div>
 
-      {/* Mirrors the search box's ✕ — same affordance, same touch floor, for
-          the same reason: a date input's own clear control exists on some
-          platforms and not others. */}
-      {isRangeActive(range) && (
+      {/* Reset, not clear — there is no "filtering off" state to return to,
+          so this puts the last 90 days back. It keeps the search box's ✕
+          class (and with it the shared touch floor) though the affordance has
+          diverged: that one empties a field, this one restores a default.
+
+          Shown only once the range differs from that default. A reset button
+          that is always there and sometimes a no-op is worse than one that
+          appears exactly when there is something to undo. */}
+      {!isSameRange(range, theDefault) && (
         <button
           type="button"
           className="intervals-date-filter__clear"
-          aria-label="Clear date range"
-          onClick={() => onChange(EMPTY_RANGE)}
+          aria-label={`Reset to the last ${DEFAULT_RANGE_DAYS} days`}
+          onClick={() => onChange(theDefault)}
         >
-          ✕
+          ↺
         </button>
       )}
 

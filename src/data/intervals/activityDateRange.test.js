@@ -1,14 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import {
+  DEFAULT_RANGE_DAYS,
   EMPTY_RANGE,
   PRESETS,
   activityInRange,
   dayAfter,
+  defaultRange,
   formatRangeLabel,
   isRangeActive,
+  isSameRange,
   isValidRange,
   requestBoundsFor,
   startDayOf,
+  widenedStart,
 } from './activityDateRange.js'
 
 const at = (startDateLocal) => ({ id: 'x', start_date_local: startDateLocal })
@@ -28,6 +32,79 @@ describe('isRangeActive / isValidRange', () => {
     // an open end can't be inverted
     expect(isValidRange({ from: '2026-03-31', to: null })).toBe(true)
     expect(isValidRange(EMPTY_RANGE)).toBe(true)
+  })
+})
+
+describe('isSameRange', () => {
+  it('compares both bounds, and treats a missing range as unequal to a set one', () => {
+    expect(isSameRange({ from: '2026-03-01', to: '2026-03-31' }, { from: '2026-03-01', to: '2026-03-31' })).toBe(true)
+    expect(isSameRange({ from: '2026-03-01', to: '2026-03-31' }, { from: '2026-03-02', to: '2026-03-31' })).toBe(false)
+    expect(isSameRange({ from: '2026-03-01', to: null }, { from: '2026-03-01', to: '2026-03-31' })).toBe(false)
+    expect(isSameRange(EMPTY_RANGE, EMPTY_RANGE)).toBe(true)
+    // `undefined` is not the same as an explicitly empty pair — the ↺ has to
+    // appear for a missing range rather than read as "already the default"
+    expect(isSameRange(undefined, EMPTY_RANGE)).toBe(false)
+  })
+})
+
+describe('defaultRange', () => {
+  it('is the last 90 days, ending today', () => {
+    expect(defaultRange(new Date(2026, 7, 8))).toEqual({ from: '2026-05-10', to: '2026-08-08' })
+    expect(DEFAULT_RANGE_DAYS).toBe(90)
+  })
+
+  // The chip reading as pressed on first paint is what tells the athlete the
+  // filter is already on, so the two must not drift apart.
+  it('is exactly what the 3 months chip produces', () => {
+    const today = new Date(2026, 0, 15)
+    expect(defaultRange(today)).toEqual(PRESETS.find((p) => p.id === '3m').rangeFor(today))
+  })
+
+  it('defaults its argument to now, so callers can just call it', () => {
+    expect(defaultRange()).toEqual(defaultRange(new Date()))
+  })
+})
+
+describe('widenedStart', () => {
+  const activityOn = (day) => ({ id: day, start_date_local: `${day}T09:00:00` })
+
+  // Anchored on the oldest row actually held rather than on `from`: a capped
+  // response stops short of the day that was asked for, and stepping back from
+  // `from` would skip ground the API never returned.
+  it('steps back from the oldest activity held, not from the range start', () => {
+    const range = { from: '2026-05-10', to: '2026-08-08' }
+    const held = [activityOn('2026-06-20'), activityOn('2026-08-01')]
+
+    // 90 days before 20 Jun, not 90 days before 10 May
+    expect(widenedStart(range, held, 90, '2026-05-10')).toBe('2026-03-22')
+  })
+
+  // An empty or badly capped response can leave the anchor *newer* than where
+  // the range already starts. The button must still make progress, or pressing
+  // it does nothing and reads as broken.
+  it('always widens, even when the anchor sits inside the current range', () => {
+    const range = { from: '2026-05-10', to: '2026-08-08' }
+
+    // response only reached back to 11 Aug — a 90-day step from there lands
+    // after 10 May, so the range start is stepped back instead
+    expect(widenedStart(range, [activityOn('2026-08-11')], 90, '2026-05-10')).toBe('2026-02-09')
+    // nothing held at all: same fallback, same guaranteed progress
+    expect(widenedStart(range, [], 90, '2026-05-10')).toBe('2026-02-09')
+  })
+
+  it('ignores rows with no usable date rather than anchoring on nothing', () => {
+    const range = { from: '2026-05-10', to: null }
+    const held = [{ id: 'stub' }, activityOn('2026-06-20'), at('not a date')]
+
+    expect(widenedStart(range, held, 90, '2026-05-10')).toBe('2026-03-22')
+  })
+
+  it('falls back to the given floor when the start field was emptied by hand', () => {
+    expect(widenedStart({ from: null, to: null }, [], 90, '2026-05-10')).toBe('2026-02-09')
+  })
+
+  it('rolls back over month and year boundaries', () => {
+    expect(widenedStart({ from: '2026-01-15', to: null }, [], 90, '2026-01-15')).toBe('2025-10-17')
   })
 })
 

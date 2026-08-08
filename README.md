@@ -168,19 +168,23 @@ directly; nothing — not the key, not your activities — passes through this a
 which serves nothing but the page. This works because intervals.icu's API sends CORS
 headers, which is why the feature needed no server-side code at all.
 
-**Finding an activity.** The list itself shows a rolling window of recent activities, widened
-backwards by **Load earlier activities**. The search box above it does not search that window —
-it searches your **whole intervals.icu history** by activity name, from two characters up, as
-you type. A query starting with `#` is an exact **tag** search instead (`#threshold` finds
+**Finding an activity.** The list shows the **last 90 days**, widened backwards another 90 days
+each time you press **Load earlier activities**. The search box above it does not search that
+window — it searches your **whole intervals.icu history** by activity name, from two characters
+up, as you type. A query starting with `#` is an exact **tag** search instead (`#threshold` finds
 everything tagged `threshold`). Clearing the box drops straight back to the list you were
 browsing, exactly where you left it.
 
 **Filtering by date.** Under the search box are three one-tap presets (30 days, 3 months,
-12 months) and a **From** / **To** pair. Both ends are inclusive: *1 Mar → 31 Mar* includes
-everything recorded on both days. Setting **From** fetches straight back to that day, so
-"Load earlier activities" disappears — you've named the floor yourself, and clearing the range
-with **✕** brings it back. Nothing flashes on the way: the activities you had already loaded
-stay on screen while the wider window reloads behind them. The range narrows search results
+12 months) and a **From** / **To** pair. The filter is **on from the start**: *3 months* reads as
+pressed and both fields are already filled with the last 90 days, so "Load earlier activities" is
+just the **From** field stepping backwards. Both ends are inclusive: *1 Mar → 31 Mar* includes
+everything recorded on both days. **↺** puts the last 90 days back, and shows up only once the
+range differs from them — there is no "filtering off" state, though you can still empty either
+field by hand. Whatever range you leave it on is remembered **for that browser tab**: reload and
+it comes back (and the first request already uses it), open a new tab and you start at the last
+90 days again. Nothing flashes on the way: the activities you had already loaded stay on screen
+while the wider window reloads behind them. The range narrows search results
 too, but only the ones the search already returned:
 that endpoint accepts no dates, so it hands back the 30 best name matches from your whole
 history and the range is applied to those. A search that comes up empty under a range may still
@@ -194,7 +198,10 @@ have older matches — widen the range or narrow the query.
   you want isn't there. Nothing is cached, so the same search runs again next time.
 - **Strava-synced activities can't be downloaded.** intervals.icu doesn't keep an original
   file for them. Those rows appear in the list, disabled, with that as the stated reason —
-  they're shown rather than hidden so a missing activity doesn't read as a bug.
+  they're shown rather than hidden so a missing activity doesn't read as a bug. The one
+  exception is a row that arrives with **no date at all** (some Strava rows are near-empty
+  stubs): it can't honestly be placed inside a date range, so the date filter drops it. Empty
+  both date fields to see those rows again.
 - What you get is the *original* file, so it carries everything the file carries — including
   Stryd power from a FIT developer field, which Garmin Connect's own TCX export drops. It is
   not, however, byte-identical to a manual Garmin Connect export: Garmin filters some
@@ -424,22 +431,35 @@ path, though (see step 9 below).
       and the header shows intervals.icu's *real* activity title rather than a derived
       "Morning Run". Cross-check avg pace against Garmin Connect, as the fixture tests do.
     - **Search** — type part of a workout name from *outside* the loaded window (something
-      older than ~90 days, without pressing "Load earlier"): it should appear. Then `#` plus
-      a tag you actually use → exact tag matches. Clear the box → the original windowed list
-      is back untouched and "Load earlier activities" still widens it correctly. Note the
-      button is **absent** while searching, deliberately — there is no window under the hits.
+      older than ~90 days, without pressing "Load earlier"). The hit is fetched but the
+      **default range hides it**, which is itself the check: widen **From** (or empty it) and
+      the row appears. Then `#` plus a tag you actually use → exact tag matches. Clear the box
+      → the original windowed list is back untouched and "Load earlier activities" still
+      widens it correctly. Note the button is **absent** while searching, deliberately — there
+      is no window under the hits.
     - In DevTools → Network while searching: **one** `search-full` request per typing burst,
       not one per keystroke. Then type fast enough to overlap two requests and confirm the
       rows on screen match the *final* query, not whichever answer arrived last. A one-letter
       query should issue nothing at all.
-    - **Date range** — press *3 months*: the chip reads as pressed, the two fields fill in, and
-      the list is refetched from that day rather than paged back to it. Then set **From** and
-      **To** to the *same* day, one on which you recorded something: that activity must still
-      be listed. That is the `newest`-excludes-its-own-day gotcha again, from the other side,
-      and the single easiest thing here to get wrong. Confirm the native calendar refuses days
-      outside the greyed-out bounds and that its panel is **dark**, that "Load earlier
-      activities" disappears once **From** is set and returns on **✕**, and that a search run
-      with a range active filters the hits and names the range in the empty message.
+    - **Date range, default** — on first paint the two fields already hold the last 90 days,
+      *3 months* reads as pressed, and **↺** is **absent**. In DevTools → Network the very
+      first `/activities` request carries both `oldest` (90 days back) and `newest`
+      (**tomorrow**, not today).
+    - **Date range, the gotcha** — set **From** and **To** to the *same* day, one on which you
+      recorded something: that activity must still be listed. That is the
+      `newest`-excludes-its-own-day gotcha from the other side, and the single easiest thing
+      here to get wrong. Confirm the native calendar refuses days outside the greyed-out bounds
+      and that its panel is **dark**, and that a search run with a range active filters the
+      hits and names the range in the empty message.
+    - **Paging** — press *Load earlier activities*: the **From** field jumps back 90 days,
+      older rows arrive, and the button is **still there**. Press it again and confirm it makes
+      progress every time, including right after a response that came back empty.
+    - **Reset** — **↺** appears as soon as the range differs from the default, returns both
+      fields to the last 90 days, and then disappears again.
+    - **Remembered per tab** — change **From**, reload: the same range comes back *and* the
+      first `/activities` request uses it rather than the default. Open a **new** tab: back to
+      the last 90 days, which is the whole point of `sessionStorage`. Type an end date before
+      the start date: both fields go invalid, the alert shows, and **no** request fires.
     - Open a search hit → it loads and charts like any other row (same `{type:'id'}` path).
     - Reload → still connected. **Disconnect** → the key is gone from `localStorage` (check
       in DevTools → Application), the list is gone, and the app still works fully for

@@ -13,7 +13,11 @@
 // `parseDay` for the reason documented there.
 import { toApiDate } from './intervalsApi.js'
 
-/** No filter. The page's initial state, and where the ✕ returns to. */
+/**
+ * No filter. Not a state the UI offers any more — the page starts at
+ * `defaultRange()` and ↺ returns there — but still reachable by emptying both
+ * fields by hand, and still what `formatRangeLabel` falls back to.
+ */
 export const EMPTY_RANGE = { from: null, to: null }
 
 /** @typedef {{from: string | null, to: string | null}} DateRange */
@@ -21,6 +25,14 @@ export const EMPTY_RANGE = { from: null, to: null }
 /** Either bound set — one open end is still a filter. */
 export function isRangeActive(range) {
   return Boolean(range?.from || range?.to)
+}
+
+/**
+ * Range equality — "is this still the default?", which is what decides whether
+ * the ↺ is worth showing, and the presets' `aria-pressed`.
+ */
+export function isSameRange(a, b) {
+  return a?.from === b?.from && a?.to === b?.to
 }
 
 /**
@@ -53,7 +65,7 @@ function parseDay(day) {
  * The calendar day an activity happened on, or null when it didn't say.
  *
  * This is the **single** parser for `start_date_local` on the filtering path —
- * IntervalsPage's `nextWindowStart` reads it too. `IntervalsActivityList`'s
+ * `activityInRange` and `widenedStart` both go through it. `IntervalsActivityList`'s
  * `formatStartDate` keeps its own, deliberately: it needs the `Date` itself to
  * hand to `Intl`, so routing it through here would only mean parsing twice.
  * Do not add a fourth copy.
@@ -99,9 +111,18 @@ export function dayAfter(day) {
   return toApiDate(date)
 }
 
+/** The mirror of `dayAfter`, and `setDate`'s overflow handling is what makes
+ *  it correct across month and year boundaries too. */
+function daysBefore(day, days) {
+  const date = parseDay(day)
+  date.setDate(date.getDate() - days)
+  return toApiDate(date)
+}
+
 /**
- * What to ask `/activities` for, given the range and the page's rolling-window
- * floor to fall back on when the athlete named no start.
+ * What to ask `/activities` for, given the range and the floor to fall back on
+ * when the athlete emptied the start field by hand — the range's own `from` is
+ * the floor in every other case.
  *
  * **The `+ 1 day` on `newest` is the entire point of this function.** The API
  * reads `newest=<day>` as midnight *at the start* of that day (see
@@ -111,12 +132,40 @@ export function dayAfter(day) {
  * `to` is unset, restoring the endpoint's own default of "up to now".
  *
  * @param {DateRange} range
- * @param {string} fallbackOldest - `YYYY-MM-DD`, the browse window's start
+ * @param {string} fallbackOldest - `YYYY-MM-DD`, the default range's start
  * @returns {{oldest: string, newest?: string}}
  */
 export function requestBoundsFor(range, fallbackOldest) {
   const oldest = range?.from ?? fallbackOldest
   return range?.to ? { oldest, newest: dayAfter(range.to) } : { oldest }
+}
+
+/**
+ * The next `from` for "Load earlier activities" — paging *is* widening the
+ * range now, since the range is the only browse floor there is.
+ *
+ * Anchored on the oldest activity actually held, not on the range's own `from`
+ * — those differ whenever a response came back capped, and `from` would then
+ * claim to have covered ground that was never returned.
+ *
+ * The final guard keeps the button honest: it must always widen the range,
+ * even when an empty or capped response left the anchor newer than where the
+ * range already starts.
+ *
+ * `.sort()` on `YYYY-MM-DD` orders chronologically, which is the same property
+ * the rest of this module is built on.
+ *
+ * @param {DateRange} range
+ * @param {object[]} activities
+ * @param {number} days
+ * @param {string} fallbackFrom - used when the start field was emptied by hand
+ */
+export function widenedStart(range, activities, days, fallbackFrom) {
+  const currentFrom = range?.from ?? fallbackFrom
+  const oldestHeldDay = activities.map(startDayOf).filter(Boolean).sort()[0]
+  const anchor = oldestHeldDay ?? currentFrom
+  const candidate = daysBefore(anchor, days)
+  return candidate < currentFrom ? candidate : daysBefore(currentFrom, days)
 }
 
 /**
@@ -129,19 +178,37 @@ function lastDays(today, days) {
   return { from: toApiDate(from), to: toApiDate(today) }
 }
 
+/** Wide enough that a first load almost always fills the screen, narrow enough
+ *  that it stays one quick request on a phone connection. */
+export const DEFAULT_RANGE_DAYS = 90
+
+/**
+ * The filter's default and its reset target — the page starts here rather than
+ * unfiltered. Also the browse floor, and the step "Load earlier activities"
+ * widens by: IntervalsPage used to keep a separate `WINDOW_DAYS` window
+ * alongside the range, and now that the range is the only floor there is,
+ * there is one number in one place.
+ */
+export function defaultRange(today = new Date()) {
+  return lastDays(today, DEFAULT_RANGE_DAYS)
+}
+
 /**
  * The one-tap ranges. Counted in **days, not calendar months**: `setMonth` on
  * the 31st silently overflows (31 May − 3 months is 3 March, not 28 February),
  * and nobody reading "3 months" here is asking for a precise calendar span —
  * they are asking for roughly the last season of training. 90 and 365 are also
- * exactly what the labels imply to an athlete, and 90 matches the browse
- * window IntervalsPage already uses.
+ * exactly what the labels imply to an athlete.
+ *
+ * *3 months* reads through `DEFAULT_RANGE_DAYS` rather than a literal 90, so
+ * the chip and the default cannot drift apart — that chip reading as pressed
+ * on first paint is what tells the athlete the filter is already on.
  *
  * @type {{id: string, label: string, rangeFor: (today: Date) => DateRange}[]}
  */
 export const PRESETS = [
   { id: '30d', label: '30 days', rangeFor: (today) => lastDays(today, 30) },
-  { id: '3m', label: '3 months', rangeFor: (today) => lastDays(today, 90) },
+  { id: '3m', label: '3 months', rangeFor: (today) => lastDays(today, DEFAULT_RANGE_DAYS) },
   { id: '12m', label: '12 months', rangeFor: (today) => lastDays(today, 365) },
 ]
 

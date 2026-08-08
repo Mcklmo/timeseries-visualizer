@@ -4,10 +4,17 @@ import userEvent from '@testing-library/user-event'
 import App, { AppShell } from './App.jsx'
 import { AppProviders } from './app/providers.jsx'
 import { API_KEY_STORAGE_KEY } from './data/intervals/credentialStore.js'
+import { toApiDate } from './data/intervals/intervalsApi.js'
 
 // App wires the real credentialStore, which is backed by jsdom's real
 // localStorage — so "not connected" has to be established rather than assumed.
 beforeEach(() => window.localStorage.removeItem(API_KEY_STORAGE_KEY))
+
+const yesterday = () => {
+  const date = new Date()
+  date.setDate(date.getDate() - 1)
+  return toApiDate(date)
+}
 
 const validTcxXml = `<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase
@@ -400,8 +407,10 @@ describe('AppShell (controlled source, for states the real parsers never produce
       vi.fn(
         async () =>
           new Response(
+            // Dated relative to now: the picker filters to the last 90 days by
+            // default, so a hardcoded day would age out of the list.
             JSON.stringify([
-              { id: 'i77', name: 'Tempo 5×1k', type: 'Run', start_date_local: '2026-08-11T17:04:00' },
+              { id: 'i77', name: 'Tempo 5×1k', type: 'Run', start_date_local: `${yesterday()}T17:04:00` },
             ]),
             { status: 200, headers: { 'content-type': 'application/json' } },
           ),
