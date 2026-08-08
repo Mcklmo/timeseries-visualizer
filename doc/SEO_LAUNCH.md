@@ -320,11 +320,11 @@ just a web page that syncs from their existing account.
 >
 > The other half is that it's entirely a web page — nothing to install, works on a phone.
 > Paste your API key (Settings → Developer Settings) and you can search your history by
-> activity name and open any activity's original file straight into the charts, Stryd power
-> and all, since intervals.icu hands back the file you uploaded rather than normalized
-> samples. That's mostly a phone story: getting a .fit into a mobile browser is awkward, but
-> intervals.icu is already auto-syncing from Garmin, so it's paste the key once and
-> everything is there. You can also just drop a .fit, .tcx or .gpx in directly.
+> activity name and open any activity's original file straight into the charts — the file you
+> uploaded, not normalized samples, so Stryd power comes through. That's mostly a phone story:
+> wrestling a .fit into a mobile browser is awkward, but Garmin has already synced everything,
+> so you paste the key once and it's all there. You can also just drop a .fit, .tcx or .gpx in
+> directly.
 >
 > Your browser calls intervals.icu itself — the key and the files never pass through my
 > server, which serves nothing but the page. Free, no account, no upload.
