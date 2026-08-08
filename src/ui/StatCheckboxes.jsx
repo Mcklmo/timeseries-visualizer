@@ -6,6 +6,7 @@
 // "max" visually — the metric name alone would collide across rows.
 import { metricRegistry, statKindsFor } from '../metrics/metricRegistry.js'
 import { useChartView } from '../state/ChartViewContext.jsx'
+import { derivativeStroke } from './derivativeStyle.js'
 
 // Presentation only, and deliberately NOT in the registry — same category as
 // MetricPanel's STAT_DASH. 'd1'/'d2' are the persisted state's names for these
@@ -40,12 +41,19 @@ export function StatCheckboxes({ metricId }) {
     <span className="stat-checkboxes">
       {statKindsFor(metric).map((kind) => {
         const checked = enabled.includes(kind)
-        // Derivative kinds only. The accent means "derived", not "checked" —
-        // the four scalar kinds stay dim when on, exactly as they are now.
+        // Derivative kinds only. The tint means "derived", not "checked" — the
+        // four scalar kinds stay dim when on, exactly as they are now.
         const isDeriv = metric.derivative?.[kind] != null
 
         return (
-          <label key={kind} className={`stat-checkbox${isDeriv && checked ? ' stat-checkbox--active' : ''}`}>
+          <label
+            key={kind}
+            className={`stat-checkbox${isDeriv && checked ? ' stat-checkbox--active' : ''}`}
+            // The box is drawn in the colour of the line it draws — per metric,
+            // not one shared accent. The shared accent was the bug: it promised
+            // cyan and produced a pale pink line for every metric but `speed`.
+            style={isDeriv ? { '--deriv-hue': derivativeStroke(metric) } : undefined}
+          >
             <input
               type="checkbox"
               aria-label={statCheckboxLabel(metric, kind)}

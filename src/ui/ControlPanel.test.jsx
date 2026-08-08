@@ -44,7 +44,7 @@ function Loader() {
 
 function panelFor(container, metricId) {
   return [...container.querySelectorAll('.metric-panel')].find(
-    (p) => p.querySelector('.recharts-line .recharts-curve')?.getAttribute('stroke') === metricRegistry[metricId].color,
+    (p) => p.querySelector('.metric-line .recharts-curve')?.getAttribute('stroke') === metricRegistry[metricId].color,
   )
 }
 
@@ -182,10 +182,10 @@ describe('ControlPanel', () => {
     expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(1)
   })
 
-  it('lights a checked derivative box in the accent, and leaves the scalar boxes dim', async () => {
-    // The accent means "derived", not "checked": it is the same blue as the
-    // overlay's casing, so the control and the mark it draws read as one thing.
-    await renderApp()
+  it('lights a checked derivative box in the colour of the line it draws, and leaves the scalar boxes dim', async () => {
+    // The tint means "derived", not "checked", so the control and the mark it
+    // draws read as one thing.
+    const { container } = await renderApp()
     const ramp = screen.getByRole('checkbox', { name: 'Heart rate ramp' })
     const max = screen.getByRole('checkbox', { name: 'Heart rate max' })
 
@@ -197,6 +197,12 @@ describe('ControlPanel', () => {
     await userEvent.click(max)
     await waitFor(() => expect(max).toBeChecked())
     expect(max.closest('.stat-checkbox')).not.toHaveClass('stat-checkbox--active')
+
+    // The control and the mark are one thing only if they are literally one
+    // colour. They were not: the box lit `--accent` cyan while the line drew a
+    // lighter step of the metric's own hue — pale pink, for heart rate.
+    const drawn = panelFor(container, 'heartRate').querySelector('.deriv-line .recharts-curve').getAttribute('stroke')
+    expect(ramp.closest('.stat-checkbox').style.getPropertyValue('--deriv-hue')).toBe(drawn)
   })
 
   it('checking max adds a reference line to that metric only', async () => {

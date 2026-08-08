@@ -499,10 +499,12 @@ main {
   cursor: pointer;
 }
 
-/* The accent marks a derived series wherever it appears — the overlay's casing
-   in the chart, and the checkbox that switched it on. */
-.stat-checkbox--active { color: var(--accent); }
-.stat-checkbox--active input { accent-color: var(--accent); }
+/* A checked derivative box is drawn in the colour of the line it draws — the
+   hue is set per metric as --deriv-hue on the label (StatCheckboxes.jsx), so
+   the control and the mark are literally the same colour. The four scalar
+   kinds stay dim when checked: this means "derived", not "checked". */
+.stat-checkbox--active { color: var(--deriv-hue); }
+.stat-checkbox--active input { accent-color: var(--deriv-hue); }
 
 .x-axis-mode-switch {
   display: inline-flex;

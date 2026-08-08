@@ -88,7 +88,7 @@ async function pinchStack(container, { from, to }) {
 // domain. Comparing positions is also strictly stronger than comparing counts:
 // it pins where the samples actually landed, in pixels.
 function pathXs(panel) {
-  const d = panel.querySelector('.recharts-line .recharts-curve').getAttribute('d')
+  const d = panel.querySelector('.metric-line .recharts-curve').getAttribute('d')
   return [...d.matchAll(/[ML](-?[\d.]+),/g)].map(([, x]) => Number(x))
 }
 
@@ -161,7 +161,7 @@ describe('ChartStack', () => {
     expect(panels).toHaveLength(4)
 
     const expectedOrder = metricOrder.filter((id) => fixtureActivity.availableMetrics.includes(id))
-    const colors = [...panels].map((p) => p.querySelector('.recharts-line .recharts-curve').getAttribute('stroke'))
+    const colors = [...panels].map((p) => p.querySelector('.metric-line .recharts-curve').getAttribute('stroke'))
     expect(colors).toEqual(expectedOrder.map((id) => metricRegistry[id].color))
   })
 
@@ -170,7 +170,7 @@ describe('ChartStack', () => {
     const { container } = await renderStack({ activity: sparse })
     const panels = container.querySelectorAll('.metric-panel')
     expect(panels).toHaveLength(2)
-    const colors = [...panels].map((p) => p.querySelector('.recharts-line .recharts-curve').getAttribute('stroke'))
+    const colors = [...panels].map((p) => p.querySelector('.metric-line .recharts-curve').getAttribute('stroke'))
     expect(colors).toEqual([metricRegistry.heartRate.color, metricRegistry.altitude.color])
   })
 
@@ -351,7 +351,7 @@ describe('ChartStack', () => {
     await waitFor(() => expect(container.querySelectorAll('.metric-panel')).toHaveLength(3))
 
     const colors = [...container.querySelectorAll('.metric-panel')].map((p) =>
-      p.querySelector('.recharts-line .recharts-curve').getAttribute('stroke'),
+      p.querySelector('.metric-line .recharts-curve').getAttribute('stroke'),
     )
     expect(colors).not.toContain(metricRegistry.cadence.color)
   })

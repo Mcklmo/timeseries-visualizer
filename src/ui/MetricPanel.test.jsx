@@ -5,6 +5,7 @@ import { extentOf, fullDomain } from '../domain/zoomDomain.js'
 import { metricRegistry } from '../metrics/metricRegistry.js'
 import { statsBasisFor } from '../stats/statsBasis.js'
 import { plotRectFromSurface, Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
+import { derivativeStroke } from './derivativeStyle.js'
 
 // Recharts path data looks like "M61,85L328,5L595,45" — one M/L command per
 // rendered point, in data order. Parsing it back out is the only way to
@@ -15,7 +16,7 @@ function pathPoints(pathEl) {
 }
 
 function linePath(container) {
-  return container.querySelector('.recharts-line .recharts-curve')
+  return container.querySelector('.metric-line .recharts-curve')
 }
 
 const activity = {
@@ -236,39 +237,40 @@ describe('MetricPanel', () => {
   const derivActivity = { ...activity, samplingIntervalS: 10 }
   const withOverlay = { activity: derivActivity, enabledStats: ['d1'], rightInset: Y_AXIS_RIGHT_WIDTH }
 
-  // Selected by class, not by index: the overlay is two marks now (casing +
-  // core) and an index would have to be renumbered every time a mark is added.
+  // Selected by class, not by index: the marks on a panel get renumbered every
+  // time one is added or the paint order changes, and this one flipped once.
   function derivPath(container) {
     return container.querySelector('.deriv-line .recharts-curve')
   }
 
-  it('draws the derivative as a cased line on the metric’s own panel', () => {
+  it('draws the derivative under the main line, thinner and in a lighter step of the hue', () => {
     const { container } = renderPanel(withOverlay)
     const curves = [...container.querySelectorAll('.recharts-line .recharts-curve')]
-    const casing = container.querySelector('.deriv-casing .recharts-curve')
-    const core = derivPath(container)
+    const main = container.querySelector('.metric-line .recharts-curve')
+    const deriv = derivPath(container)
 
-    // A lighter step of the metric's own hue — §9 allows one hue per metric,
-    // and this IS that metric, seen as a rate.
-    expect(core.getAttribute('stroke')).toBe(`color-mix(in oklab, ${metricRegistry.heartRate.color} 72%, white)`)
-    expect(Number(core.getAttribute('stroke-width'))).toBe(2)
+    // The casing is gone. 4.5px of accent under a 2px core made the DERIVED
+    // series the heaviest mark on a panel that is about the measured one.
+    expect(container.querySelector('.deriv-casing')).toBeNull()
+    expect(curves).toHaveLength(2)
 
-    // The casing is the app accent, and is wider — that is what puts blue on
-    // both sides of the core rather than replacing it.
-    expect(casing.getAttribute('stroke')).toBe('var(--accent)')
-    expect(Number(casing.getAttribute('stroke-width'))).toBeGreaterThan(Number(core.getAttribute('stroke-width')))
+    // One hue per metric (§9) — this IS that metric, seen as a rate, so it is
+    // a lighter step of the same hue and not a colour of its own. Reading it
+    // from the shared helper is the point: the checkbox reads the same one.
+    expect(deriv.getAttribute('stroke')).toBe(derivativeStroke(metricRegistry.heartRate))
+    expect(main.getAttribute('stroke')).toBe(metricRegistry.heartRate.color)
 
-    // Draw order: main line first (every other test's `querySelector` means it),
-    // then casing, then core over the top of it.
-    expect(curves.indexOf(casing)).toBe(1)
-    expect(curves.indexOf(core)).toBe(2)
+    // The hierarchy, which is the whole fix: the measured series is the
+    // heavier mark AND paints on top of the one derived from it.
+    expect(Number(deriv.getAttribute('stroke-width'))).toBeLessThan(Number(main.getAttribute('stroke-width')))
+    expect(curves.indexOf(deriv)).toBe(0)
+    expect(curves.indexOf(main)).toBe(1)
 
-    // The main line is untouched by any of this: solid, and its own flat hue.
-    expect(curves[0].getAttribute('stroke')).toBe(metricRegistry.heartRate.color)
-    expect(curves[0].getAttribute('stroke-dasharray')).toBeNull()
-    // Solid overlay too — the casing carries "derived", so the dash is gone.
-    expect(core.getAttribute('stroke-dasharray')).toBeNull()
-    expect(casing.getAttribute('stroke-dasharray')).toBeNull()
+    // Both solid. A derivative is noisy by construction, and a dash on a
+    // high-frequency trace turns to mush — the old `3 3` is one of the three
+    // reasons the overlay could not be found at all.
+    expect(main.getAttribute('stroke-dasharray')).toBeNull()
+    expect(deriv.getAttribute('stroke-dasharray')).toBeNull()
   })
 
   it('draws no overlay when no derivative is enabled, whatever the gutter says', () => {
@@ -296,6 +298,20 @@ describe('MetricPanel', () => {
     const rightTicks = (c) => [...c.querySelectorAll('.recharts-yAxis')][1].querySelectorAll('.recharts-cartesian-axis-tick')
     expect(rightTicks(labelled).length).toBeGreaterThan(0)
     expect(rightTicks(reservedOnly)).toHaveLength(0)
+
+    // The right axis is tinted to the overlay's own stroke, which is what says
+    // "this pale line reads against THESE ticks" (§7).
+    const tint = derivativeStroke(metricRegistry.heartRate)
+    const rightAxis = (c) => [...c.querySelectorAll('.recharts-yAxis')][1]
+    expect(rightAxis(labelled).querySelector('.recharts-cartesian-axis-line').getAttribute('stroke')).toBe(tint)
+    // The tick TEXT is not under .recharts-yAxis: recharts@3.10.1 hoists tick
+    // labels into a shared z-index layer (`ZIndexLayer` at DefaultZIndexes.label
+    // in CartesianAxis.js), leaving only the lines behind. Found by its own
+    // `orientation` rather than by index for that reason.
+    const rightTickText = [...labelled.querySelectorAll('.recharts-cartesian-axis-tick-value')].find(
+      (t) => t.getAttribute('orientation') === 'right',
+    )
+    expect(rightTickText.getAttribute('fill')).toBe(tint)
   })
 
   it('draws no overlay at all without a gutter to draw it in', () => {

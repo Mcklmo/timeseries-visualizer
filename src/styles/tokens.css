@@ -20,11 +20,13 @@
   --danger: #ef476f;
   --success: #06d6a0;
 
-  /* The app accent: the logo's blue. Same value as --metric-pace, named for
-     meaning — it marks a DERIVED series (the overlay's casing, the d/dt
-     checkboxes), which is not "a pace thing", and the two must be free to
-     diverge. public/favicon.svg hardcodes this hex in its fill, since an SVG
-     file cannot read a custom property; keep the two in step by hand. */
+  /* The brand accent: the logo's blue, used by .brand-mark and nothing in the
+     data area. It briefly also meant "derived series" (a cased overlay); that
+     is gone — a derivative is now drawn in a lighter step of its own metric's
+     hue, which is the stricter reading of "one hue per metric" and which also
+     removes the collision with --metric-pace that `speed` used to hit.
+     public/favicon.svg hardcodes this hex in its fill, since an SVG file
+     cannot read a custom property; keep the two in step by hand. */
   --accent: #4cc9f0;
 
   --panel-gap: 4px; /* tight — panels must read as one instrument */

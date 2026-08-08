@@ -13,6 +13,7 @@ import { computeYDomain } from '../stats/aggregate.js'
 import { useDerivativeSeries } from '../stats/useDerivativeSeries.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
 import { CHART_MARGIN, Y_AXIS_WIDTH } from './chartGeometry.js'
+import { derivativeStroke } from './derivativeStyle.js'
 import { SyncedTooltip } from './SyncedTooltip.jsx'
 
 // Y_AXIS_WIDTH and CHART_MARGIN are imported, not declared here, because the
@@ -26,18 +27,14 @@ const SYNC_ID = 'activity'
 // a derivative is a series on its own axis, not a horizontal reference line.
 const STAT_DASH = { max: '4 4', min: '1 2', avg: undefined, median: '2 3' }
 
-// The overlay is drawn twice: a wide accent stroke, then the metric's own hue
-// over the top of it. That is how SVG produces a cased line — `stroke` has no
-// outline of its own. The blue is NOT the metric's hue; it is the app accent,
-// and it means "derived" wherever it appears (see the d/dt checkboxes, and
-// ARCHITECTURE.md §9). Solid, not dashed: the casing already says "not the raw
-// metric", and a dash short enough to read at 4.5px would outline each dash
-// instead of edging the line.
-const DERIV_CASING_WIDTH = 4.5
-const DERIV_CORE_WIDTH = 2
-// Lifts the core off the dark ground so it advances while the casing recedes —
-// still one hue per metric, just a lighter step of it.
-const derivStroke = (metric) => `color-mix(in oklab, ${metric.color} 72%, white)`
+// Both weights live here, adjacent, because the RATIO between them is the
+// design: the measured metric is the subject of the panel and the derivative
+// is an annotation on it, so the main line is the heavier mark and paints on
+// top. Stated explicitly rather than left to Recharts' default of 1 — the
+// previous version set a 4.5px overlay against that invisible default and
+// inverted the hierarchy. See ARCHITECTURE.md §7.
+const MAIN_STROKE_WIDTH = 1.75
+const DERIV_STROKE_WIDTH = 1.25
 
 // Recharts binds a <Line>/<YAxis>/<ReferenceLine> to an axis by `yAxisId`,
 // which DEFAULTS TO 0 on all three (their own defaultProps). While there was
@@ -125,6 +122,9 @@ export function MetricPanel({
   // of 60, and the panel silently lays out 60px narrower than the gesture
   // believes. A missing overlay is a visible bug; that one is not.
   const hasOverlay = derivSeries != null && derivSpec != null && rightInset > 0
+  // One value for the stroke, the axis it reads against, and the checkbox that
+  // switched it on — see derivativeStyle.js.
+  const derivColor = derivativeStroke(metric)
 
   // Every panel builds its rows from the same samples with the same gap
   // threshold, so the synthetic break rows land at the same index in all of
@@ -247,8 +247,13 @@ export function MetricPanel({
               width={rightInset}
               domain={derivDomain}
               allowDataOverflow={derivDomain != null}
-              tick={hasOverlay}
-              axisLine={hasOverlay}
+              // Tinted to the overlay's own stroke: this is what tells the
+              // reader which of the two axes the pale line reads against. It
+              // is also the discoverability cue the 4.5px casing was reaching
+              // for — and it costs no ink inside the plot area.
+              tick={hasOverlay ? { fill: derivColor } : false}
+              tickLine={hasOverlay ? { stroke: derivColor } : false}
+              axisLine={hasOverlay ? { stroke: derivColor } : false}
               tickFormatter={derivSpec?.format}
               interval={0}
             />
@@ -276,43 +281,38 @@ export function MetricPanel({
           {/* The zero crossing is the landmark the overlay exists to show:
               where the heart rate stops climbing, where the ascent tops out. */}
           {hasOverlay && <ReferenceLine yAxisId={DERIV_AXIS} y={0} stroke="var(--stat-line)" />}
+          {/* Painted BEFORE the main line — Recharts paints children in order,
+              so the metric a rate is derived FROM occludes it, not the reverse.
+              A lighter step of that metric's own hue and a thinner stroke: §9
+              allows one hue per metric, and this IS that metric, seen as a
+              rate. Solid — a derivative is noisy by construction (see
+              DERIV_DOMAIN_QUANTILE above) and a dash on a high-frequency trace
+              turns to mush; the previous 3 3 dash is one of the three reasons
+              this line could not be found at all. The same colour tints the
+              right-hand axis it reads against and the d/dt checkbox that
+              switched it on. */}
+          {hasOverlay && (
+            <Line
+              className="deriv-line"
+              yAxisId={DERIV_AXIS}
+              dataKey={derivKey}
+              stroke={derivColor}
+              strokeWidth={DERIV_STROKE_WIDTH}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+          )}
           <Line
+            className="metric-line"
             yAxisId={VALUE_AXIS}
             dataKey={metricId}
             stroke={metric.color}
+            strokeWidth={MAIN_STROKE_WIDTH}
             dot={false}
             isAnimationActive={false}
             connectNulls={false}
           />
-          {/* Cased: a wide accent stroke under a lighter step of the metric's
-              own hue. The accent is the app's mark for a derived series, the
-              same blue the d/dt checkbox lights up in — §9. */}
-          {hasOverlay && (
-            <>
-              <Line
-                className="deriv-casing"
-                yAxisId={DERIV_AXIS}
-                dataKey={derivKey}
-                stroke="var(--accent)"
-                strokeWidth={DERIV_CASING_WIDTH}
-                dot={false}
-                activeDot={false} // else the hover puts two dots on one point
-                tooltipType="none" // else the payload carries this row twice
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-              <Line
-                className="deriv-line"
-                yAxisId={DERIV_AXIS}
-                dataKey={derivKey}
-                stroke={derivStroke(metric)}
-                strokeWidth={DERIV_CORE_WIDTH}
-                dot={false}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
-            </>
-          )}
         </LineChart>
       </ResponsiveContainer>
       <StatSummary metric={metric} entries={statEntries} sport={activity.sport} />
