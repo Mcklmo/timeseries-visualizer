@@ -73,9 +73,10 @@ describe('intervalsApi request shape', () => {
   })
 
   // `oldest` is required by the API. `newest` defaults to now and *excludes
-  // its own day* (newest=2026-05-30 means ...T00:00:00), so sending it at all
-  // would silently drop everything recorded today.
-  it('always sends oldest and never sends newest when listing activities', async () => {
+  // its own day* (newest=2026-05-30 means ...T00:00:00), so the rolling browse
+  // window leaves it out entirely — sending today's date there would silently
+  // drop everything recorded today.
+  it('always sends oldest, and omits newest when the caller gave none', async () => {
     const [fetchImpl, calls] = stubFetch(jsonResponse([]))
 
     await listActivities({ apiKey: API_KEY, oldest: '2026-05-09', fetchImpl })
@@ -85,6 +86,20 @@ describe('intervalsApi request shape', () => {
     expect(url.searchParams.get('oldest')).toBe('2026-05-09')
     expect(url.searchParams.has('newest')).toBe(false)
     expect(url.searchParams.has('limit')).toBe(false)
+  })
+
+  // Passed through verbatim, with no adjustment here: because of that same
+  // midnight-at-the-start rule, the +1 day an inclusive end date needs is the
+  // caller's job, done once in activityDateRange.js's requestBoundsFor. Two
+  // places quietly adding a day would be a day too many.
+  it('sends newest verbatim when the caller does give one', async () => {
+    const [fetchImpl, calls] = stubFetch(jsonResponse([]))
+
+    await listActivities({ apiKey: API_KEY, oldest: '2026-03-01', newest: '2026-04-01', fetchImpl })
+
+    const { url } = calls()[0]
+    expect(url.searchParams.get('oldest')).toBe('2026-03-01')
+    expect(url.searchParams.get('newest')).toBe('2026-04-01')
   })
 
   it('asks only for the fields a picker row renders', async () => {

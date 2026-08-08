@@ -174,19 +174,26 @@ export const ACTIVITY_LIST_FIELDS = [
 
 /**
  * Activities newest-first. `oldest` is required by the API; `newest` is
- * deliberately never sent — it defaults to now, and passing it explicitly
- * means midnight *at the start* of that day, so `newest=<today>` would drop
- * everything recorded today. Paging therefore widens the window backwards and
- * de-duplicates by id (see IntervalsPage.jsx).
+ * optional and, left out, defaults to now — which is what the rolling browse
+ * window relies on, since it widens backwards and de-duplicates by id (see
+ * IntervalsPage.jsx).
  *
- * @param {{apiKey: string, oldest: string, fetchImpl?: typeof fetch}} options
+ * **`newest=<day>` means midnight at the *start* of that day**, so it excludes
+ * everything recorded on the day it names — `newest=<today>` would drop
+ * today's ride. Callers therefore must pass the day *after* the last day they
+ * want included; `requestBoundsFor` in activityDateRange.js is the only caller
+ * that sends it and exists largely to get that `+ 1 day` right in one place.
+ *
+ * @param {{apiKey: string, oldest: string, newest?: string, fetchImpl?: typeof fetch}} options
  * @returns {Promise<object[]>}
  */
-export async function listActivities({ apiKey, oldest, fetchImpl = fetch }) {
+export async function listActivities({ apiKey, oldest, newest, fetchImpl = fetch }) {
   const response = await request('/athlete/0/activities', {
     apiKey,
     fetchImpl,
-    search: { oldest, fields: ACTIVITY_LIST_FIELDS.join(',') },
+    // Set only when given: an explicit `newest` is never equivalent to the
+    // default, and a stray `undefined` would go over the wire as the string.
+    search: { oldest, ...(newest ? { newest } : {}), fields: ACTIVITY_LIST_FIELDS.join(',') },
   })
   const body = await readJson(response)
   return Array.isArray(body) ? body : []

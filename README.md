@@ -64,9 +64,10 @@ This project is **functional end-to-end, including real Garmin file upload** —
   is the phone route: a watch file syncs to Garmin Connect and there is no practical way to
   get it into a mobile browser, but intervals.icu already auto-syncs from Garmin and keeps
   the **original upload**, so the app downloads that and runs it through the same parsers a
-  dropped file uses — Stryd power and all. It needed **no server-side code**: intervals.icu
-  sends CORS headers, so the browser talks to it directly. See "Connecting intervals.icu"
-  below.
+  dropped file uses — Stryd power and all. Find an activity by name search across your whole
+  history, or by date range — presets plus two day fields, narrowing the request itself rather
+  than paging back a window at a time. It needed **no server-side code**: intervals.icu sends
+  CORS headers, so the browser talks to it directly. See "Connecting intervals.icu" below.
 - `downsample.js` is still unbuilt — not needed until there's an activity long enough to
   need downsampling. (The old `data/http/` source stub is gone: the real API hands back the
   original uploaded file rather than normalized samples, so the seam became `data/intervals/`
@@ -173,6 +174,17 @@ it searches your **whole intervals.icu history** by activity name, from two char
 you type. A query starting with `#` is an exact **tag** search instead (`#threshold` finds
 everything tagged `threshold`). Clearing the box drops straight back to the list you were
 browsing, exactly where you left it.
+
+**Filtering by date.** Under the search box are three one-tap presets (30 days, 3 months,
+12 months) and a **From** / **To** pair. Both ends are inclusive: *1 Mar → 31 Mar* includes
+everything recorded on both days. Setting **From** fetches straight back to that day, so
+"Load earlier activities" disappears — you've named the floor yourself, and clearing the range
+with **✕** brings it back. Nothing flashes on the way: the activities you had already loaded
+stay on screen while the wider window reloads behind them. The range narrows search results
+too, but only the ones the search already returned:
+that endpoint accepts no dates, so it hands back the 30 best name matches from your whole
+history and the range is applied to those. A search that comes up empty under a range may still
+have older matches — widen the range or narrow the query.
 
 **Consequences worth knowing:**
 
@@ -420,6 +432,14 @@ path, though (see step 9 below).
       not one per keystroke. Then type fast enough to overlap two requests and confirm the
       rows on screen match the *final* query, not whichever answer arrived last. A one-letter
       query should issue nothing at all.
+    - **Date range** — press *3 months*: the chip reads as pressed, the two fields fill in, and
+      the list is refetched from that day rather than paged back to it. Then set **From** and
+      **To** to the *same* day, one on which you recorded something: that activity must still
+      be listed. That is the `newest`-excludes-its-own-day gotcha again, from the other side,
+      and the single easiest thing here to get wrong. Confirm the native calendar refuses days
+      outside the greyed-out bounds and that its panel is **dark**, that "Load earlier
+      activities" disappears once **From** is set and returns on **✕**, and that a search run
+      with a range active filters the hits and names the range in the empty message.
     - Open a search hit → it loads and charts like any other row (same `{type:'id'}` path).
     - Reload → still connected. **Disconnect** → the key is gone from `localStorage` (check
       in DevTools → Application), the list is gone, and the app still works fully for
@@ -432,8 +452,10 @@ path, though (see step 9 below).
     stay readable with no horizontal overflow, each metric's toggle + stat-checkboxes row
     should stack instead of staying side-by-side, **"Chart settings" should be collapsed**
     (tap it to open; it stays open), and panel heights should drop ~25%. In the intervals.icu
-    view, activity rows should be comfortable thumb targets, and focusing the API-key field
-    **or the search box** must **not** zoom the page on an iPhone.
+    view, activity rows should be comfortable thumb targets, the date filter's presets and
+    fields should **wrap** onto their own rows rather than overflow (there is no second media
+    query for them), and focusing the API-key field, **the search box or either date field**
+    must **not** zoom the page on an iPhone.
 15. **On a real phone — the acceptance test for the mobile work, and it cannot be done in the
     simulator alone.** Run `npm run dev -- --host` and open the printed LAN URL on an iPhone.
     - **Gestures:** two-finger pinch zooms; moving both fingers together pans; a one-finger

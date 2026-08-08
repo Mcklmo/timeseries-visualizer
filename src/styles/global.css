@@ -986,6 +986,108 @@ main {
   color: var(--text);
 }
 
+/* Sits directly under the search box, above the list, because it narrows both
+   of them — the browse request and the search hits alike.
+
+   Wrapping, not a media query: the presets and the two fields re-flow onto
+   their own rows on their own by ~360px, which keeps §13's "one breakpoint,
+   one place" rule intact (this file has exactly one @media, at the bottom). */
+.intervals-date-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.intervals-date-filter__presets {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Same treatment as .x-axis-mode-switch's buttons — the app already has one
+   aria-pressed chip group and these read as the same kind of control — plus a
+   touch floor, since that switch sits under a finger far less often. */
+.intervals-date-filter__preset {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.intervals-date-filter__preset[aria-pressed='true'] {
+  color: var(--bg);
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.intervals-date-filter__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intervals-date-filter__field label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.intervals-date-filter__input {
+  font: inherit;
+  /* 16px exactly, for the same reason as .intervals-search__input above:
+     below it, iOS Safari zooms the whole page on focus. */
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  min-height: 44px; /* the touch floor */
+  padding: 8px 10px;
+  /* The line that makes a native control belong to a dark-only UI: without it
+     the browser paints its calendar glyph and the whole picker panel light,
+     since it has no way to infer the theme from our own colours. Scoped to
+     these inputs rather than declared on :root, which would restyle every
+     scrollbar and form control in the app — a far bigger visual change than
+     this feature is entitled to make. */
+  color-scheme: dark;
+}
+
+.intervals-date-filter__input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+/* Mirrors .intervals-search__clear, touch floor included. */
+.intervals-date-filter__clear {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.intervals-date-filter__clear:hover {
+  color: var(--text);
+}
+
+/* Full-width so it lands on its own row under the fields it describes, rather
+   than squeezing them sideways as the range goes in and out of validity. */
+.intervals-date-filter__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
 .intervals-list {
   list-style: none;
   margin: 0;

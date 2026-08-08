@@ -11,6 +11,15 @@
 // drops back to the connect form, the second leaves everything alone and
 // shows a banner the user can retry past.
 import { useCallback, useEffect, useState } from 'react'
+import {
+  EMPTY_RANGE,
+  activityInRange,
+  formatRangeLabel,
+  isRangeActive,
+  isValidRange,
+  requestBoundsFor,
+  startDayOf,
+} from '../data/intervals/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
 import {
   IntervalsApiError,
@@ -20,6 +29,7 @@ import {
 } from '../data/intervals/intervalsApi.js'
 import { IntervalsActivityList } from './IntervalsActivityList.jsx'
 import { IntervalsConnectForm } from './IntervalsConnectForm.jsx'
+import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
 import { useDebouncedValue } from './useDebouncedValue.js'
 
 // Wide enough that a first load almost always fills the screen, narrow enough
@@ -42,12 +52,6 @@ function daysBefore(date, days) {
   return shifted
 }
 
-function startDateOf(activity) {
-  if (!activity?.start_date_local) return null
-  const date = new Date(activity.start_date_local)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
 /**
  * The next `oldest` to request. Anchored on the oldest activity actually
  * held, not on the previous window's own `oldest` — those differ whenever a
@@ -57,17 +61,31 @@ function startDateOf(activity) {
  * The final guard keeps the button honest: it must always widen the window,
  * even when an empty or capped response left the anchor newer than where the
  * current window already starts.
+ *
+ * Anchors on calendar days rather than instants (`startDayOf` returns
+ * `YYYY-MM-DD`, which a plain `.sort()` orders chronologically) — day
+ * granularity is more than enough for a step measured in months, and it means
+ * this file no longer carries its own copy of the `start_date_local` parser.
  */
 function nextWindowStart(activities, currentStart) {
-  const oldestHeld = activities.map(startDateOf).filter(Boolean).sort((a, b) => a - b)[0]
-  const candidate = daysBefore(oldestHeld ?? currentStart, WINDOW_DAYS)
+  const oldestHeldDay = activities.map(startDayOf).filter(Boolean).sort()[0]
+  // The `T00:00:00` is load-bearing: a bare `YYYY-MM-DD` is parsed as UTC,
+  // which lands on the previous evening west of Greenwich; with a time part
+  // and no offset, the spec says local — the same reading start_date_local
+  // itself gets everywhere else in this feature.
+  const anchor = oldestHeldDay ? new Date(`${oldestHeldDay}T00:00:00`) : currentStart
+  const candidate = daysBefore(anchor, WINDOW_DAYS)
   return candidate < currentStart ? candidate : daysBefore(currentStart, WINDOW_DAYS)
 }
 
 /**
- * Newest first, no duplicates. `newest` is never sent (it would drop today's
- * activities — see intervalsApi.js), so each widened window re-returns
+ * Newest first, no duplicates. While browsing, each widened window re-returns
  * everything already held and the incoming copy simply wins.
+ *
+ * **It only ever accumulates.** A narrower response — which is what a date
+ * range produces — takes nothing away, deliberately: clearing the range then
+ * restores rows already fetched with no round trip. What the athlete sees is
+ * `activities` put through `activityInRange`, never `activities` itself.
  */
 function mergeById(incoming, held) {
   const seen = new Set()
@@ -100,6 +118,10 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
   const [apiKey, setApiKey] = useState(() => store.readApiKey())
   const [activities, setActivities] = useState([])
   const [windowStart, setWindowStart] = useState(() => daysBefore(new Date(), WINDOW_DAYS))
+  // The date filter. Kept alongside `windowStart` rather than replacing it:
+  // with no `from` the rolling window is still the floor, so browsing and
+  // paging behave exactly as they did before anyone touches the fields.
+  const [range, setRange] = useState(EMPTY_RANGE)
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -115,7 +137,26 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
   const debouncedQuery = useDebouncedValue(query.trim(), SEARCH_DEBOUNCE_MS)
   const activeQuery = query.trim().length >= MIN_QUERY_LENGTH ? debouncedQuery : ''
   const isSearching = activeQuery.length >= MIN_QUERY_LENGTH
-  const shown = isSearching ? (results ?? []) : activities
+
+  // The range drives the request *and* a client-side predicate, which is not
+  // redundancy. The request so the right months get fetched without paging
+  // back through years; the predicate because `mergeById` accumulates rows
+  // across every widened window, and those held rows must stop rendering the
+  // moment the range narrows — a narrower request never removes anything on
+  // its own. The same predicate then filters search hits for free, which is
+  // the only way to filter them at all: neither search endpoint accepts
+  // `oldest`/`newest` (see searchActivities).
+  //
+  // Known cost of that endpoint, not a bug: `/search-full` returns the ~30
+  // most relevant hits across all history, so an active range filters those
+  // 30 and can legitimately empty the list while older matches exist further
+  // down a ranking the API never sent us.
+  const shown = (isSearching ? (results ?? []) : activities).filter((a) => activityInRange(a, range))
+
+  // Primitives, not an object: the browse effect can then depend on them
+  // directly and stay stable across renders with no memo.
+  const { oldest, newest } = requestBoundsFor(range, toApiDate(windowStart))
+  const isRangeUsable = isValidRange(range)
 
   // One 401 is terminal for that key — there is no retry loop here. The key
   // is cleared rather than kept around to fail again on every later request.
@@ -132,11 +173,20 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
 
   useEffect(() => {
     if (!apiKey) return undefined
+    // A `to` before `from` matches nothing by definition, so there is no
+    // request worth firing. Status drops to 'ready' rather than staying where
+    // it was: nothing is in flight, and leaving it 'loading' would strand the
+    // "Loading activities…" indicator until the athlete happened to fix the
+    // range.
+    if (!isRangeUsable) {
+      setStatus('ready')
+      return undefined
+    }
     let cancelled = false
     setStatus('loading')
     setError(null)
 
-    listActivities({ apiKey, oldest: toApiDate(windowStart), fetchImpl })
+    listActivities({ apiKey, oldest, newest, fetchImpl })
       .then((rows) => {
         if (cancelled) return
         setActivities((held) => mergeById(rows, held))
@@ -155,7 +205,7 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
     return () => {
       cancelled = true
     }
-  }, [apiKey, windowStart, fetchImpl, rejectKey])
+  }, [apiKey, oldest, newest, isRangeUsable, fetchImpl, rejectKey])
 
   // The second read path. It searches the athlete's whole history, so it is
   // *not* a widening of the window above and its hits must never be merged
@@ -164,9 +214,13 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
   // arbitrary matches from years back would send "Load earlier" off to the
   // wrong anchor. Two lists, one rendered at a time.
   //
-  // The browse effect keys on `windowStart`, so it does not re-fire while
-  // searching — which is why the browse list is simply still there the moment
-  // the box is cleared, with no refetch.
+  // The browse effect keys on the request bounds alone, so it does not re-fire
+  // while searching — which is why the browse list is simply still there the
+  // moment the box is cleared, with no refetch. Clearing the *range* does
+  // re-fire it (the bounds genuinely changed back), but nothing flashes:
+  // `activities` still holds every row it ever merged, so they re-appear
+  // through the predicate on the same render the range cleared on, while the
+  // widened request settles behind them.
   //
   // `cancelled` is this file's existing stale-response guard, and debounced
   // typing is exactly what it was written for: each new query's run cancels
@@ -215,6 +269,7 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
     setNotice(null)
     setActivities([])
     setQuery('')
+    setRange(EMPTY_RANGE)
     setWindowStart(daysBefore(new Date(), WINDOW_DAYS))
     setApiKey(key)
   }
@@ -224,6 +279,7 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
     setApiKey(null)
     setActivities([])
     setQuery('')
+    setRange(EMPTY_RANGE)
     setError(null)
     setNotice(null)
   }
@@ -233,8 +289,21 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
   // Nothing truthful to render yet in either mode: an empty list would claim
   // the window held nothing, or that the query matched nothing, while the
   // answer is still in flight. The indicator stands in for the list.
+  //
+  // Both stay keyed on the **unfiltered** lists on purpose: they answer "has a
+  // response landed yet", not "is anything visible". A range that filters
+  // every row out is an answer, and it has its own empty message below.
   const isAwaitingFirstWindow = !isSearching && status === 'loading' && activities.length === 0
   const isAwaitingFirstHits = isSearching && searchStatus === 'loading' && results === null
+
+  // Names the range rather than the default "last few months", which would be
+  // a plain lie once the athlete has asked for March.
+  const rangeLabel = isRangeActive(range) ? formatRangeLabel(range) : null
+  const emptyMessage = isSearching
+    ? `No activities match "${activeQuery}"${rangeLabel ? ` ${rangeLabel}` : ''}.`
+    : rangeLabel
+      ? `No activities ${rangeLabel}.`
+      : undefined
 
   return (
     <div className="intervals-page">
@@ -287,6 +356,8 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
             )}
           </form>
 
+          <IntervalsDateFilter range={range} onChange={setRange} />
+
           {isAwaitingFirstWindow && (
             <p className="loading-indicator" role="status">
               Loading activities…
@@ -304,13 +375,17 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
               activities={shown}
               isLoadingEarlier={isLoadingEarlier}
               // Omitted while searching: hits are scattered through history,
-              // so there is no window under them to widen.
+              // so there is no window under them to widen. Omitted with a
+              // `from` set for the opposite reason — the athlete has stated
+              // the floor, so there is nothing left to widen towards. With
+              // only `to` set the window is still the floor and paging works
+              // exactly as before.
               onLoadEarlier={
-                isSearching
+                isSearching || range.from
                   ? undefined
                   : () => setWindowStart((current) => nextWindowStart(activities, current))
               }
-              emptyMessage={isSearching ? `No activities match "${activeQuery}".` : undefined}
+              emptyMessage={emptyMessage}
               onSelect={(activity) =>
                 onSelectActivity({ type: 'id', id: activity.id, name: activity.name || undefined })
               }

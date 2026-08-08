@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createCredentialStore } from '../data/intervals/credentialStore.js'
 import { IntervalsPage } from './IntervalsPage.jsx'
@@ -449,5 +449,161 @@ describe('IntervalsPage — searching', () => {
     await user.click(await screen.findByRole('button', { name: /Hill repeats/ }))
 
     expect(onSelectActivity).toHaveBeenCalledWith({ type: 'id', id: 'i7', name: 'Hill repeats' })
+  })
+})
+
+// The range drives two things at once — the request bounds and a client-side
+// predicate — so most of these assert both halves: what went over the wire,
+// and what is left on screen. The stub deliberately keeps returning every
+// fixture row whatever the request said, which is what makes the second half
+// prove the predicate rather than the server.
+//
+// Date inputs are driven with fireEvent.change: userEvent.type drives the
+// segmented editor, which jsdom does not implement.
+describe('IntervalsPage — date range', () => {
+  const listCalls = (fetchImpl) =>
+    fetchImpl.mock.calls.filter(([url]) => url.includes('/activities') && !url.includes('/search-full'))
+  const paramsOf = (call) => new URL(call[0]).searchParams
+
+  const setRange = ({ from, to }) => {
+    if (from !== undefined) fireEvent.change(screen.getByLabelText('From'), { target: { value: from } })
+    if (to !== undefined) fireEvent.change(screen.getByLabelText('To'), { target: { value: to } })
+  }
+
+  async function renderConnected(props = {}) {
+    const fetchImpl = props.fetchImpl ?? stubApi()
+    renderPage({ store: fakeStore('stored-key'), ...props, fetchImpl })
+    await screen.findByRole('button', { name: /Tempo 5×1k/ })
+    return fetchImpl
+  }
+
+  it('asks for the named start day instead of the rolling window', async () => {
+    const fetchImpl = await renderConnected()
+    const windowOldest = paramsOf(listCalls(fetchImpl)[0]).get('oldest')
+
+    setRange({ from: '2026-08-10' })
+
+    await waitFor(() => expect(listCalls(fetchImpl)).toHaveLength(2))
+    const params = paramsOf(listCalls(fetchImpl)[1])
+    expect(params.get('oldest')).toBe('2026-08-10')
+    expect(params.get('oldest')).not.toBe(windowOldest)
+    expect(params.has('newest')).toBe(false)
+  })
+
+  // The §5 rule, end to end: `newest` is midnight at the *start* of its day,
+  // so an inclusive end has to leave here as the day after.
+  it('sends the end day plus one, and keeps the window floor when no start was named', async () => {
+    const fetchImpl = await renderConnected()
+    const windowOldest = paramsOf(listCalls(fetchImpl)[0]).get('oldest')
+
+    setRange({ to: '2026-08-11' })
+
+    await waitFor(() => expect(listCalls(fetchImpl)).toHaveLength(2))
+    const params = paramsOf(listCalls(fetchImpl)[1])
+    expect(params.get('newest')).toBe('2026-08-12')
+    expect(params.get('oldest')).toBe(windowOldest)
+  })
+
+  // The same rule seen from the athlete's side: a one-day range around an
+  // activity has to return that activity. Sending `newest=2026-08-11` would
+  // have dropped it.
+  it('keeps an activity inside a single-day range', async () => {
+    await renderConnected()
+
+    setRange({ from: '2026-08-11', to: '2026-08-11' })
+
+    expect(await screen.findByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument()
+  })
+
+  // A narrower request never removes anything on its own: mergeById holds
+  // every row it has ever seen, so the predicate is what makes the list obey.
+  it('stops rendering a held row that falls outside the range', async () => {
+    await renderConnected()
+    expect(screen.getByRole('button', { name: /Sunday ride/ })).toBeInTheDocument()
+
+    setRange({ from: '2026-08-10' })
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Tempo 5×1k/ })).toBeInTheDocument()
+  })
+
+  it('brings the held rows straight back when the range is cleared', async () => {
+    await renderConnected()
+    setRange({ from: '2026-08-10' })
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Sunday ride/ })).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /clear date range/i }))
+
+    // synchronously, from `activities` — no response has to land first
+    expect(screen.getByRole('button', { name: /Sunday ride/ })).toBeInTheDocument()
+  })
+
+  it('drops "Load earlier activities" once a start day is named, and restores it on clear', async () => {
+    await renderConnected()
+    expect(screen.getByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+
+    setRange({ from: '2026-08-10' })
+
+    // gone, not merely disabled — the widened-window request in flight would
+    // otherwise leave it on screen reading "Loading…"
+    expect(screen.queryByRole('button', { name: /load earlier activities|loading…/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /clear date range/i }))
+    expect(await screen.findByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+  })
+
+  // With only an end day the rolling window is still the floor underneath, so
+  // there is something left to widen.
+  it('keeps paging available when only an end day is named', async () => {
+    await renderConnected()
+
+    setRange({ to: '2026-08-11' })
+
+    expect(await screen.findByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+  })
+
+  it('names the range instead of claiming the last few months were empty', async () => {
+    await renderConnected()
+
+    setRange({ from: '2026-03-01', to: '2026-03-31' })
+
+    expect(await screen.findByText('No activities between 1 Mar and 31 Mar 2026.')).toBeInTheDocument()
+  })
+
+  // Filling the second field is what inverts the range — the half-entered
+  // state before it is a perfectly good one-ended range and does fetch. What
+  // must not fetch is the inverted result, which matches nothing by
+  // definition.
+  it('fires no request for a range that ends before it starts', async () => {
+    const fetchImpl = await renderConnected()
+    setRange({ from: '2026-08-11' })
+    await waitFor(() => expect(listCalls(fetchImpl)).toHaveLength(2))
+
+    setRange({ to: '2026-08-01' })
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/end date is before the start date/i)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(listCalls(fetchImpl)).toHaveLength(2)
+  })
+
+  // /search-full takes no date params, so the range can only be applied to the
+  // hits it did return — see the comment on `shown` in IntervalsPage.jsx.
+  it('filters search hits client-side and says which range emptied them', async () => {
+    const user = userEvent.setup({ delay: null })
+    const hillRepeats = { id: 'i7', name: 'Hill repeats', type: 'Run', start_date_local: '2024-03-02T07:30:00' }
+    const fetchImpl = await renderConnected({ fetchImpl: stubApi({ hits: [hillRepeats] }) })
+
+    await user.type(screen.getByLabelText(/search activities/i), 'hill')
+    await screen.findByRole('button', { name: /Hill repeats/ })
+
+    setRange({ from: '2026-03-01' })
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Hill repeats/ })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByText('No activities match "hill" on or after 1 Mar 2026.')).toBeInTheDocument()
+    // and the search itself was not re-run for a range it cannot express
+    expect(fetchImpl.mock.calls.filter(([url]) => url.includes('/search-full'))).toHaveLength(1)
   })
 })
