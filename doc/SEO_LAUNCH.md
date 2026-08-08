@@ -291,28 +291,42 @@ The README header link is already done. This one is a `rel="nofollow"` link, so 
 ranking signal directly — but it is how anyone arriving at the repo finds the site, and
 GitHub repos surface in search for the format queries themselves.
 
-### D1. intervals.icu forum — *lead with the integration*
+### D1. intervals.icu forum — *lead with what intervals.icu doesn't do*
 
 <https://forum.intervals.icu>, in the section for third-party tools. This is the warmest
 audience: they already use the thing your app connects to.
 
-> **Subject:** A browser-based FIT/TCX/GPX chart viewer that reads from intervals.icu
+**The trap in this one:** intervals.icu already draws stacked, time-synced charts with a
+crosshair. Leading with that pitches the thing they are already looking at and reads as
+either ignorance or a competitor. Concede it in the first line, then lead with the reference
+lines — avg/max/min drawn *on* the chart — which it does not have. Second beat is that it is
+just a web page that syncs from their existing account.
+
+> **Subject:** Browser viewer for intervals.icu activities, with avg/max/min drawn on the charts
 >
-> I built a small viewer for activity files — you open a .fit, .tcx or .gpx and it draws
-> pace, heart rate, cadence, power and elevation as stacked charts on a shared time axis,
-> with a crosshair that reads across all of them at once.
+> intervals.icu already gives you stacked streams on a shared time axis, so I won't pretend
+> that part is new. What I kept wanting and couldn't get was reference lines: a horizontal
+> line at the average, the max and the min, drawn across the chart itself, so you can see how
+> much of a run sat above or below its own average instead of reading numbers off a summary
+> table.
 >
-> The reason I'm posting it here: it talks to intervals.icu directly. Paste your API key
-> (Settings → Developer Settings) and you can browse and search your whole history by
-> activity name, then open any activity's original file straight into the charts — Stryd
-> power and all, since intervals.icu serves the file you uploaded rather than normalized
-> samples.
+> That's what I built. Pace, heart rate, cadence, power and elevation each get their own
+> avg / max / min / median checkboxes, and each one draws a line across that metric's panel —
+> independently per metric, so you can have avg HR on and nothing on pace. Zoom into a climb
+> or an interval and the lines recompute for the window you're looking at, so "average HR
+> over these four minutes" is a zoom rather than a lap you had to set up beforehand. Average
+> pace is total moving time ÷ distance, not the mean of instantaneous pace samples, so it
+> agrees with what Garmin and intervals.icu report for the same file.
 >
-> That path exists mostly because of phones. Getting a watch file into a mobile browser is
-> awkward, but intervals.icu already auto-syncs from Garmin, so on a phone it's paste the
-> key once and everything is there.
+> The other half is that it's entirely a web page — nothing to install, works on a phone.
+> Paste your API key (Settings → Developer Settings) and you can search your history by
+> activity name and open any activity's original file straight into the charts, Stryd power
+> and all, since intervals.icu hands back the file you uploaded rather than normalized
+> samples. That's mostly a phone story: getting a .fit into a mobile browser is awkward, but
+> intervals.icu is already auto-syncing from Garmin, so it's paste the key once and
+> everything is there. You can also just drop a .fit, .tcx or .gpx in directly.
 >
-> The browser talks to intervals.icu directly — the key and the files never pass through my
+> Your browser calls intervals.icu itself — the key and the files never pass through my
 > server, which serves nothing but the page. Free, no account, no upload.
 >
 > https://activitymaxxer.com
