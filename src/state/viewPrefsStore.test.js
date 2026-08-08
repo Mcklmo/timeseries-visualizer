@@ -90,6 +90,39 @@ describe('viewPrefsStore', () => {
     expect(restored.enabledStats.heartRate).toEqual(['max', 'median'])
   })
 
+  it('round-trips a derivative kind, sorted after the scalars', () => {
+    // Derivatives are just another StatKind, which is the point of keeping ONE
+    // statKinds list: no migration, no SCHEMA_VERSION bump, and no second
+    // "enabled derivatives" map to persist and keep in sync. `filterToKnown`
+    // re-sorts into statKinds order, where d1/d2 are appended last.
+    const storage = fakeStorage()
+    const store = createViewPrefsStore(storage)
+    const withDeriv = {
+      ...prefs,
+      enabledStats: { ...prefs.enabledStats, heartRate: ['max', 'median', 'd1'] },
+    }
+
+    store.save(KEY, withDeriv)
+    expect(store.read(KEY).enabledStats.heartRate).toEqual(['max', 'median', 'd1'])
+  })
+
+  it('sorts a derivative behind the scalars however it was stored', () => {
+    const raw = storedPayload({ enabledStats: { heartRate: ['d2', 'avg'] } })
+    const restored = createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY)
+    expect(restored.enabledStats.heartRate).toEqual(['avg', 'd2'])
+  })
+
+  it('keeps a stored derivative that its metric no longer offers out of the way', () => {
+    // `filterToKnown` validates against the GLOBAL statKinds, not per metric,
+    // so 'd1' stored against cadence survives the store — which is fine and
+    // deliberate: StatCheckboxes renders statKindsFor(metric) so no box appears
+    // for it, and useDerivativeSeries returns null for a metric with no
+    // `derivative` spec. Pinned because the two layers have to agree.
+    const raw = storedPayload({ enabledStats: { cadence: ['d1'] } })
+    const restored = createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY)
+    expect(restored.enabledStats.cadence).toEqual(['d1'])
+  })
+
   it('falls back to time mode for an unrecognised xMode', () => {
     const raw = storedPayload({ xMode: 'laps' })
     expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY).xMode).toBe('time')

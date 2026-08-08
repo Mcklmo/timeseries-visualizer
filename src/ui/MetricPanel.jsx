@@ -8,8 +8,9 @@ import { insertGapBreaks } from '../domain/insertGapBreaks.js'
 import { gapThresholdFor } from '../domain/samplingInterval.js'
 import { makeDistanceTickFormatter, makeElapsedTickFormatter } from '../domain/units.js'
 import { isFullDomain } from '../domain/zoomDomain.js'
-import { metricRegistry, metricUnit, statKinds } from '../metrics/metricRegistry.js'
+import { derivativeKindFor, metricRegistry, metricUnit, scalarStatKinds } from '../metrics/metricRegistry.js'
 import { computeYDomain } from '../stats/aggregate.js'
+import { useDerivativeSeries } from '../stats/useDerivativeSeries.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
 import { CHART_MARGIN, Y_AXIS_WIDTH } from './chartGeometry.js'
 import { SyncedTooltip } from './SyncedTooltip.jsx'
@@ -20,9 +21,40 @@ import { SyncedTooltip } from './SyncedTooltip.jsx'
 // gesture would quietly grab a few pixels off the line it looks like it's on.
 const SYNC_ID = 'activity'
 
-// Draw order comes from the registry's `statKinds`; the dash patterns stay
-// here, being presentation rather than domain.
+// Draw order comes from the registry's `scalarStatKinds`; the dash patterns
+// stay here, being presentation rather than domain. Scalar kinds only —
+// a derivative is a series on its own axis, not a horizontal reference line.
 const STAT_DASH = { max: '4 4', min: '1 2', avg: undefined, median: '2 3' }
+
+// Recharts binds a <Line>/<YAxis>/<ReferenceLine> to an axis by `yAxisId`,
+// which DEFAULTS TO 0 on all three (their own defaultProps). While there was
+// one axis that default was invisible; with two, anything left implicit
+// attaches to whichever axis Recharts resolves first. Hence every mark below
+// names its axis explicitly, including the pre-existing ones.
+const VALUE_AXIS = 'value'
+const DERIV_AXIS = 'deriv'
+
+/** The overlay's row key. Namespaced under the metric so it cannot collide
+ *  with another metric's id in the shared row objects. */
+const derivKeyFor = (metricId) => `${metricId}:d`
+
+// Matches the registry's `domainPadding` convention for the left axis.
+const DERIV_DOMAIN_PADDING = 0.08
+
+// The derivative axis is scaled to this quantile of |rate|, NOT to the maximum.
+//
+// Measured on fixtures/23870166877_ACTIVITY.fit (1801 samples, 1 Hz): heart-rate
+// ramp runs ±13 bpm/min at the median and ±33 at p90, but peaks at 227 during
+// the eight seconds at the start of the run where HR climbs 77 → 108. That peak
+// is real data, not a sensor artifact — which is exactly why scaling to it is
+// wrong: one genuine burst would squash the other 99% of the trace into the
+// middle few percent of the panel, and the overlay exists to be read. d² is
+// worse again (±1378 against a median near zero), since differentiating twice
+// roughly squares the noise.
+//
+// The clipped tail is not lost information: `allowDataOverflow` is on, so a
+// spike draws out to the plot edge and back rather than vanishing.
+const DERIV_DOMAIN_QUANTILE = 0.99
 
 // Plain-HTML summary row below the chart — a flex row naturally avoids
 // overlap between stat values, unlike the old SVG-positioned labels.
@@ -44,10 +76,42 @@ function StatSummary({ metric, entries, sport }) {
 // `statsBasis` is built once for the whole stack by ChartStack (stats/statsBasis.js)
 // and carries the zoom window with it — the panel neither slices nor knows it
 // is zoomed, it just reports on what it was handed.
-export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis, enabledStats, showXAxis, height }) {
+export function MetricPanel({
+  activity,
+  metricId,
+  xMode,
+  zoomDomain,
+  statsBasis,
+  enabledStats,
+  // MUST default to 0. ChartStack always passes it, but ~fifteen panel tests
+  // render from a DEFAULT_PROPS object that does not — and `width={undefined}`
+  // on the right <YAxis> makes Recharts substitute its own DEFAULT_Y_AXIS_WIDTH
+  // of 60, laying the panel out 60px narrower than the gesture believes. Same
+  // default, same reason, as chartGeometry's `rightInset`.
+  rightInset = 0,
+  showXAxis,
+  height,
+}) {
   const metric = metricRegistry[metricId]
   const stats = useMetricStats(statsBasis, metricId)
   const xKey = xMode === 'distance' ? 'd' : 't'
+
+  // At most one, guaranteed by ChartViewContext's toggleStat: one right axis
+  // carries one unit, and on a 375px phone one overlay is the only variant that
+  // leaves usable plot width. The SAME helper ChartStack sizes the gutter with,
+  // so this panel draws an overlay exactly when the stack reserved room for it.
+  const derivKind = derivativeKindFor(metric, enabledStats)
+  const derivSpec = derivKind == null ? null : metric.derivative[derivKind]
+  const derivSeries = useDerivativeSeries(activity, metricId, derivKind)
+  const derivKey = derivKeyFor(metricId)
+  // `rightInset > 0` is an interlock, not a second opinion: ChartStack derives
+  // the gutter from the same derivativeKindFor call, so in the app this is
+  // always true when the rest is. It matters because the failure it rules out
+  // is invisible — an overlay whose `yAxisId` names an axis nothing rendered
+  // does NOT error; Recharts invents that axis at its own DEFAULT_Y_AXIS_WIDTH
+  // of 60, and the panel silently lays out 60px narrower than the gesture
+  // believes. A missing overlay is a visible bug; that one is not.
+  const hasOverlay = derivSeries != null && derivSpec != null && rightInset > 0
 
   // Every panel builds its rows from the same samples with the same gap
   // threshold, so the synthetic break rows land at the same index in all of
@@ -56,8 +120,22 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis,
   // another would put the shared crosshair on different samples per panel.
   const data = useMemo(() => {
     const rows = activity.samples.map((s) => ({ t: s.t, d: s.d, [metricId]: metric.accessor(s) }))
-    return insertGapBreaks(rows, { metricId, gapThresholdS: gapThresholdFor(activity.samplingIntervalS) })
-  }, [activity.samples, activity.samplingIntervalS, metricId, metric])
+    // Merged BEFORE insertGapBreaks, which shifts every index past the first
+    // gap: `derivSeries` is indexed by SAMPLE, and the rows stop being
+    // sample-indexed the moment a synthetic row is spliced in.
+    if (hasOverlay) {
+      for (let i = 0; i < rows.length; i++) {
+        const v = derivSeries[i]
+        // Scaled from the domain function's per-second units to the ones the
+        // registry labels the axis with (bpm/min, m/min, m/s²...).
+        rows[i][derivKey] = v == null ? null : v * derivSpec.perSecondScale
+      }
+    }
+    return insertGapBreaks(rows, {
+      valueKeys: hasOverlay ? [metricId, derivKey] : [metricId],
+      gapThresholdS: gapThresholdFor(activity.samplingIntervalS),
+    })
+  }, [activity.samples, activity.samplingIntervalS, metricId, metric, hasOverlay, derivSeries, derivSpec, derivKey])
 
   const xTickFormatter = useMemo(
     () =>
@@ -73,7 +151,29 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis,
   // the point of keeping it fixed.
   const yDomain = useMemo(() => computeYDomain({ samples: activity.samples, metric }), [activity.samples, metric])
 
-  const statEntries = statKinds.filter((kind) => enabledStats.includes(kind) && stats[kind] != null).map(
+  // Symmetric about zero, and over the whole activity for exactly the reason
+  // yDomain is: a range that rescaled with the window would make the overlay
+  // jitter vertically through a pinch. Symmetry is the extra requirement here —
+  // it fixes zero to the panel's vertical centre, so "still climbing" vs
+  // "falling away" reads off the line's position without consulting the ticks.
+  const derivDomain = useMemo(() => {
+    if (!hasOverlay) return undefined
+    const magnitudes = []
+    for (const v of derivSeries) {
+      if (v == null || !Number.isFinite(v)) continue
+      magnitudes.push(Math.abs(v))
+    }
+    magnitudes.sort((a, b) => a - b)
+    const quantile = magnitudes.length === 0 ? 0 : magnitudes[Math.floor((magnitudes.length - 1) * DERIV_DOMAIN_QUANTILE)]
+    // A perfectly flat metric (or an all-null channel) has no magnitude to
+    // scale to, and [0, 0] is a degenerate axis — give the zero line somewhere
+    // to sit. The padding keeps the extremes off the plot edge, where half the
+    // stroke would be clipped.
+    const m = quantile > 0 ? quantile * derivSpec.perSecondScale * (1 + DERIV_DOMAIN_PADDING) : 1
+    return [-m, m]
+  }, [hasOverlay, derivSeries, derivSpec])
+
+  const statEntries = scalarStatKinds.filter((kind) => enabledStats.includes(kind) && stats[kind] != null).map(
     (kind) => ({ kind, value: stats[kind] }),
   )
 
@@ -102,6 +202,7 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis,
             allowDataOverflow={!isFullDomain(zoomDomain)}
           />
           <YAxis
+            yAxisId={VALUE_AXIS}
             width={Y_AXIS_WIDTH}
             reversed={!!metric.invertAxis}
             tickFormatter={metric.format}
@@ -112,21 +213,79 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis,
             // from yDomain's calc but still present in `data`), which would undo the zoom.
             allowDataOverflow={yDomain != null}
           />
+          {/* Rendered off the STACK-WIDE `rightInset`, not off this panel's own
+              overlay: a panel with no derivative still has to reserve the same
+              gutter, or its plot area would be 44px wider than its siblings'
+              and the synced crosshair would land on a different screen x in
+              each. Ticks and axis line are what switch off when this
+              particular panel has nothing to label — Recharts' right-offset
+              arithmetic (selectRightAxesOffset) sums `width` over every
+              non-hidden, non-mirrored right axis and never reads `tick` or
+              `axisLine`, so a tick-less axis still claims its width. `hide`
+              and `mirror` are the two props that WOULD drop it; neither is
+              passed. `width` must stay numeric for the same reason: the
+              re-measure path bails on anything but "auto", so a number is
+              fixed forever, while "auto" would let tick text decide the gutter
+              and desync the panels. */}
+          {rightInset > 0 && (
+            <YAxis
+              yAxisId={DERIV_AXIS}
+              orientation="right"
+              width={rightInset}
+              domain={derivDomain}
+              allowDataOverflow={derivDomain != null}
+              tick={hasOverlay}
+              axisLine={hasOverlay}
+              tickFormatter={derivSpec?.format}
+              interval={0}
+            />
+          )}
           <Tooltip
-            content={<SyncedTooltip metric={metric} sport={activity.sport} />}
+            content={
+              <SyncedTooltip
+                metric={metric}
+                sport={activity.sport}
+                derivative={hasOverlay ? { key: derivKey, spec: derivSpec } : null}
+              />
+            }
             cursor={{ stroke: 'var(--stat-line)' }}
             isAnimationActive={false}
           />
           {statEntries.map(({ kind, value }) => (
-            <ReferenceLine key={kind} y={value} stroke="var(--stat-line)" strokeDasharray={STAT_DASH[kind]} />
+            <ReferenceLine
+              key={kind}
+              yAxisId={VALUE_AXIS}
+              y={value}
+              stroke="var(--stat-line)"
+              strokeDasharray={STAT_DASH[kind]}
+            />
           ))}
+          {/* The zero crossing is the landmark the overlay exists to show:
+              where the heart rate stops climbing, where the ascent tops out. */}
+          {hasOverlay && <ReferenceLine yAxisId={DERIV_AXIS} y={0} stroke="var(--stat-line)" />}
           <Line
+            yAxisId={VALUE_AXIS}
             dataKey={metricId}
             stroke={metric.color}
             dot={false}
             isAnimationActive={false}
             connectNulls={false}
           />
+          {/* The metric's own hue, dimmed and dashed, rather than a new colour
+              token: §9 allows one hue per metric and this IS that metric, seen
+              as a rate. */}
+          {hasOverlay && (
+            <Line
+              yAxisId={DERIV_AXIS}
+              dataKey={derivKey}
+              stroke={metric.color}
+              strokeOpacity={0.55}
+              strokeDasharray="3 3"
+              dot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
       <StatSummary metric={metric} entries={statEntries} sport={activity.sport} />

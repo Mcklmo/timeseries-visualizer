@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { CHART_MARGIN, clampFraction, fractionAcross, plotRectFromSurface, Y_AXIS_WIDTH } from './chartGeometry.js'
+import {
+  CHART_MARGIN,
+  clampFraction,
+  fractionAcross,
+  plotRectFromSurface,
+  Y_AXIS_RIGHT_WIDTH,
+  Y_AXIS_WIDTH,
+} from './chartGeometry.js'
 
 // Unit-tested rather than driven through a rendered ChartStack on purpose:
 // setupTests.js hard-assigns getBoundingClientRect to return ONE fixed rect
@@ -23,9 +30,31 @@ describe('plotRectFromSurface', () => {
     expect(width).toBe(800 - Y_AXIS_WIDTH - CHART_MARGIN.left - CHART_MARGIN.right)
   })
 
+  it('takes the derivative axis off the right edge, leaving the left one alone', () => {
+    // The overlay axis is on the right, so it narrows the plot without moving
+    // its origin — get this backwards and every gesture lands offset by 44px.
+    expect(plotRectFromSurface({ left: 100, width: 800 }, Y_AXIS_RIGHT_WIDTH)).toEqual({
+      left: 160,
+      width: 728 - Y_AXIS_RIGHT_WIDTH,
+    })
+  })
+
+  it('defaults rightInset to 0, so a stack with no overlay measures as it always did', () => {
+    // MetricPanel and usePinchZoom both rely on this default: the no-derivative
+    // render has to stay byte-identical to the pre-feature one.
+    expect(plotRectFromSurface({ left: 100, width: 800 })).toEqual(
+      plotRectFromSurface({ left: 100, width: 800 }, 0),
+    )
+  })
+
   it('returns null for a container too narrow to gesture in, never a negative width', () => {
     expect(plotRectFromSurface({ left: 0, width: 40 })).toBeNull()
     expect(plotRectFromSurface({ left: 0, width: 0 })).toBeNull()
+    // The right axis is what can tip a very narrow viewport under the floor:
+    // 110px of surface leaves 38px of plot on its own, and none once the
+    // overlay axis claims its gutter. Null either way beats a negative width.
+    expect(plotRectFromSurface({ left: 0, width: 110 })).not.toBeNull()
+    expect(plotRectFromSurface({ left: 0, width: 110 }, Y_AXIS_RIGHT_WIDTH)).toBeNull()
   })
 
   it('is total: no rect, or a non-finite one, gives null', () => {

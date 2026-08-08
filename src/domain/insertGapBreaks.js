@@ -15,11 +15,16 @@
 /**
  * @param {{t: number, d: number}[]} rows - chart rows, ascending in t
  * @param {object} args
- * @param {string} args.metricId - the plotted key; nulled on the synthetic row
+ * @param {string[]} args.valueKeys - every plotted key; ALL are nulled on the
+ *   synthetic row. Plural since a panel may draw a derivative overlay beside
+ *   the metric itself — that series carries its own nulls across a dropout
+ *   (domain/derivative.js), but leaving its key merely `undefined` here and
+ *   trusting Recharts to break the line on a missing property is exactly the
+ *   implicit behaviour this module exists to replace with an explicit null.
  * @param {number} args.gapThresholdS - a t delta above this counts as a dropout
  * @returns {object[]} rows, with a null-valued row inserted inside each gap
  */
-export function insertGapBreaks(rows, { metricId, gapThresholdS }) {
+export function insertGapBreaks(rows, { valueKeys, gapThresholdS }) {
   const out = []
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
@@ -28,8 +33,10 @@ export function insertGapBreaks(rows, { metricId, gapThresholdS }) {
       // Carries BOTH axis keys, not just the active one: xKey flips with
       // xMode, and a row missing the key the axis is reading would be dropped
       // off the chart rather than breaking the line. The midpoint is only a
-      // placeholder position — nothing is plotted there, the value is null.
-      out.push({ t: (prev.t + row.t) / 2, d: (prev.d + row.d) / 2, [metricId]: null })
+      // placeholder position — nothing is plotted there, the values are null.
+      const brk = { t: (prev.t + row.t) / 2, d: (prev.d + row.d) / 2 }
+      for (const key of valueKeys) brk[key] = null
+      out.push(brk)
     }
     out.push(row)
   }

@@ -5,6 +5,7 @@
 // slower than reality whenever speed varies, and it will visibly disagree
 // with Garmin/Strava/every other app for the same file. Average pace is
 // always totalMovingTime / totalDistance.
+import { scalarStatKinds } from '../metrics/metricRegistry.js'
 import { sampleDurations } from '../domain/sampleDurations.js'
 
 function timeWeightedMean(samples, accessor, { movingOnly = false, gapThresholdS } = {}) {
@@ -85,7 +86,8 @@ export function computeYDomain({ samples, metric }) {
  * @param {object} args
  * @param {import('../domain/types.js').Sample[]} args.samples
  * @param {{accessor: (s: import('../domain/types.js').Sample) => number|null, aggStrategy: 'timeWeighted'|'movingOnly'|'weightedPace', invertAxis?: boolean}} args.metric
- * @param {'max'|'min'|'avg'|'median'} args.statKind
+ * @param {'max'|'min'|'avg'|'median'} args.statKind - a SCALAR kind only; 'd1'/'d2' are series
+ *   and belong to domain/derivative.js, and are rejected below rather than averaged
  * @param {number} args.totalMovingTime - s, over the same span `samples` covers (weightedPace avg only)
  * @param {number} args.totalDistance - m, over the same span `samples` covers (weightedPace avg only)
  * @param {number} [args.gapThresholdS] - a t delta above this is a recording gap and carries no
@@ -100,6 +102,20 @@ export function computeMetricStat({
   totalDistance,
   gapThresholdS,
 }) {
+  // The `avg` case below is reached by FALLING THROUGH the three checks above
+  // it, not by matching — so before this guard existed, any unrecognised kind
+  // quietly came back as a time-weighted mean. Harmless while those four were
+  // the only kinds in existence; a live bug the moment 'd1'/'d2' joined
+  // `statKinds`, since a derivative reaching here would return a
+  // plausible-looking number in the wrong units rather than failing.
+  //
+  // Validated against the list rather than restructured into a switch with a
+  // default: `scalarStatKinds` is the registry's own definition of what this
+  // function accepts, so the two cannot drift.
+  if (!scalarStatKinds.includes(statKind)) {
+    throw new Error(`computeMetricStat: '${statKind}' is not a scalar stat kind`)
+  }
+
   const { accessor, aggStrategy, invertAxis } = metric
 
   if (statKind === 'median') return median(samples, accessor)

@@ -11,6 +11,21 @@
  *  (ARCHITECTURE.md §7). Fed to <YAxis width>. */
 export const Y_AXIS_WIDTH = 56
 
+/** Width of the right-hand derivative axis, fed to <YAxis width> when any panel
+ *  in the stack has an overlay switched on. Narrower than Y_AXIS_WIDTH because
+ *  it carries short signed rates ("+12.4") rather than the left axis's clock
+ *  labels.
+ *
+ *  STACK-WIDE, NEVER PER PANEL. The gutter is reserved on every visible panel
+ *  the moment ANY of them enables a derivative, and on none when none do —
+ *  ChartStack computes it once. Two reasons, and both are silent failures:
+ *  plotRectOf measures only the FIRST .recharts-surface in the stack and
+ *  applies that rect to gestures anywhere on it, so a per-panel gutter would
+ *  drift a pinch ~44px out from under the fingers; and §7 requires every
+ *  panel's plot area to align pixel-for-pixel, because syncId pairs panels by
+ *  data index and the shared crosshair must land on the same screen x. */
+export const Y_AXIS_RIGHT_WIDTH = 44
+
 /** Fed to <LineChart margin>. */
 export const CHART_MARGIN = { top: 8, right: 12, bottom: 16, left: 4 }
 
@@ -28,13 +43,18 @@ const MIN_PLOT_WIDTH = 32
  * arithmetic has to be pinned here or it isn't pinned anywhere.
  *
  * @param {{left: number, width: number}} surfaceRect
+ * @param {number} [rightInset] - Y_AXIS_RIGHT_WIDTH while any panel shows a
+ *   derivative overlay, 0 otherwise. Defaults to 0 so a stack with no overlay
+ *   measures byte-identically to how it did before this axis existed — the same
+ *   "conditional, not unconditional" rule MetricPanel's allowDataOverflow
+ *   follows, and the same reason MetricPanel defaults the prop.
  * @returns {{left: number, width: number} | null} null when there's no usable plot
  */
-export function plotRectFromSurface(surfaceRect) {
+export function plotRectFromSurface(surfaceRect, rightInset = 0) {
   if (!surfaceRect) return null
   const inset = Y_AXIS_WIDTH + CHART_MARGIN.left
   const left = surfaceRect.left + inset
-  const width = surfaceRect.width - inset - CHART_MARGIN.right
+  const width = surfaceRect.width - inset - CHART_MARGIN.right - rightInset
   if (!Number.isFinite(left) || !Number.isFinite(width) || width < MIN_PLOT_WIDTH) return null
   return { left, width }
 }
@@ -53,12 +73,13 @@ export function plotRectFromSurface(surfaceRect) {
  * event. Never per move frame: it forces layout.
  *
  * @param {Element | null} el
+ * @param {number} [rightInset] - see plotRectFromSurface
  * @returns {{left: number, width: number} | null}
  */
-export function plotRectOf(el) {
+export function plotRectOf(el, rightInset = 0) {
   const surface = el?.querySelector('.recharts-surface')
   if (!surface) return null
-  return plotRectFromSurface(surface.getBoundingClientRect())
+  return plotRectFromSurface(surface.getBoundingClientRect(), rightInset)
 }
 
 /** Where a client x sits across the plot, 0 at the left edge and 1 at the

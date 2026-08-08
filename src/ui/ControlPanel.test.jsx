@@ -6,7 +6,8 @@ import { ControlPanel } from './ControlPanel.jsx'
 import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
 import { useActivity } from '../state/ActivityContext.jsx'
-import { metricRegistry, metricOrder, statKinds } from '../metrics/metricRegistry.js'
+import { metricRegistry, metricOrder, statKindsFor } from '../metrics/metricRegistry.js'
+import { statCheckboxLabel } from './StatCheckboxes.jsx'
 
 // Same shape as ChartStack's own fixture, minus `power` — lets tests assert
 // that ControlPanel only offers controls for metrics the activity actually
@@ -124,11 +125,63 @@ describe('ControlPanel', () => {
   it('starts every stat unchecked, drawing no reference lines until one is asked for', async () => {
     const { container } = await renderApp()
     for (const id of visibleOrder) {
-      for (const kind of statKinds) {
-        expect(screen.getByRole('checkbox', { name: `${metricRegistry[id].label} ${kind}` })).not.toBeChecked()
+      // statKindsFor, not the global statKinds: `pace` and `cadence` declare no
+      // derivative and so render four boxes where `heartRate` and `altitude`
+      // render six. Names come from StatCheckboxes' own helper, since the
+      // derivative boxes are labelled from the registry's prose ("Heart rate
+      // ramp"), not from the kind id.
+      for (const kind of statKindsFor(metricRegistry[id])) {
+        expect(screen.getByRole('checkbox', { name: statCheckboxLabel(metricRegistry[id], kind) })).not.toBeChecked()
       }
       expect(panelFor(container, id).querySelectorAll('.recharts-reference-line')).toHaveLength(0)
     }
+  })
+
+  it('offers derivative boxes only on metrics that declare one', async () => {
+    await renderApp()
+    // heartRate and altitude have a `derivative` spec; pace and cadence do not.
+    expect(screen.getAllByRole('checkbox', { name: /^Heart rate / })).toHaveLength(6)
+    expect(screen.getAllByRole('checkbox', { name: /^Elevation / })).toHaveLength(6)
+    expect(screen.getAllByRole('checkbox', { name: /^Pace / })).toHaveLength(4)
+    expect(screen.getAllByRole('checkbox', { name: /^Cadence / })).toHaveLength(4)
+  })
+
+  it('checking one derivative clears the other on that metric, but leaves scalar stats alone', async () => {
+    // One right-hand axis carries one unit — see ChartViewContext's toggleStat.
+    await renderApp()
+    const ramp = screen.getByRole('checkbox', { name: 'Heart rate ramp' })
+    const rampAccel = screen.getByRole('checkbox', { name: 'Heart rate ramp accel' })
+    const max = screen.getByRole('checkbox', { name: 'Heart rate max' })
+
+    await userEvent.click(max)
+    await userEvent.click(ramp)
+    await waitFor(() => expect(ramp).toBeChecked())
+
+    await userEvent.click(rampAccel)
+    await waitFor(() => expect(rampAccel).toBeChecked())
+    expect(ramp).not.toBeChecked()
+    // The scalar stat is untouched by the exclusion: it is on its own axis.
+    expect(max).toBeChecked()
+
+    // And the exclusion is not a one-way trap — d/dt clears d²/dt² too.
+    await userEvent.click(ramp)
+    await waitFor(() => expect(ramp).toBeChecked())
+    expect(rampAccel).not.toBeChecked()
+  })
+
+  it('draws the derivative overlay as a second line on that panel only', async () => {
+    const { container } = await renderApp()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Heart rate ramp' }))
+
+    await waitFor(() =>
+      expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-line .recharts-curve')).toHaveLength(2),
+    )
+    expect(panelFor(container, 'cadence').querySelectorAll('.recharts-line .recharts-curve')).toHaveLength(1)
+    // A derivative draws no chip and no horizontal reference line except the
+    // zero crossing — it is a series, not a scalar (§2.2/§2.6).
+    expect(panelFor(container, 'heartRate').querySelectorAll('.stat-chip')).toHaveLength(0)
+    expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(1)
   })
 
   it('checking max adds a reference line to that metric only', async () => {

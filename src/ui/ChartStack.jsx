@@ -5,10 +5,11 @@
 // reads — so all panels zoom and pan together by construction.
 import { useCallback } from 'react'
 import { fullDomain, isFullDomain } from '../domain/zoomDomain.js'
-import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
+import { derivativeKindFor, isMetricForSport, metricOrder, metricRegistry } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
 import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
+import { Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
 import { usePinchZoom } from './usePinchZoom.js'
@@ -33,10 +34,32 @@ export function ChartStack() {
   // is a hook wherever its value comes from.
   const { fullExtent, basis: statsBasis } = useStatsBasis()
 
+  // Hoisted ABOVE the `if (!activity)` guard, with `activity?.`, because the
+  // gutter width below feeds usePinchZoom and a hook cannot be called
+  // conditionally. Optional chaining rather than a second copy of the filter
+  // further down: two copies would be free to disagree about which panels are
+  // on screen, and the gutter has to be reserved on exactly the ones that are.
+  const visibleMetrics = metricOrder.filter(
+    (id) =>
+      activity?.availableMetrics.includes(id) && enabledMetrics.includes(id) && isMetricForSport(id, activity.sport),
+  )
+
+  // ONE width for the whole stack, not one per panel. The moment any visible
+  // panel has a derivative overlay, every visible panel reserves the gutter;
+  // when none do, none reserve it. Both halves matter — see Y_AXIS_RIGHT_WIDTH
+  // in chartGeometry.js for why (the gesture measures a single surface, and §7
+  // requires the plot areas to align pixel-for-pixel for the shared crosshair).
+  const rightInset = visibleMetrics.some(
+    (id) => derivativeKindFor(metricRegistry[id], enabledStats[id] ?? []) != null,
+  )
+    ? Y_AXIS_RIGHT_WIDTH
+    : 0
+
   const { ref: pinchRef, wheelHint } = usePinchZoom({
     domain: zoomDomain,
     fullExtent,
     onZoomChange: setZoomDomain,
+    rightInset,
   })
   const handoffRef = useTouchHoverHandoff()
 
@@ -55,11 +78,6 @@ export function ChartStack() {
   )
 
   if (!activity) return null
-
-  const visibleMetrics = metricOrder.filter(
-    (id) =>
-      activity.availableMetrics.includes(id) && enabledMetrics.includes(id) && isMetricForSport(id, activity.sport),
-  )
 
   return (
     <div
@@ -88,6 +106,7 @@ export function ChartStack() {
             zoomDomain={zoomDomain}
             statsBasis={statsBasis}
             enabledStats={enabledStats[metricId] ?? []}
+            rightInset={rightInset}
             showXAxis={isBottom}
             height={height}
           />

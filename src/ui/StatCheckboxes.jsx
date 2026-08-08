@@ -1,10 +1,35 @@
-// Per-metric max/avg/median reference-line checkboxes. See ARCHITECTURE.md
+// Per-metric stat checkboxes: the four scalar reference lines, plus the two
+// derivative overlays on the metrics that offer them. See ARCHITECTURE.md
 // §10 — enabledStats is keyed per metric on purpose, so "avg heart rate" and
 // "avg pace" toggle independently. Each input carries an explicit aria-label
 // ("Heart rate max") since three checkboxes on the page are all just named
 // "max" visually — the metric name alone would collide across rows.
-import { metricRegistry, statKinds } from '../metrics/metricRegistry.js'
+import { metricRegistry, statKindsFor } from '../metrics/metricRegistry.js'
 import { useChartView } from '../state/ChartViewContext.jsx'
+
+// Presentation only, and deliberately NOT in the registry — same category as
+// MetricPanel's STAT_DASH. 'd1'/'d2' are the persisted state's names for these
+// kinds and are meaningless on screen; the scalar kinds are already their own
+// labels, so only the derivatives need an entry.
+const KIND_LABEL = { d1: 'd/dt', d2: 'd²/dt²' }
+
+/**
+ * The visible text for a derivative is a formula, which no screen reader
+ * should be made to spell out, so the accessible name comes from the
+ * registry's prose label instead: "Heart rate ramp", "Elevation climb rate".
+ *
+ * Exported because the accessible name is how tests address these checkboxes,
+ * and a test that spelled the rule out again would be a second copy free to
+ * drift from this one.
+ *
+ * @param {object} metric - a metricRegistry entry
+ * @param {string} kind
+ * @returns {string}
+ */
+export function statCheckboxLabel(metric, kind) {
+  const spec = metric.derivative?.[kind]
+  return `${metric.label} ${spec ? spec.label : kind}`
+}
 
 export function StatCheckboxes({ metricId }) {
   const metric = metricRegistry[metricId]
@@ -13,15 +38,15 @@ export function StatCheckboxes({ metricId }) {
 
   return (
     <span className="stat-checkboxes">
-      {statKinds.map((kind) => (
+      {statKindsFor(metric).map((kind) => (
         <label key={kind} className="stat-checkbox">
           <input
             type="checkbox"
-            aria-label={`${metric.label} ${kind}`}
+            aria-label={statCheckboxLabel(metric, kind)}
             checked={enabled.includes(kind)}
             onChange={() => toggleStat(metricId, kind)}
           />
-          <span aria-hidden="true">{kind}</span>
+          <span aria-hidden="true">{KIND_LABEL[kind] ?? kind}</span>
         </label>
       ))}
     </span>

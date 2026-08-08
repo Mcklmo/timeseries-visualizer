@@ -19,7 +19,7 @@
 //     piece of this state that is neither persisted nor carried over.
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { fullDomain } from '../domain/zoomDomain.js'
-import { metricOrder } from '../metrics/metricRegistry.js'
+import { derivativeStatKinds, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from './ActivityContext.jsx'
 import { viewPrefsStore } from './viewPrefsStore.js'
 
@@ -100,9 +100,20 @@ export function ChartViewProvider({ children }) {
     (metricId, statKind) =>
       setState((s) => {
         const current = s.enabledStats[metricId] ?? []
-        const next = current.includes(statKind)
-          ? current.filter((k) => k !== statKind)
-          : [...current, statKind]
+        let next
+        if (current.includes(statKind)) {
+          next = current.filter((k) => k !== statKind)
+        } else if (derivativeStatKinds.includes(statKind)) {
+          // AT MOST ONE DERIVATIVE PER METRIC: switching d²/dt² on switches
+          // d/dt off, and vice versa. The panel's right-hand axis carries one
+          // unit and one gutter width, and two of them would eat ~88px of a
+          // 375px phone's chrome — so the exclusion is enforced here, in the
+          // one place stat state is written, rather than defended against in
+          // every reader. Scalar kinds are untouched and still toggle freely.
+          next = [...current.filter((k) => !derivativeStatKinds.includes(k)), statKind]
+        } else {
+          next = [...current, statKind]
+        }
         return { ...s, enabledStats: { ...s.enabledStats, [metricId]: next } }
       }),
     [],

@@ -342,3 +342,39 @@ describe('null handling', () => {
     expect(result).toBeNull()
   })
 })
+
+describe('unknown stat kinds', () => {
+  const args = {
+    samples: [
+      { t: 0, power: 200, moving: true },
+      { t: 10, power: 300, moving: true },
+    ],
+    metric: { accessor: (s) => s.power, aggStrategy: 'timeWeighted' },
+    totalMovingTime: 10,
+    totalDistance: 100,
+  }
+
+  it('throws rather than silently returning the mean', () => {
+    // `avg` is reached by falling THROUGH the median/max/min checks, so before
+    // the guard existed every unrecognised kind quietly came back as a
+    // time-weighted mean — 200 here, a perfectly plausible wrong answer.
+    expect(() => computeMetricStat({ ...args, statKind: 'p95' })).toThrow(/not a scalar stat kind/)
+    expect(() => computeMetricStat({ ...args, statKind: undefined })).toThrow(/not a scalar stat kind/)
+  })
+
+  it('rejects a derivative kind, which is a series and belongs to domain/derivative.js', () => {
+    // The specific bug adding d1/d2 to statKinds would otherwise have created:
+    // a derivative reaching here returns a number in the wrong units instead of
+    // failing. Units differ from the metric's own — that is the whole reason it
+    // is drawn on a second axis rather than as a reference line.
+    for (const kind of ['d1', 'd2']) {
+      expect(() => computeMetricStat({ ...args, statKind: kind })).toThrow(/not a scalar stat kind/)
+    }
+  })
+
+  it('still accepts every scalar kind', () => {
+    for (const kind of ['max', 'min', 'avg', 'median']) {
+      expect(() => computeMetricStat({ ...args, statKind: kind })).not.toThrow()
+    }
+  })
+})

@@ -85,9 +85,12 @@ function sameDomain(a, b) {
  * @param {unknown} args.domain - the current zoomDomain (sentinel or numeric)
  * @param {[number, number] | null} args.fullExtent - the activity's true x-extent
  * @param {(domain: unknown) => void} args.onZoomChange
+ * @param {number} [args.rightInset] - width of the derivative axis gutter, when the
+ *   stack has one (ui/chartGeometry.js). The plot is that much narrower than the
+ *   surface, and every fraction this hook solves is a fraction OF THE PLOT.
  * @returns {{ref: (node: Element | null) => void, wheelHint: boolean}}
  */
-export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
+export function usePinchZoom({ domain, fullExtent, onZoomChange, rightInset = 0 }) {
   const [wheelHint, setWheelHint] = useState(false)
 
   // Every mutable input is routed through this one ref, and the ref callback
@@ -95,10 +98,12 @@ export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
   // DECISION in the hook: `domain` changes on every animation frame of a live
   // pinch, so a callback that closed over it directly would change identity
   // each frame and React would detach and re-attach all seven listeners
-  // mid-gesture, every frame.
-  const latest = useRef({ domain, fullExtent, onZoomChange })
+  // mid-gesture, every frame. `rightInset` goes through the same ref for the
+  // same reason — it changes on a checkbox rather than a frame, but closing
+  // over it would re-key the callback and tear the listeners down anyway.
+  const latest = useRef({ domain, fullExtent, onZoomChange, rightInset })
   useEffect(() => {
-    latest.current = { domain, fullExtent, onZoomChange }
+    latest.current = { domain, fullExtent, onZoomChange, rightInset }
   })
 
   const gesture = useRef({
@@ -130,10 +135,10 @@ export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
     // Re-arming rather than keeping the old anchors is what stops the chart
     // jumping when a finger is replanted mid-gesture.
     function arm() {
-      const { domain: current, fullExtent: extent } = latest.current
+      const { domain: current, fullExtent: extent, rightInset: inset } = latest.current
       g.anchors = null
       if (g.pointers.size !== 2 || !extent) return
-      const plotRect = plotRectOf(node)
+      const plotRect = plotRectOf(node, inset)
       if (!plotRect) return
       const resolved = resolveDomain(current, extent)
       g.plotRect = plotRect
@@ -218,14 +223,14 @@ export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
     // at constant width. Returns false on every bail, so the caller can fall
     // through to the hint path exactly as if this had never run.
     function tryPan(e) {
-      const { domain: current, fullExtent: extent } = latest.current
+      const { domain: current, fullExtent: extent, rightInset: inset } = latest.current
       // "When zoomed in" is the whole feature: with the full activity on screen
       // there is nowhere to pan to, and swiping there must keep its default
       // browser behaviour rather than being silently swallowed.
       if (!extent || isFullDomain(current)) return false
       const pixels = panPixels(e)
       if (pixels === 0) return false
-      const plotRect = plotRectOf(node)
+      const plotRect = plotRectOf(node, inset)
       if (!plotRect) return false
       // preventDefault ONLY once a pan is certain. It does double duty here: as
       // well as suppressing the default scroll, it is what stops Safari and
@@ -238,7 +243,7 @@ export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
     }
 
     function handleWheel(e) {
-      const { domain: current, fullExtent: extent } = latest.current
+      const { domain: current, fullExtent: extent, rightInset: inset } = latest.current
       // ⌘ as well as ctrl: a macOS trackpad pinch already arrives as a wheel
       // event with ctrlKey set, so Mac users get the phone's gesture for free.
       // Tested first, so ctrl + a diagonal scroll still zooms rather than pans.
@@ -257,7 +262,7 @@ export function usePinchZoom({ domain, fullExtent, onZoomChange }) {
       // as passive, so preventDefault there is a silent no-op. That, more than
       // touch, is the airtight argument for native listeners here.
       e.preventDefault()
-      const plotRect = plotRectOf(node)
+      const plotRect = plotRectOf(node, inset)
       if (!plotRect) return
       // Clamped, unlike the pinch anchors: the cursor can sit out over the
       // axis gutter, and zooming about a point outside the plot reads as the

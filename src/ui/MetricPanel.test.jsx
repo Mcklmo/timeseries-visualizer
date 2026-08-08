@@ -4,6 +4,7 @@ import { MetricPanel } from './MetricPanel.jsx'
 import { extentOf, fullDomain } from '../domain/zoomDomain.js'
 import { metricRegistry } from '../metrics/metricRegistry.js'
 import { statsBasisFor } from '../stats/statsBasis.js'
+import { plotRectFromSurface, Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
 
 // Recharts path data looks like "M61,85L328,5L595,45" — one M/L command per
 // rendered point, in data order. Parsing it back out is the only way to
@@ -223,6 +224,149 @@ describe('MetricPanel', () => {
     expect(dashes).toContain('1 2')
     expect(dashes).toContain('2 3')
     expect(dashes.some((d) => d == null || d === 'none')).toBe(true)
+  })
+
+  // ── derivative overlay ──────────────────────────────────────────────────
+  //
+  // `samplingIntervalS` is spelled out here where the shared fixture leaves it
+  // undefined: it sizes both the smoothing window and the gap threshold, and a
+  // real Activity always carries it. At 10s the window collapses to one sample
+  // (§4.2's branch), so these are the raw centred differences and the numbers
+  // below can be checked by hand.
+  const derivActivity = { ...activity, samplingIntervalS: 10 }
+  const withOverlay = { activity: derivActivity, enabledStats: ['d1'], rightInset: Y_AXIS_RIGHT_WIDTH }
+
+  function derivPath(container) {
+    return [...container.querySelectorAll('.recharts-line .recharts-curve')][1]
+  }
+
+  it('draws the derivative as a second, dashed line on the metric’s own panel', () => {
+    const { container } = renderPanel(withOverlay)
+    const curves = container.querySelectorAll('.recharts-line .recharts-curve')
+
+    expect(curves).toHaveLength(2)
+    // The metric's own hue, dimmed and dashed — §9 allows one hue per metric,
+    // and this IS that metric, seen as a rate.
+    expect(derivPath(container).getAttribute('stroke')).toBe(metricRegistry.heartRate.color)
+    expect(derivPath(container).getAttribute('stroke-dasharray')).toBe('3 3')
+    expect(curves[0].getAttribute('stroke-dasharray')).toBeNull()
+  })
+
+  it('draws no overlay when no derivative is enabled, whatever the gutter says', () => {
+    // The gutter is stack-wide: this panel reserves it for a SIBLING's overlay
+    // and must still draw only its own line.
+    const { container } = renderPanel({ activity: derivActivity, enabledStats: [], rightInset: Y_AXIS_RIGHT_WIDTH })
+    expect(container.querySelectorAll('.recharts-line .recharts-curve')).toHaveLength(1)
+  })
+
+  it('reserves the right-hand axis whenever the stack has one, but labels it only when this panel does', () => {
+    const labelled = renderPanel(withOverlay).container
+    const reservedOnly = renderPanel({
+      activity: derivActivity,
+      enabledStats: [],
+      rightInset: Y_AXIS_RIGHT_WIDTH,
+    }).container
+
+    // Both panels carry two y-axes — that is what keeps their plot areas the
+    // same width (ARCHITECTURE.md §7).
+    expect(labelled.querySelectorAll('.recharts-yAxis')).toHaveLength(2)
+    expect(reservedOnly.querySelectorAll('.recharts-yAxis')).toHaveLength(2)
+
+    // Only the panel with the overlay puts ticks on it; the other is a blank
+    // spacer, since a rate axis with no rate on it labels nothing.
+    const rightTicks = (c) => [...c.querySelectorAll('.recharts-yAxis')][1].querySelectorAll('.recharts-cartesian-axis-tick')
+    expect(rightTicks(labelled).length).toBeGreaterThan(0)
+    expect(rightTicks(reservedOnly)).toHaveLength(0)
+  })
+
+  it('draws no overlay at all without a gutter to draw it in', () => {
+    // The interlock. Recharts does NOT error on a <Line yAxisId> naming an axis
+    // nothing rendered — it invents one 60px wide, silently laying the panel
+    // out narrower than the gesture believes. ChartStack never produces this
+    // combination; a mis-wired caller would, and losing the overlay is the
+    // visible failure where the alternative is invisible.
+    const { container } = renderPanel({ activity: derivActivity, enabledStats: ['d1'], rightInset: 0 })
+    expect(container.querySelectorAll('.recharts-line .recharts-curve')).toHaveLength(1)
+    expect(container.querySelectorAll('.recharts-yAxis')).toHaveLength(1)
+  })
+
+  it('defaults rightInset to 0, so a panel rendered without it lays out exactly as before', () => {
+    // ~fifteen tests in this file render from DEFAULT_PROPS, which does not
+    // pass rightInset. Without the default, `width={undefined}` would reach
+    // <YAxis> and Recharts would substitute its own 60px — laying the panel out
+    // narrower than the gesture believes.
+    const { container } = renderPanel()
+    expect(container.querySelectorAll('.recharts-yAxis')).toHaveLength(1)
+  })
+
+  it('lays the plot out exactly where plotRectFromSurface says it is, gutter included', () => {
+    // §3's central claim, end to end: the pinch gesture computes the plot rect
+    // by subtracting constants, the chart lays itself out from those same
+    // constants, and this is where the two are checked against each other once
+    // a second axis exists. setupTests.js gives every element an 800px-wide
+    // rect, so the Recharts surface here is 800 wide.
+    const { container } = renderPanel(withOverlay)
+    const axisLines = [...container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-line')]
+    const left = Number(axisLines[0].getAttribute('x1'))
+    const right = Number(axisLines[1].getAttribute('x1'))
+    const expected = plotRectFromSurface({ left: 0, width: 800 }, Y_AXIS_RIGHT_WIDTH)
+
+    expect(left).toBe(expected.left)
+    expect(right - left).toBe(expected.width)
+  })
+
+  it('centres the derivative axis on zero, so the sign reads off the line’s position', () => {
+    const { container } = renderPanel(withOverlay)
+    // Symmetric domain ⇒ the zero reference line sits at the plot's vertical
+    // midpoint. Anything else and "above the middle = rising" stops holding.
+    const zeroLine = container.querySelector('.recharts-reference-line-line')
+    const plot = container.querySelector('.recharts-cartesian-grid-horizontal line')
+    expect(zeroLine).not.toBeNull()
+    expect(plot).not.toBeNull()
+
+    const y = Number(zeroLine.getAttribute('y1'))
+    const gridYs = [...container.querySelectorAll('.recharts-cartesian-grid-horizontal line')].map((l) =>
+      Number(l.getAttribute('y1')),
+    )
+    const mid = (Math.min(...gridYs) + Math.max(...gridYs)) / 2
+    expect(y).toBeCloseTo(mid, 6)
+  })
+
+  it('reports a derivative as a line only — no chip, since it is a series and not a scalar', () => {
+    const { container } = renderPanel({ ...withOverlay, enabledStats: ['d1', 'avg'] })
+    const chips = [...container.querySelectorAll('.stat-chip')]
+    // avg still chips; d1 does not, and does not become a horizontal line
+    // either — the only reference line is the zero crossing.
+    expect(chips).toHaveLength(1)
+    expect(chips[0].textContent).toContain('AVG')
+    expect(container.querySelectorAll('.recharts-reference-line')).toHaveLength(2)
+  })
+
+  it('breaks the overlay across a recording dropout instead of drawing a rate through it', () => {
+    const sparse = {
+      ...activity,
+      samplingIntervalS: 600,
+      totalTime: 25200,
+      samples: [
+        { t: 0, d: 0, heartRate: 120, moving: true },
+        { t: 600, d: 300, heartRate: 130, moving: true },
+        { t: 1200, d: 600, heartRate: 128, moving: true },
+        // 6.3h satellite dropout
+        { t: 24000, d: 900, heartRate: 140, moving: true },
+        { t: 24600, d: 1200, heartRate: 145, moving: true },
+        { t: 25200, d: 1500, heartRate: 138, moving: true },
+      ],
+    }
+    const { container } = renderPanel({
+      activity: sparse,
+      metricId: 'heartRate',
+      enabledStats: ['d1'],
+      rightInset: Y_AXIS_RIGHT_WIDTH,
+    })
+
+    // Two path segments, not one continuous line: a difference measured across
+    // a six-hour outage is not a heart-rate ramp.
+    expect(derivPath(container).getAttribute('d').match(/M/g).length).toBeGreaterThan(1)
   })
 
   it('zooms the cadence y-axis to the real moving band, excluding paused zero samples from the domain', () => {

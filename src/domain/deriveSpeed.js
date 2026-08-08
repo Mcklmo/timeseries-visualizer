@@ -2,20 +2,7 @@
 // it from distance/time when the file has none at all, then smooth — a
 // derived instantaneous speed from ~1Hz GPS/distance deltas is too noisy to
 // chart directly. See ARCHITECTURE.md §8.
-import { smooth } from './smooth.js'
-
-const DERIVED_SMOOTH_WINDOW_S = 9 // within the 5-15s band the spec calls for
-
-/**
- * The smoothing window is specified in seconds but `smooth()` counts samples,
- * so it has to be converted at the recording's own cadence — 9 samples is ~9s
- * only at 1 Hz. `| 1` forces an odd width so the window stays centred.
- * @param {number} intervalS
- * @returns {number} window width in samples, odd and >= 1
- */
-function smoothWindowSamplesFor(intervalS) {
-  return Math.max(1, Math.round(DERIVED_SMOOTH_WINDOW_S / intervalS) | 1)
-}
+import { smooth, smoothWindowSamplesFor } from './smooth.js'
 
 /**
  * @param {object} args

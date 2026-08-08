@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { isMetricForSport, metricRegistry, metricOrder, metricUnit } from './metricRegistry.js'
+import {
+  derivativeKindFor,
+  derivativeStatKinds,
+  isMetricForSport,
+  metricRegistry,
+  metricOrder,
+  metricUnit,
+  scalarStatKinds,
+  statKinds,
+  statKindsFor,
+} from './metricRegistry.js'
 import { formatPace, formatSpeedKmh } from '../domain/units.js'
 
 describe('metricOrder', () => {
@@ -92,6 +102,75 @@ describe('power and altitude', () => {
 describe('metricUnit', () => {
   it('returns a plain string unit unchanged', () => {
     expect(metricUnit(metricRegistry.heartRate, 'running')).toBe('bpm')
+  })
+})
+
+describe('stat kinds', () => {
+  it('appends the derivative kinds after the scalars, in one list', () => {
+    // Order is load-bearing three times over: checkbox order, draw order, and
+    // the order viewPrefsStore's filterToKnown re-sorts stored prefs into.
+    expect(scalarStatKinds).toEqual(['max', 'min', 'avg', 'median'])
+    expect(derivativeStatKinds).toEqual(['d1', 'd2'])
+    expect(statKinds).toEqual(['max', 'min', 'avg', 'median', 'd1', 'd2'])
+  })
+
+  it('offers derivatives only to metrics that declare a spec', () => {
+    // §2.3: not pace (its accessor nulls anything under 0.3 m/s, and d/dt of
+    // min/km is unreadable) and not cadence.
+    for (const id of ['altitude', 'heartRate', 'speed', 'power']) {
+      expect(statKindsFor(metricRegistry[id])).toEqual(statKinds)
+    }
+    for (const id of ['pace', 'cadence']) {
+      expect(statKindsFor(metricRegistry[id])).toEqual(scalarStatKinds)
+      expect(metricRegistry[id].derivative).toBeUndefined()
+    }
+  })
+
+  it('gives every derivative spec a label, unit, scale and signed formatter', () => {
+    for (const id of ['altitude', 'heartRate', 'speed', 'power']) {
+      for (const kind of derivativeStatKinds) {
+        const spec = metricRegistry[id].derivative[kind]
+        expect(spec.label).toBeTruthy()
+        expect(spec.unit).toBeTruthy()
+        expect(spec.perSecondScale).toBeGreaterThan(0)
+        // The sign IS the reading, so a positive rate must print one.
+        expect(spec.format(1.5)).toMatch(/^\+/)
+        expect(spec.format(-1.5)).toMatch(/^-/)
+        // ...but zero is the axis centre, not a small positive.
+        expect(spec.format(0)).not.toMatch(/^[+-]/)
+      }
+    }
+  })
+
+  it('scales per-second differences into the units it labels the axis with', () => {
+    // derivativeSeries returns value-units per second; accessor units vary.
+    expect(metricRegistry.heartRate.derivative.d1.perSecondScale).toBe(60) // bpm/s -> bpm/min
+    expect(metricRegistry.heartRate.derivative.d2.perSecondScale).toBe(3600)
+    expect(metricRegistry.altitude.derivative.d1.perSecondScale).toBe(60) // m/s -> m/min
+    expect(metricRegistry.power.derivative.d1.perSecondScale).toBe(1) // already W/s
+    // speed's accessor is km/h, so its per-second difference needs ÷3.6 to be m/s².
+    expect(metricRegistry.speed.derivative.d1.perSecondScale).toBeCloseTo(1 / 3.6, 12)
+    expect(metricRegistry.speed.derivative.d1.unit).toBe('m/s²')
+  })
+})
+
+describe('derivativeKindFor', () => {
+  const { heartRate, cadence } = metricRegistry
+
+  it('picks the enabled derivative and ignores the scalar stats beside it', () => {
+    expect(derivativeKindFor(heartRate, ['max', 'd1', 'avg'])).toBe('d1')
+    expect(derivativeKindFor(heartRate, ['d2'])).toBe('d2')
+    expect(derivativeKindFor(heartRate, ['max', 'avg'])).toBeNull()
+    expect(derivativeKindFor(heartRate, [])).toBeNull()
+  })
+
+  it('returns null for a metric that offers no derivative, whatever is stored against it', () => {
+    // viewPrefsStore validates stored kinds against the GLOBAL statKinds, so a
+    // hand-edited sessionStorage entry really can carry 'd1' for cadence. If
+    // this returned 'd1', ChartStack would reserve 44px of gutter on every
+    // panel for an overlay MetricPanel can never draw.
+    expect(derivativeKindFor(cadence, ['d1'])).toBeNull()
+    expect(derivativeKindFor(cadence, ['avg', 'd2'])).toBeNull()
   })
 })
 

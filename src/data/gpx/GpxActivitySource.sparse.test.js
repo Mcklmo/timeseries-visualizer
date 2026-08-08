@@ -102,7 +102,7 @@ describe('sparse multi-day GPX (fixtures/sparse-multiday.gpx)', () => {
     const activity = await loadFixtureActivity()
     const rows = activity.samples.map((s) => ({ t: s.t, d: s.d, speed: metricRegistry.speed.accessor(s) }))
     const withBreaks = insertGapBreaks(rows, {
-      metricId: 'speed',
+      valueKeys: ['speed'],
       gapThresholdS: gapThresholdFor(activity.samplingIntervalS),
     })
 

@@ -97,6 +97,20 @@ function xSpread(panel) {
   return Math.max(...xs) - Math.min(...xs)
 }
 
+// The elapsed time the chart is CURRENTLY drawing under a given screen x, read
+// back out of the rendered path. The fixture's samples are evenly spaced in t
+// (0…40s) and the axis is linear, so the first and last rendered points define
+// the mapping exactly — no interpolation table needed.
+//
+// This is how the anchored-pinch invariant becomes observable: "the value under
+// a stationary finger does not move" is the defining property of the gesture,
+// and it is the property that breaks when the gesture measures a plot of a
+// different width than the one Recharts drew.
+function tAtClientX(panel, clientX) {
+  const xs = pathXs(panel)
+  return ((clientX - xs[0]) / (xs.at(-1) - xs[0])) * 40
+}
+
 function tickLabels(panel) {
   return [...panel.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan')].map(
     (el) => el.textContent,
@@ -210,6 +224,74 @@ describe('ChartStack', () => {
     expect(new Set(leftEdges).size).toBe(1)
   })
 
+  // THE derivative-overlay invariant (ARCHITECTURE.md §7). The right-hand axis
+  // narrows the plot, and the pinch gesture measures ONE .recharts-surface —
+  // the first in the stack — then applies that rect to gestures anywhere on it.
+  // So the gutter has to be reserved on every visible panel the moment any one
+  // of them has an overlay. Reserve it per panel instead and the failures are
+  // silent: lines horizontally offset between panels, and a pinch that drifts
+  // 44px out from under the fingers.
+  it('reserves the derivative gutter on every panel, so plot areas stay aligned', async () => {
+    const { container } = await renderStack({
+      extra: <ToggleStat metricId="heartRate" statKind="d1" />,
+    })
+    const panels = () => [...container.querySelectorAll('.metric-panel')]
+
+    // One y-axis each, and identical x positions, before any overlay exists.
+    expect(panels().map((p) => p.querySelectorAll('.recharts-yAxis').length)).toEqual([1, 1, 1, 1])
+    const before = panels().map(pathXs)
+    expect(new Set(before.map((xs) => JSON.stringify(xs))).size).toBe(1)
+
+    fireEvent.click(screen.getByText('toggle-heartRate-d1'))
+
+    // Heart rate is the only metric with an overlay, but ALL FOUR panels now
+    // carry the second axis — that is the whole invariant.
+    await waitFor(() =>
+      expect(panels().map((p) => p.querySelectorAll('.recharts-yAxis').length)).toEqual([2, 2, 2, 2]),
+    )
+    const after = panels().map(pathXs)
+    expect(new Set(after.map((xs) => JSON.stringify(xs))).size).toBe(1)
+
+    // And the plot really did get narrower — otherwise "all four agree" would
+    // pass trivially with an axis that reserved no width at all.
+    expect(xSpread(panels()[0])).toBeLessThan(before[0].at(-1) - before[0][0])
+  })
+
+  it('draws the overlay on the panel that asked for it, and only there', async () => {
+    const { container } = await renderStack({
+      extra: <ToggleStat metricId="heartRate" statKind="d1" />,
+    })
+    const curveCounts = () =>
+      [...container.querySelectorAll('.metric-panel')].map(
+        (p) => p.querySelectorAll('.recharts-line .recharts-curve').length,
+      )
+
+    expect(curveCounts()).toEqual([1, 1, 1, 1])
+
+    fireEvent.click(screen.getByText('toggle-heartRate-d1'))
+
+    // panels are pace, heartRate, cadence, altitude — only heartRate gains a
+    // second line, even though every panel gained the axis.
+    await waitFor(() => expect(curveCounts()).toEqual([1, 2, 1, 1]))
+  })
+
+  it('gives the gutter back when the last overlay is switched off', async () => {
+    const { container } = await renderStack({
+      extra: <ToggleStat metricId="heartRate" statKind="d1" />,
+    })
+    const before = pathXs([...container.querySelectorAll('.metric-panel')][0])
+
+    fireEvent.click(screen.getByText('toggle-heartRate-d1'))
+    await waitFor(() =>
+      expect(container.querySelectorAll('.metric-panel')[0].querySelectorAll('.recharts-yAxis')).toHaveLength(2),
+    )
+
+    fireEvent.click(screen.getByText('toggle-heartRate-d1'))
+    // Byte-identical to the pre-overlay layout, not merely close: the gesture's
+    // rightInset defaults back to 0 and the two have to agree exactly.
+    await waitFor(() => expect(pathXs([...container.querySelectorAll('.metric-panel')][0])).toEqual(before))
+  })
+
   it('syncs the crosshair across all panels when hovering one', async () => {
     const { container } = await renderStack()
     const wrappers = [...container.querySelectorAll('.recharts-wrapper')]
@@ -304,6 +386,51 @@ describe('ChartStack', () => {
       const xs = panelsNow.map((panel) => pathXs(panel).join(','))
       expect(new Set(xs).size).toBe(1)
     })
+  })
+
+  // THE regression the whole gutter design exists to prevent, and the one
+  // manual check that could be automated. `pinchStack`'s documented clientX
+  // constants assume rightInset === 0 (plot {left: 60, width: 728}); with an
+  // overlay on the plot is {left: 60, width: 684}, so this test asserts the
+  // invariant rather than pixel constants.
+  //
+  // A finger held still must keep the same instant under it. Route rightInset
+  // past `usePinchZoom` and the gesture solves against a 728px plot while
+  // Recharts draws a 684px one: the anchors are captured at the wrong
+  // fractions, and the error grows with distance from the left edge — ~1px at
+  // the quarter point, over a second of drift for a finger near the right.
+  it('keeps the instant under a stationary finger pinned while an overlay is on', async () => {
+    const { container } = await renderStack({
+      extra: <ToggleStat metricId="heartRate" statKind="d1" />,
+    })
+    const panel = () => [...container.querySelectorAll('.metric-panel')][0]
+
+    fireEvent.click(screen.getByText('toggle-heartRate-d1'))
+    await waitFor(() => expect(panel().querySelectorAll('.recharts-yAxis')).toHaveLength(2))
+
+    // Anchored near the RIGHT edge, where a mis-measured plot width does the
+    // most damage — at the left edge the error is nearly zero either way.
+    const pinnedAt = 697
+    const before = tAtClientX(panel(), pinnedAt)
+
+    await pinchStack(container, { from: [606, pinnedAt], to: [515, pinnedAt] })
+
+    await waitFor(() => expect(xSpread(panel())).toBeGreaterThan(0))
+    expect(tAtClientX(panel(), pinnedAt)).toBeCloseTo(before, 6)
+  })
+
+  it('keeps that same finger pinned with no overlay, so the gutter is what changed', async () => {
+    // The control. Identical gesture at rightInset === 0 — if this failed too,
+    // the test above would be measuring the gesture in general, not the gutter.
+    const { container } = await renderStack()
+    const panel = () => [...container.querySelectorAll('.metric-panel')][0]
+    const pinnedAt = 697
+    const before = tAtClientX(panel(), pinnedAt)
+
+    await pinchStack(container, { from: [606, pinnedAt], to: [515, pinnedAt] })
+
+    await waitFor(() => expect(xSpread(panel())).toBeGreaterThan(0))
+    expect(tAtClientX(panel(), pinnedAt)).toBeCloseTo(before, 6)
   })
 
   it('a horizontal trackpad swipe translates the zoomed curve without rescaling it', async () => {
