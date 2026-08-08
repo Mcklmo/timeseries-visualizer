@@ -15,7 +15,7 @@ import {
   widenedStart,
 } from './activityDateRange.js'
 
-const at = (startDateLocal) => ({ id: 'x', start_date_local: startDateLocal })
+const at = (startedAt) => ({ id: 'x', startedAt })
 
 describe('isRangeActive / isValidRange', () => {
   it('treats one open end as an active range', () => {
@@ -66,7 +66,7 @@ describe('defaultRange', () => {
 })
 
 describe('widenedStart', () => {
-  const activityOn = (day) => ({ id: day, start_date_local: `${day}T09:00:00` })
+  const activityOn = (day) => ({ id: day, startedAt: `${day}T09:00:00` })
 
   // Anchored on the oldest row actually held rather than on `from`: a capped
   // response stops short of the day that was asked for, and stepping back from
@@ -143,8 +143,8 @@ describe('activityInRange', () => {
   })
 
   // A Strava stub carries an id and little else. It must stay visible while
-  // nobody has asked a date question (IntervalsActivityList never hides a row),
-  // and drop out the moment someone does — it cannot honestly claim to be in
+  // nobody has asked a date question (ActivityRowList never hides a row), and
+  // drop out the moment someone does — it cannot honestly claim to be in
   // March.
   it('keeps a dateless activity when unfiltered and drops it under any range', () => {
     const stub = { id: 'i9' }

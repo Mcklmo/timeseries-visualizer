@@ -1,7 +1,7 @@
 // The date-range control above the intervals.icu activity list: three preset
-// chips and two day fields. Presentational and fully controlled — IntervalsPage
-// owns the range and does all the fetching, exactly as IntervalsActivityList is
-// a pure renderer of rows it never asked for.
+// chips and two day fields. Presentational and fully controlled —
+// useIntervalsActivities owns the range and does all the fetching, exactly as
+// ActivityRowList is a pure renderer of rows it never asked for.
 //
 // **Native `<input type="date">`, not a dependency and not a hand-rolled
 // calendar.** It brings a real calendar on desktop, the OS wheel on iOS and

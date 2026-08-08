@@ -154,6 +154,7 @@ src/
     providers.jsx            # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
   data/
     ActivitySource.js        # port: JSDoc typedef + createActivitySource contract
+    activityRow.js           # one picker row, in terms no provider owns. Typedef only, zero imports
     tcx/
       TcxActivitySource.js   # implements port; DOMParser based
       parseTcx.js            # XML -> RawTrackpoint[]; pure, no domain logic
@@ -167,6 +168,7 @@ src/
       IntervalsActivitySource.js  # implements port for {type:'id'}; adds NO parsing of its own
       intervalsApi.js        # low-level client; injectable fetchImpl; throws coded IntervalsApiError
                              #   two read paths: listActivities (window) + searchActivities (history)
+      toActivityRow.js       # wire shape -> ActivityRow; the LAST place icu_ field names appear
       credentialStore.js     # the API key in localStorage, behind an injectable storage
       detectActivityFormat.js # pure: gunzip + bytes -> 'fit'|'tcx'|'gpx'|null
   domain/
@@ -213,8 +215,9 @@ src/
     ErrorState.jsx
     AboutPage.jsx
     IntervalsPage.jsx        # the full view; owns the connected/disconnected state machine
+    useIntervalsActivities.js # its whole read side: both effects, the merge, the range
     IntervalsConnectForm.jsx # validates the key before it is ever stored
-    IntervalsActivityList.jsx # rows as real <button>s + "Load earlier activities"
+    ActivityRowList.jsx      # provider-neutral rows as real <button>s + "Load earlier activities"
     FeedbackWidget.jsx       # footer trigger; owns isOpen
     FeedbackDialog.jsx       # <dialog> shell; form mounted only while open
     FeedbackForm.jsx         # fields + Turnstile mount point + result states

@@ -57,25 +57,25 @@ Pages — it is Workers with static assets, so routing is explicit and visible.
 
 ## 3. Layers as built
 
-Measured on 2026-08-08, non-test files only.
+Measured on 2026-08-09, non-test files only.
 
 | Layer | Files | LOC | Imports |
 |---|---|---|---|
 | `shared/` | 1 | 13 | nothing — the browser + Worker kernel |
 | `src/domain/` | 16 | 1275 | only `domain/` — no React, no DOM |
-| `src/data/` | 13 | 1300 | `domain/`, React (see finding D3) |
+| `src/data/` | 15 | 1430 | `domain/`, React (see finding D3) |
 | `src/metrics/` | 1 | 194 | `domain/units.js` |
 | `src/state/` | 3 | 305 | `domain/`, `metrics/`, `data/`, React |
 | `src/stats/` | 5 | 443 | `domain/`, `metrics/`, `state/`, React |
 | `src/lib/` | 1 | 64 | nothing app-specific (`feedbackClient`) |
-| `src/ui/` | 26 | 2500 | everything below + Recharts |
+| `src/ui/` | 27 | 2611 | everything below + Recharts |
 | `src/app/` + `App.jsx` | 2 | 231 | composition root |
 | `src/main.jsx` | 1 | 11 | entry point |
 | `worker/` | 8 | 415 | `shared/` |
 
-**77 non-test source files, ~6,750 LOC.**
+**80 non-test source files, ~7,000 LOC.**
 
-**Test posture: 69 test files, 862 tests, all passing.** That ratio — roughly one test file per
+**Test posture: 71 test files, 875 tests, all passing.** That ratio — roughly one test file per
 source file — is the single most important fact for §7: every refactor listed there is guarded by
 existing tests, which is why they are safe to attempt at all.
 
@@ -92,8 +92,9 @@ flowchart TB
     Panel[MetricPanel xN]
     Tip[SyncedTooltip]
     Hdr[ActivityHeader]
-    IPage[IntervalsPage]
-    IList[IntervalsActivityList]
+    IPage[IntervalsPage<br/>copy + layout only]
+    IHook[useIntervalsActivities<br/>read orchestration]
+    IList[ActivityRowList<br/>provider-neutral]
     IConn[IntervalsConnectForm]
     IDate[IntervalsDateFilter]
     Fb[FeedbackWidget → Dialog → Form]
@@ -103,7 +104,7 @@ flowchart TB
     Stack --> Panel --> Tip
     Stack --> Pinch --> Geo
     Panel --> Geo
-    IPage --> IList & IConn & IDate
+    IPage --> IHook & IList & IConn & IDate
   end
 
   subgraph STATE["State & derivation"]
@@ -140,9 +141,12 @@ flowchart TB
     FILES[TcxActivitySource · FitActivitySource · GpxActivitySource<br/>→ parseTcx / parseFit / parseGpx]
     ICU[IntervalsActivitySource<br/>reuses all three parsers]
     API[intervalsApi · detectActivityFormat<br/>credentialStore · dateRangeStore · activityDateRange]
+    ROW[(ActivityRow<br/>typedef, zero imports)]
+    MAP[toActivityRow<br/>wire shape stops here]
     FILES -.implements.-> PORT
     ICU -.implements.-> PORT
     ICU --> API
+    MAP --> ROW
   end
 
   subgraph WORKER["Cloudflare Worker"]
@@ -166,6 +170,8 @@ flowchart TB
   ZOOM --> VC & Pinch & SBF
   DERIV --> UDS --> Panel
   UNITS --> REG & Tip & Hdr & Panel & IList
+  IHook --> API & MAP
+  ROW --> IList
   REG --> Panel & Ctl & Stack & UMS & UDS
   SBF --> AGG
   Fb --> SHARED
@@ -257,21 +263,50 @@ with exactly one mount point and one shared constants module. It is the proof th
 Ranked by leverage, with Strava prerequisites first. **[Strava]** marks a prerequisite for §9, not
 a cleanup. Effort is in parentheses.
 
-### 1. [Strava] Lift intervals.icu orchestration out of the page, and add a provider-neutral row DTO *(medium — the single biggest blocker)*
+### 1. [Strava] Lift intervals.icu orchestration out of the page, and add a provider-neutral row DTO — **DONE (2026-08-09)**
 
-`src/ui/IntervalsPage.jsx` is 385 lines, the largest file in the repo. It holds credential state,
+`src/ui/IntervalsPage.jsx` was 385 lines, the largest file in the repo, holding credential state,
 the browse effect, the search effect, `mergeById`, date-range persistence, `IntervalsApiError`
-code→message mapping, empty/loading copy, *and* rendering.
+code→message mapping, empty/loading copy, *and* rendering. The list component read
+provider-specific fields directly — `activity.source === 'STRAVA'`, `file_type`, `icu_distance`,
+`start_date_local` — none of which Strava's payload shares.
 
-Worse for Strava, the list component reads provider-specific fields directly:
-`activity.source === 'STRAVA'` (`src/ui/IntervalsActivityList.jsx:23`), `activity.file_type`
-(`:26`), `activity.icu_distance` (`:68`), `activity.start_date_local` (`:71`).
+Landed as two behaviour-preserving commits, with `IntervalsPage.test.jsx`'s 41 assertions untouched
+as the proof:
 
-→ Extract orchestration to `data/intervals/useIntervalsActivities.js`, **and** introduce an
-`ActivityRow` DTO — `{ id, name, startedAt, distanceM, durationS, unsupportedReason }` — that each
-provider maps into, so the list renders either provider's rows unchanged.
+- `src/ui/useIntervalsActivities.js` — all 8 pieces of state, all 3 effects, `mergeById` and
+  `rejectKey`. The page is down to ~150 lines of copy, layout and JSX.
+- `src/data/activityRow.js` — the `ActivityRow` typedef, zero imports.
+- `src/data/intervals/toActivityRow.js` — the mapper, plus `unsupportedReason` moved off the list.
+  Both read paths map at the boundary, so `mergeById`, `activityInRange`, `widenedStart` and the
+  list see rows only. `intervalsApi.js` is untouched and stays the raw transport.
+- `src/ui/IntervalsActivityList.jsx` → `src/ui/ActivityRowList.jsx`, with `.intervals-list` /
+  `.intervals-activity` renamed to `.activity-list` / `.activity-row`.
 
-Without this, a Strava picker duplicates all 385 lines.
+**Two decisions worth carrying forward.**
+
+*The hook is in `ui/`, not `data/intervals/` as this item originally specified.* It needs
+`useDebouncedValue`, which is in `ui/`, and nothing below `ui/` imports from `ui/` anywhere in this
+repo — `data/` would have created the first such edge, and deepened finding D3, which item 8 exists
+to remove. Every import the hook makes is one the page already made, so the extraction added zero
+cross-layer edges. The complaint was that orchestration sat in *the page*; `ui/` answers that fully.
+The precedent is `useDebouncedValue` itself, extracted from this same page for the same reason.
+
+*The DTO carries two fields beyond the six sketched here*, both forced by rendering that already
+existed and both genuinely provider-neutral: `sportLabel`, because `describeActivity` prints the
+sport as meta segment 2 and the line silently loses it otherwise; and `isGarminDerived`, because
+intervals.icu's API Terms §1.1 and Strava's API Policy §4.4 require the same Garmin attribution —
+the flag is shared, the attribution *sentence* stays per-provider in the page. `provider` is
+deliberately **not** on the row: qualifying `IdActivityRef` is item 2's job.
+
+Adding Strava is now a new mapper, a new hook and a new page; the list and the date logic are
+reused as-is.
+
+**Left for a separate change** — three pre-existing rough edges, recorded as comments in the hook
+rather than fixed, since this refactor was strictly behaviour-preserving: `connect` never calls
+`setError(null)` and self-heals only via an ordering dependency on the browse effect; `rejectKey`
+leaves `error`/`results`/`searchStatus` set, stranding hits behind the connect form; "Searching…"
+renders on top of stale results where its browse-side twin is gated on `isAwaitingFirstWindow`.
 
 ### 2. [Strava] Move the source dispatcher out of `App.jsx`, and qualify the id ref *(low)*
 
@@ -292,6 +327,12 @@ that is a deliberate call, not an oversight.
 both pure, both byte-level, neither intervals-specific — yet they sit under `data/intervals/`.
 
 → Move to `data/fileFormat.js`.
+
+`src/data/intervals/activityDateRange.js` now belongs in the same batch. Item 1 made it fully
+provider-neutral — it filters `ActivityRow`s and names no intervals.icu field — but it stayed put,
+because it imports `toApiDate` from `intervalsApi.js`. Moving one means moving both: `toApiDate` is
+a `Date` → `YYYY-MM-DD` formatter with nothing intervals-specific about it either. Do the three
+together.
 
 **This exposes a latent defect worth recording: the file path and the network path disagree about
 format detection.** The network path sniffs bytes and gunzips. `sourceFor` trusts the filename
@@ -460,14 +501,17 @@ Two consequences to record as decisions:
   rule that production stays derived so every format behaves identically — but it is a choice, so
   it is named here rather than left to whoever writes the adapter.
 
-### (d) The picker is not reusable
+### (d) The picker is not reusable — **RESOLVED (2026-08-09)**
 
-See decoupling item #1. `IntervalsActivityList` reads intervals.icu field names directly, so the
-Strava picker either duplicates it or the row DTO lands first.
+Was: `IntervalsActivityList` read intervals.icu field names directly, so the Strava picker either
+duplicated it or the row DTO landed first. The DTO landed first — see decoupling item #1.
+`ActivityRowList` and `activityDateRange` now render and filter `ActivityRow`s from any provider,
+and the orchestration a second picker needs is a hook to copy the shape of rather than 385 lines to
+copy outright.
 
 ### One thing that gets better
 
-`src/ui/IntervalsActivityList.jsx:23` currently greys out **every Strava-synced row** — intervals.icu
+`unsupportedReason` in `src/data/intervals/toActivityRow.js` greys out **every Strava-synced row** — intervals.icu
 doesn't keep the original file for them. Direct Strava support closes a hole the product already
 documents in `README.md:199` and `doc/SEO_LAUNCH.md:337`.
 

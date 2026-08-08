@@ -10,7 +10,7 @@
 // intervals.icu's rather than any provider's.
 import { formatRangeLabel, isRangeActive } from '../data/intervals/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
-import { IntervalsActivityList } from './IntervalsActivityList.jsx'
+import { ActivityRowList } from './ActivityRowList.jsx'
 import { IntervalsConnectForm } from './IntervalsConnectForm.jsx'
 import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
 import { useIntervalsActivities } from './useIntervalsActivities.js'
@@ -18,9 +18,11 @@ import { useIntervalsActivities } from './useIntervalsActivities.js'
 // intervals.icu's API Terms §1.1: information derived from Garmin-sourced
 // data has to carry Garmin attribution. Shown only when this athlete actually
 // has Garmin-synced activities in view, so it stays a true statement rather
-// than boilerplate.
-function hasGarminData(activities) {
-  return activities.some((a) => a.source === 'GARMIN_CONNECT' || a.device_name)
+// than boilerplate. The *question* is shared — Strava's API Policy §4.4 asks
+// the same one, which is why the row answers it — but the sentence below is
+// intervals.icu's own, so it stays here.
+function hasGarminData(rows) {
+  return rows.some((row) => row.isGarminDerived)
 }
 
 /**
@@ -132,8 +134,8 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
           )}
 
           {!isAwaitingFirstWindow && !isAwaitingFirstHits && (
-            <IntervalsActivityList
-              activities={rows}
+            <ActivityRowList
+              rows={rows}
               isLoadingEarlier={isLoadingEarlier}
               // Absent (not disabled) while searching: hits are scattered
               // through history, so there is no window under them to widen.
@@ -141,9 +143,10 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
               // widening it is exactly what paging means.
               onLoadEarlier={isSearching ? undefined : loadEarlier}
               emptyMessage={emptyMessage}
-              onSelect={(activity) =>
-                onSelectActivity({ type: 'id', id: activity.id, name: activity.name || undefined })
-              }
+              // `row.name` needs no `|| undefined` guard: the mapper already
+              // drops an empty title, so a blank one can never override the
+              // name deriveWorkoutName infers for the chart.
+              onSelect={(row) => onSelectActivity({ type: 'id', id: row.id, name: row.name })}
             />
           )}
 

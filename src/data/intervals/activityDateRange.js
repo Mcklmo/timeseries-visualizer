@@ -1,6 +1,11 @@
 // The date-range filter's whole model, in one pure module: no React, no DOM,
-// nothing imported but `toApiDate`. IntervalsPage owns the state and
+// nothing imported but `toApiDate`. useIntervalsActivities owns the state and
 // IntervalsDateFilter renders it; both read their rules from here.
+//
+// It filters `ActivityRow`s, not raw intervals.icu payloads, so nothing in it
+// is provider-specific any more. It stays under `data/intervals/` only because
+// `toApiDate` still lives in intervalsApi.js — moving one means moving both,
+// which is a batch of its own (ARCHITECTURE_STATUS.md §7 item 3).
 //
 // **A range is two `YYYY-MM-DD` strings, never two Dates.** That is exactly
 // what `<input type="date">`.value reads and writes regardless of display
@@ -62,21 +67,24 @@ function parseDay(day) {
 }
 
 /**
- * The calendar day an activity happened on, or null when it didn't say.
+ * The calendar day a row's activity happened on, or null when it didn't say.
  *
- * This is the **single** parser for `start_date_local` on the filtering path —
- * `activityInRange` and `widenedStart` both go through it. `IntervalsActivityList`'s
- * `formatStartDate` keeps its own, deliberately: it needs the `Date` itself to
- * hand to `Intl`, so routing it through here would only mean parsing twice.
- * Do not add a fourth copy.
+ * This is the **single** parser for `ActivityRow.startedAt` on the filtering
+ * path — `activityInRange` and `widenedStart` both go through it.
+ * `ActivityRowList`'s `formatStartDate` keeps its own, deliberately: it needs
+ * the `Date` itself to hand to `Intl`, so routing it through here would only
+ * mean parsing twice. Do not add a fourth copy.
  *
- * No trailing Z is added: `start_date_local` is already the athlete's wall
- * clock, and appending one shifts it into their own offset a second time.
+ * No trailing Z is added: `startedAt` is already the athlete's wall clock, and
+ * appending one shifts it into their own offset a second time. The mapper that
+ * fills the field has the same rule for the same reason.
+ *
+ * @param {import('../activityRow.js').ActivityRow} [row]
  */
-export function startDayOf(activity) {
-  const startDateLocal = activity?.start_date_local
-  if (!startDateLocal) return null
-  const date = new Date(startDateLocal)
+export function startDayOf(row) {
+  const startedAt = row?.startedAt
+  if (!startedAt) return null
+  const date = new Date(startedAt)
   return Number.isNaN(date.getTime()) ? null : toApiDate(date)
 }
 
@@ -85,15 +93,18 @@ export function startDayOf(activity) {
  * which is what the two fields read as. Comparing calendar days rather than
  * instants is what makes a 23:50 activity on the `to` day pass.
  *
- * An activity with no usable date **passes when no range is set and fails when
- * one is**. Both halves are deliberate: a Strava stub cannot honestly be
- * claimed to fall in March, but it must stay visible (disabled, with its
- * reason) in the default view — IntervalsActivityList's rule is that an
- * activity the athlete knows they recorded is never silently hidden.
+ * A row with no usable date **passes when no range is set and fails when one
+ * is**. Both halves are deliberate: a Strava stub cannot honestly be claimed
+ * to fall in March, but it must stay visible (disabled, with its reason) in
+ * the default view — ActivityRowList's rule is that an activity the athlete
+ * knows they recorded is never silently hidden.
+ *
+ * @param {import('../activityRow.js').ActivityRow} row
+ * @param {DateRange} range
  */
-export function activityInRange(activity, range) {
+export function activityInRange(row, range) {
   if (!isRangeActive(range)) return true
-  const day = startDayOf(activity)
+  const day = startDayOf(row)
   if (!day) return false
   if (range.from && day < range.from) return false
   if (range.to && day > range.to) return false
@@ -156,13 +167,13 @@ export function requestBoundsFor(range, fallbackOldest) {
  * the rest of this module is built on.
  *
  * @param {DateRange} range
- * @param {object[]} activities
+ * @param {import('../activityRow.js').ActivityRow[]} rows
  * @param {number} days
  * @param {string} fallbackFrom - used when the start field was emptied by hand
  */
-export function widenedStart(range, activities, days, fallbackFrom) {
+export function widenedStart(range, rows, days, fallbackFrom) {
   const currentFrom = range?.from ?? fallbackFrom
-  const oldestHeldDay = activities.map(startDayOf).filter(Boolean).sort()[0]
+  const oldestHeldDay = rows.map(startDayOf).filter(Boolean).sort()[0]
   const anchor = oldestHeldDay ?? currentFrom
   const candidate = daysBefore(anchor, days)
   return candidate < currentFrom ? candidate : daysBefore(currentFrom, days)
@@ -213,7 +224,7 @@ export const PRESETS = [
 ]
 
 // Pinned to en-GB rather than the visitor's locale, matching DATE_FORMAT in
-// IntervalsActivityList.jsx — the empty message names the same days the rows
+// ActivityRowList.jsx — the empty message names the same days the rows
 // do, and in the same order, so "1 Mar" can't mean January the 3rd here and
 // March the 1st two lines down.
 const DAY_FORMAT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })

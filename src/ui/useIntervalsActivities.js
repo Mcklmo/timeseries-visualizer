@@ -20,6 +20,11 @@
 // apart from a failed network: the first clears the stored credential and
 // drops back to the connect form, the second leaves everything alone and
 // shows a banner the user can retry past.
+//
+// It is also where the raw wire shape stops. Both read paths map through
+// toActivityRow the moment they resolve, so the merge, the date predicate and
+// the list below all deal in provider-neutral ActivityRows — the field names
+// `icu_distance` and `start_date_local` appear nowhere past that line.
 import { useCallback, useEffect, useState } from 'react'
 import {
   DEFAULT_RANGE_DAYS,
@@ -32,6 +37,7 @@ import {
 import { credentialStore } from '../data/intervals/credentialStore.js'
 import { dateRangeStore } from '../data/intervals/dateRangeStore.js'
 import { IntervalsApiError, listActivities, searchActivities } from '../data/intervals/intervalsApi.js'
+import { toActivityRow } from '../data/intervals/toActivityRow.js'
 import { useDebouncedValue } from './useDebouncedValue.js'
 
 // Long enough that a normal typing burst is one request, short enough that the
@@ -43,6 +49,8 @@ const SEARCH_DEBOUNCE_MS = 300
 const MIN_QUERY_LENGTH = 2
 
 const FALLBACK_ERROR = 'Something went wrong. Please try again.'
+
+/** @typedef {import('../data/activityRow.js').ActivityRow} ActivityRow */
 
 /**
  * Newest first, no duplicates. While browsing, each widened window re-returns
@@ -96,7 +104,7 @@ function mergeById(incoming, held) {
  */
 export function useIntervalsActivities({ store = credentialStore, fetchImpl } = {}) {
   const [apiKey, setApiKey] = useState(() => store.readApiKey())
-  const [activities, setActivities] = useState([])
+  const [activities, setActivities] = useState(/** @type {ActivityRow[]} */ ([]))
   // The date filter, and the *only* browse floor — there is no separate
   // rolling window beside it any more, so paging and filtering are one
   // mechanism in one representation.
@@ -111,7 +119,7 @@ export function useIntervalsActivities({ store = credentialStore, fetchImpl } = 
   const [query, setQuery] = useState('')
   // Kept entirely apart from `activities` — see the search effect below for
   // why merging the two would break paging.
-  const [results, setResults] = useState(/** @type {object[] | null} */ (null))
+  const [results, setResults] = useState(/** @type {ActivityRow[] | null} */ (null))
   const [searchStatus, setSearchStatus] = useState('idle')
 
   // The debounce delays *starting* a search, never stopping one: emptying the
@@ -187,8 +195,12 @@ export function useIntervalsActivities({ store = credentialStore, fetchImpl } = 
     setError(null)
 
     listActivities({ apiKey, oldest, newest, fetchImpl })
-      .then((incoming) => {
+      // Mapped here, at the boundary, and never later: `mergeById` below keys
+      // on `row.id`, and everything downstream of it — the date predicate, the
+      // widen anchor, the list — is written against ActivityRow alone.
+      .then((raw) => {
         if (cancelled) return
+        const incoming = raw.map(toActivityRow)
         setActivities((held) => mergeById(incoming, held))
         setStatus('ready')
       })
@@ -242,9 +254,12 @@ export function useIntervalsActivities({ store = credentialStore, fetchImpl } = 
     setError(null)
 
     searchActivities({ apiKey, query: activeQuery, fetchImpl })
-      .then((hits) => {
+      // The same mapping as the browse path, for the same reason: the two
+      // lists are rendered by one component and filtered by one predicate, so
+      // they have to be the same shape.
+      .then((raw) => {
         if (cancelled) return
-        setResults(hits)
+        setResults(raw.map(toActivityRow))
         setSearchStatus('ready')
       })
       .catch((caught) => {

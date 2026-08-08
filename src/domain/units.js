@@ -57,8 +57,8 @@ export function formatDistanceKm(metres) {
   return `${(metres / METRES_PER_KM).toFixed(2)} km`
 }
 
-// Pinned to en-GB, and to 24-hour time, for the same reason
-// IntervalsActivityList pins its row dates: day-before-month everywhere,
+// Pinned to en-GB, and to 24-hour time, for the same reason ActivityRowList
+// pins its row dates: day-before-month everywhere,
 // stable enough to assert on, and a picker row and the header of the activity
 // it loads should read the same way. No weekday here though — the pinned
 // header cluster has to wrap onto one phone row, and the weekday identifies

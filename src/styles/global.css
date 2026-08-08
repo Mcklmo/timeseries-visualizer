@@ -1105,7 +1105,7 @@ main {
   color: var(--danger);
 }
 
-.intervals-list {
+.activity-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1116,7 +1116,7 @@ main {
 
 /* The whole row is one button: keyboard and screen-reader support for free,
    and a real tap target rather than a clickable <div>. */
-.intervals-activity {
+.activity-row {
   font: inherit;
   display: flex;
   flex-direction: column;
@@ -1132,21 +1132,21 @@ main {
   cursor: pointer;
 }
 
-.intervals-activity:hover:not(:disabled) {
+.activity-row:hover:not(:disabled) {
   border-color: var(--metric-pace);
 }
 
-.intervals-activity:disabled {
+.activity-row:disabled {
   cursor: not-allowed;
   color: var(--text-dim);
   background: transparent;
 }
 
-.intervals-activity__name {
+.activity-row__name {
   font-size: 14px;
 }
 
-.intervals-activity__meta {
+.activity-row__meta {
   font-family: var(--font-data);
   font-size: 12px;
   color: var(--text-dim);
@@ -1154,13 +1154,13 @@ main {
 
 /* Visible dim text, never a `title` tooltip — a tooltip is invisible on
    touch, which is the device this whole view exists for. */
-.intervals-activity__reason {
+.activity-row__reason {
   font-size: 12px;
   color: var(--text-dim);
   font-style: italic;
 }
 
-.intervals-list__more {
+.activity-list__more {
   font: inherit;
   font-size: 13px;
   color: var(--text-dim);
@@ -1174,11 +1174,11 @@ main {
   cursor: pointer;
 }
 
-.intervals-list__more:hover:not(:disabled) {
+.activity-list__more:hover:not(:disabled) {
   color: var(--text);
 }
 
-.intervals-list__empty {
+.activity-list__empty {
   margin: 0;
   color: var(--text-dim);
 }
