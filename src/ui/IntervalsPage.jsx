@@ -4,61 +4,16 @@
 // Two halves: no key means the connect form, a key means the activity list.
 // The key itself is the state machine — everything else follows from it.
 //
-// This is the only place that catches IntervalsApiError and switches on
-// `.code`, which is the whole reason intervalsApi.js throws a coded error
-// rather than a plain one (see its header). A rejected key has to be told
-// apart from a failed network: the first clears the stored credential and
-// drops back to the connect form, the second leaves everything alone and
-// shows a banner the user can retry past.
-import { useCallback, useEffect, useState } from 'react'
-import {
-  DEFAULT_RANGE_DAYS,
-  activityInRange,
-  defaultRange,
-  formatRangeLabel,
-  isRangeActive,
-  isValidRange,
-  requestBoundsFor,
-  widenedStart,
-} from '../data/intervals/activityDateRange.js'
+// Every piece of read orchestration behind that — the two effects, the merge,
+// the date range, the coded-error handling — lives in useIntervalsActivities,
+// so what is left here is copy, layout and the wording that is genuinely
+// intervals.icu's rather than any provider's.
+import { formatRangeLabel, isRangeActive } from '../data/intervals/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
-import { dateRangeStore } from '../data/intervals/dateRangeStore.js'
-import { IntervalsApiError, listActivities, searchActivities } from '../data/intervals/intervalsApi.js'
 import { IntervalsActivityList } from './IntervalsActivityList.jsx'
 import { IntervalsConnectForm } from './IntervalsConnectForm.jsx'
 import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
-import { useDebouncedValue } from './useDebouncedValue.js'
-
-// Long enough that a normal typing burst is one request, short enough that the
-// list still feels like it is following the keyboard.
-const SEARCH_DEBOUNCE_MS = 300
-
-// One character matches most of a history and costs a full-fat response for
-// nothing (see searchActivities), so the box stays inert until there are two.
-const MIN_QUERY_LENGTH = 2
-
-const FALLBACK_ERROR = 'Something went wrong. Please try again.'
-
-/**
- * Newest first, no duplicates. While browsing, each widened window re-returns
- * everything already held and the incoming copy simply wins.
- *
- * **It only ever accumulates.** A narrower response — which is what narrowing
- * the range produces — takes nothing away, deliberately: widening it again, or
- * pressing ↺, then restores rows already fetched with no round trip. What the
- * athlete sees is `activities` put through `activityInRange`, never
- * `activities` itself.
- */
-function mergeById(incoming, held) {
-  const seen = new Set()
-  const merged = []
-  for (const activity of [...incoming, ...held]) {
-    if (!activity?.id || seen.has(activity.id)) continue
-    seen.add(activity.id)
-    merged.push(activity)
-  }
-  return merged
-}
+import { useIntervalsActivities } from './useIntervalsActivities.js'
 
 // intervals.icu's API Terms §1.1: information derived from Garmin-sourced
 // data has to carry Garmin attribution. Shown only when this athlete actually
@@ -69,6 +24,10 @@ function hasGarminData(activities) {
 }
 
 /**
+ * `store` and `fetchImpl` are the picker's test seams and stay props of the
+ * page rather than of the hook — App.jsx passes neither, and the suite drives
+ * the whole view through them.
+ *
  * @param {{
  *   onBack: () => void,
  *   onSelectActivity: (ref: {type: 'id', id: string, name?: string}) => void,
@@ -77,202 +36,25 @@ function hasGarminData(activities) {
  * }} props
  */
 export function IntervalsPage({ onBack, onSelectActivity, store = credentialStore, fetchImpl }) {
-  const [apiKey, setApiKey] = useState(() => store.readApiKey())
-  const [activities, setActivities] = useState([])
-  // The date filter, and the *only* browse floor — there is no separate
-  // rolling window beside it any more, so paging and filtering are one
-  // mechanism in one representation.
-  //
-  // Read in the initialiser rather than an effect so the very first request
-  // already uses the remembered range, the same reason ChartViewContext seeds
-  // itself from viewPrefsStore during render instead of after mount.
-  const [range, setRange] = useState(() => dateRangeStore.read() ?? defaultRange())
-  const [status, setStatus] = useState('loading')
-  const [error, setError] = useState(null)
-  const [notice, setNotice] = useState(null)
-  const [query, setQuery] = useState('')
-  // Kept entirely apart from `activities` — see the search effect below for
-  // why merging the two would break paging.
-  const [results, setResults] = useState(/** @type {object[] | null} */ (null))
-  const [searchStatus, setSearchStatus] = useState('idle')
-
-  // The debounce delays *starting* a search, never stopping one: emptying the
-  // box drops back to the browse list on the keystroke rather than leaving
-  // the previous query's hits on screen for another 300 ms.
-  const debouncedQuery = useDebouncedValue(query.trim(), SEARCH_DEBOUNCE_MS)
-  const activeQuery = query.trim().length >= MIN_QUERY_LENGTH ? debouncedQuery : ''
-  const isSearching = activeQuery.length >= MIN_QUERY_LENGTH
-
-  // The range drives the request *and* a client-side predicate, which is not
-  // redundancy. The request so the right months get fetched without paging
-  // back through years; the predicate because `mergeById` accumulates rows
-  // across every widened window, and those held rows must stop rendering the
-  // moment the range narrows — a narrower request never removes anything on
-  // its own. The same predicate then filters search hits for free, which is
-  // the only way to filter them at all: neither search endpoint accepts
-  // `oldest`/`newest` (see searchActivities).
-  //
-  // Known cost of that endpoint, not a bug: `/search-full` returns the ~30
-  // most relevant hits across all history, so an active range filters those
-  // 30 and can legitimately empty the list while older matches exist further
-  // down a ranking the API never sent us.
-  const shown = (isSearching ? (results ?? []) : activities).filter((a) => activityInRange(a, range))
-
-  // The floor to use if the athlete empties the From field by hand — ↺ never
-  // produces that state, but the field itself still can. Recomputed per render
-  // rather than memoised: two string operations, and it only changes when the
-  // calendar day does, which is exactly when the browse effect *should* see a
-  // new `oldest`.
-  const fallbackOldest = defaultRange().from
-
-  // Primitives, not an object: the browse effect can then depend on them
-  // directly and stay stable across renders with no memo.
-  const { oldest, newest } = requestBoundsFor(range, fallbackOldest)
-  const isRangeUsable = isValidRange(range)
-
-  // One 401 is terminal for that key — there is no retry loop here. The key
-  // is cleared rather than kept around to fail again on every later request.
-  const rejectKey = useCallback(
-    (message) => {
-      store.clearApiKey()
-      setApiKey(null)
-      setActivities([])
-      setQuery('')
-      setNotice(message)
-    },
-    [store],
-  )
-
-  // Remembered for this tab only — see dateRangeStore.js for why session and
-  // not local storage. Connect and disconnect need no explicit clear: both set
-  // the range back to the default, which this then writes.
-  useEffect(() => {
-    dateRangeStore.save(range)
-  }, [range])
-
-  useEffect(() => {
-    if (!apiKey) return undefined
-    // A `to` before `from` matches nothing by definition, so there is no
-    // request worth firing. Status drops to 'ready' rather than staying where
-    // it was: nothing is in flight, and leaving it 'loading' would strand the
-    // "Loading activities…" indicator until the athlete happened to fix the
-    // range.
-    if (!isRangeUsable) {
-      setStatus('ready')
-      return undefined
-    }
-    let cancelled = false
-    setStatus('loading')
-    setError(null)
-
-    listActivities({ apiKey, oldest, newest, fetchImpl })
-      .then((rows) => {
-        if (cancelled) return
-        setActivities((held) => mergeById(rows, held))
-        setStatus('ready')
-      })
-      .catch((caught) => {
-        if (cancelled) return
-        if (caught instanceof IntervalsApiError && caught.code === 'unauthorized') {
-          rejectKey(caught.message)
-          return
-        }
-        setError(caught instanceof IntervalsApiError ? caught.message : FALLBACK_ERROR)
-        setStatus('error')
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [apiKey, oldest, newest, isRangeUsable, fetchImpl, rejectKey])
-
-  // The second read path. It searches the athlete's whole history, so it is
-  // *not* a widening of the window above and its hits must never be merged
-  // into `activities`: mergeById and widenedStart both assume that list is a
-  // contiguous newest-first window anchored on real dates, and folding in
-  // arbitrary matches from years back would send "Load earlier" off to the
-  // wrong anchor. Two lists, one rendered at a time.
-  //
-  // The browse effect keys on the request bounds alone, so it does not re-fire
-  // while searching — which is why the browse list is simply still there the
-  // moment the box is cleared, with no refetch. Widening the *range* does
-  // re-fire it (the bounds genuinely changed), but nothing flashes:
-  // `activities` still holds every row it ever merged, so they re-appear
-  // through the predicate on the same render the range changed on, while the
-  // widened request settles behind them.
-  //
-  // `cancelled` is this file's existing stale-response guard, and debounced
-  // typing is exactly what it was written for: each new query's run cancels
-  // the previous one, so a slow early response cannot land on top of a newer
-  // query's rows.
-  useEffect(() => {
-    if (!apiKey || !activeQuery) {
-      // Dropping the last query's hits here is what makes clearing the box a
-      // clean return to browsing, with nothing stale left to flash on the
-      // next search.
-      setResults(null)
-      setSearchStatus('idle')
-      return undefined
-    }
-    let cancelled = false
-    setSearchStatus('loading')
-    setError(null)
-
-    searchActivities({ apiKey, query: activeQuery, fetchImpl })
-      .then((rows) => {
-        if (cancelled) return
-        setResults(rows)
-        setSearchStatus('ready')
-      })
-      .catch((caught) => {
-        if (cancelled) return
-        if (caught instanceof IntervalsApiError && caught.code === 'unauthorized') {
-          rejectKey(caught.message)
-          return
-        }
-        setError(caught instanceof IntervalsApiError ? caught.message : FALLBACK_ERROR)
-        setSearchStatus('error')
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [apiKey, activeQuery, fetchImpl, rejectKey])
-
-  function handleConnected(key) {
-    // Validated by the form before it got here, so this only ever stores a
-    // key already proven to work. A browser that refuses to persist it (see
-    // credentialStore.js) still leaves the session usable — it just won't
-    // survive a reload.
-    store.saveApiKey(key)
-    setNotice(null)
-    setActivities([])
-    setQuery('')
-    setRange(defaultRange())
-    setApiKey(key)
-  }
-
-  function handleDisconnect() {
-    store.clearApiKey()
-    setApiKey(null)
-    setActivities([])
-    setQuery('')
-    setRange(defaultRange())
-    setError(null)
-    setNotice(null)
-  }
-
-  const isLoadingEarlier = status === 'loading' && activities.length > 0
-
-  // Nothing truthful to render yet in either mode: an empty list would claim
-  // the window held nothing, or that the query matched nothing, while the
-  // answer is still in flight. The indicator stands in for the list.
-  //
-  // Both stay keyed on the **unfiltered** lists on purpose: they answer "has a
-  // response landed yet", not "is anything visible". A range that filters
-  // every row out is an answer, and it has its own empty message below.
-  const isAwaitingFirstWindow = !isSearching && status === 'loading' && activities.length === 0
-  const isAwaitingFirstHits = isSearching && searchStatus === 'loading' && results === null
+  const {
+    apiKey,
+    rows,
+    error,
+    notice,
+    query,
+    setQuery,
+    range,
+    setRange,
+    isSearching,
+    activeQuery,
+    searchStatus,
+    isLoadingEarlier,
+    isAwaitingFirstWindow,
+    isAwaitingFirstHits,
+    connect,
+    disconnect,
+    loadEarlier,
+  } = useIntervalsActivities({ store, fetchImpl })
 
   // Names the range rather than claiming "the last few months" were empty.
   // With the filter on by default there is nearly always a range to name; the
@@ -292,11 +74,11 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
       <h2>intervals.icu</h2>
 
       {!apiKey ? (
-        <IntervalsConnectForm onConnected={handleConnected} fetchImpl={fetchImpl} notice={notice} />
+        <IntervalsConnectForm onConnected={connect} fetchImpl={fetchImpl} notice={notice} />
       ) : (
         <>
           <div className="intervals-page__account">
-            <button type="button" className="intervals-page__disconnect" onClick={handleDisconnect}>
+            <button type="button" className="intervals-page__disconnect" onClick={disconnect}>
               Disconnect
             </button>
             <p className="intervals-page__hint">
@@ -351,21 +133,13 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
 
           {!isAwaitingFirstWindow && !isAwaitingFirstHits && (
             <IntervalsActivityList
-              activities={shown}
+              activities={rows}
               isLoadingEarlier={isLoadingEarlier}
               // Absent (not disabled) while searching: hits are scattered
               // through history, so there is no window under them to widen.
               // Browsing always offers it now — the range *is* the window, so
               // widening it is exactly what paging means.
-              onLoadEarlier={
-                isSearching
-                  ? undefined
-                  : () =>
-                      setRange((current) => ({
-                        ...current,
-                        from: widenedStart(current, activities, DEFAULT_RANGE_DAYS, fallbackOldest),
-                      }))
-              }
+              onLoadEarlier={isSearching ? undefined : loadEarlier}
               emptyMessage={emptyMessage}
               onSelect={(activity) =>
                 onSelectActivity({ type: 'id', id: activity.id, name: activity.name || undefined })
@@ -375,7 +149,7 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
 
           {/* Tracks what is actually on screen, so the credit stays a true
               statement in search mode too (API Terms §1.1). */}
-          {hasGarminData(shown) && (
+          {hasGarminData(rows) && (
             <p className="intervals-page__attribution">Activity data from Garmin, via intervals.icu.</p>
           )}
         </>
