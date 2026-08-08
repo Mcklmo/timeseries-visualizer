@@ -21,9 +21,11 @@
 // is before the start date." error on first paint, with no request fired and
 // nothing on screen explaining why.
 //
-// Every call is wrapped, same as both siblings: Safari's private mode throws
-// on setItem, and some hardened configurations throw on touching Storage at
-// all. Losing a remembered range is a shrug; taking the app down with it is not.
+// Every call goes through lib/safeStorage.js, same as both siblings: Safari's
+// private mode throws on setItem, and some hardened configurations throw on
+// touching Storage at all. Losing a remembered range is a shrug; taking the app
+// down with it is not.
+import { createSafeStorage, sessionStorageOrNull } from '../../lib/safeStorage.js'
 import { isValidRange } from '../activityDateRange.js'
 
 export const DATE_RANGE_STORAGE_KEY = 'timeseries-visualizer.intervals-icu.dateRange'
@@ -35,16 +37,6 @@ const SCHEMA_VERSION = 1
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 /** @typedef {import('../activityDateRange.js').DateRange} DateRange */
-
-function browserSessionStorage() {
-  // Guarded like the calls below: reading the property itself throws when
-  // storage is disabled, before any get/set is ever attempted.
-  try {
-    return globalThis.sessionStorage ?? null
-  } catch {
-    return null
-  }
-}
 
 /** A stored bound is either absent or a real `YYYY-MM-DD` — the one shape the
  *  whole feature is built on. Anything else is not repaired, it is refused. */
@@ -75,30 +67,31 @@ function normalizeRange(raw) {
 }
 
 /**
+ * **sessionStorage, deliberately** — see the header. The storage stays a
+ * factory argument so tests inject their own.
+ *
  * @param {Pick<Storage, 'getItem'|'setItem'>|null} [storage]
  * @returns {{read: () => DateRange|null, save: (range: DateRange) => void}}
  */
-export function createDateRangeStore(storage = browserSessionStorage()) {
+export function createDateRangeStore(storage = sessionStorageOrNull()) {
+  const safe = createSafeStorage(storage)
   return {
-    /** @returns {DateRange|null} null means "nothing usable remembered" — including every failure. */
+    /** @returns {DateRange|null} null means "nothing usable remembered" —
+     *  unreachable storage, unparseable JSON and a payload that fails
+     *  validation are all the same answer to the caller. */
     read() {
-      try {
-        const stored = storage?.getItem(DATE_RANGE_STORAGE_KEY)
-        return stored ? normalizeRange(JSON.parse(stored)) : null
-      } catch {
-        // Unreachable storage and unparseable JSON are the same answer here.
-        return null
-      }
+      return normalizeRange(safe.getJson(DATE_RANGE_STORAGE_KEY))
     },
 
     save(range) {
       if (!range) return
-      try {
-        const payload = { v: SCHEMA_VERSION, from: range.from ?? null, to: range.to ?? null }
-        storage?.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(payload))
-      } catch {
-        // Quota exhausted or storage refused: the range simply isn't remembered.
-      }
+      // Quota exhausted or storage refused: the range simply isn't remembered,
+      // which is why the boolean is dropped here and kept in credentialStore.
+      safe.setJson(DATE_RANGE_STORAGE_KEY, {
+        v: SCHEMA_VERSION,
+        from: range.from ?? null,
+        to: range.to ?? null,
+      })
     },
   }
 }

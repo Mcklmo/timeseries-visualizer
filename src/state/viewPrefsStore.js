@@ -26,10 +26,11 @@
 // `enabledMetrics` reaches `metricRegistry[metricId].label` in StatCheckboxes
 // and throws a real TypeError on the next render.
 //
-// Every call is wrapped, same as credentialStore: Safari's private mode
-// throws on setItem, and some hardened configurations throw on touching
-// Storage at all. Losing a remembered view is a shrug; taking the app down
-// with it is not.
+// Every call goes through lib/safeStorage.js, same as credentialStore:
+// Safari's private mode throws on setItem, and some hardened configurations
+// throw on touching Storage at all. Losing a remembered view is a shrug; taking
+// the app down with it is not.
+import { createSafeStorage, sessionStorageOrNull } from '../lib/safeStorage.js'
 import { metricOrder, statKinds } from '../metrics/metricRegistry.js'
 
 const KEY_PREFIX = 'timeseries-visualizer.chartView.'
@@ -43,16 +44,6 @@ const X_MODES = ['time', 'distance']
 /** @typedef {{xMode: import('../domain/types.js').XAxisMode,
  *             enabledMetrics: import('../domain/types.js').MetricId[],
  *             enabledStats: Record<string, import('../domain/types.js').StatKind[]>}} ViewPrefs */
-
-function browserSessionStorage() {
-  // Guarded like the calls below: reading the property itself throws when
-  // storage is disabled, before any get/set is ever attempted.
-  try {
-    return globalThis.sessionStorage ?? null
-  } catch {
-    return null
-  }
-}
 
 /** Canonical order regardless of what order the stored array happened to be
  *  in, matching what toggleMetric/statKinds guarantee for live state. */
@@ -92,36 +83,36 @@ function normalizePrefs(raw) {
 }
 
 /**
+ * **sessionStorage, deliberately** — see the header. The storage stays a
+ * factory argument so tests inject their own.
+ *
  * @param {Pick<Storage, 'getItem'|'setItem'>|null} [storage]
  * @returns {{read: (activityKey: string) => ViewPrefs|null, save: (activityKey: string, prefs: ViewPrefs) => void}}
  */
-export function createViewPrefsStore(storage = browserSessionStorage()) {
+export function createViewPrefsStore(storage = sessionStorageOrNull()) {
+  const safe = createSafeStorage(storage)
   return {
-    /** @returns {ViewPrefs|null} null means "nothing usable remembered" — including every failure. */
+    /** @returns {ViewPrefs|null} null means "nothing usable remembered" —
+     *  unreachable storage, unparseable JSON and a payload that fails
+     *  validation are all the same answer to the caller. */
     read(activityKey) {
       if (!activityKey) return null
-      try {
-        const stored = storage?.getItem(KEY_PREFIX + activityKey)
-        return stored ? normalizePrefs(JSON.parse(stored)) : null
-      } catch {
-        // Unreachable storage and unparseable JSON are the same answer here.
-        return null
-      }
+      return normalizePrefs(safe.getJson(KEY_PREFIX + activityKey))
     },
 
     save(activityKey, prefs) {
       if (!activityKey || !prefs) return
-      try {
-        const payload = {
-          v: SCHEMA_VERSION,
-          xMode: prefs.xMode,
-          enabledMetrics: prefs.enabledMetrics,
-          enabledStats: prefs.enabledStats,
-        }
-        storage?.setItem(KEY_PREFIX + activityKey, JSON.stringify(payload))
-      } catch {
-        // Quota exhausted or storage refused: the view simply isn't remembered.
-      }
+      // The `false` is dropped on purpose: quota exhausted or storage refused
+      // means the view simply isn't remembered, and there is nothing the
+      // caller could usefully do about it. NOTE that this is exactly the
+      // swallow that would hide a QuotaExceededError caused by some *other*
+      // module filling sessionStorage — so nothing large belongs in there.
+      safe.setJson(KEY_PREFIX + activityKey, {
+        v: SCHEMA_VERSION,
+        xMode: prefs.xMode,
+        enabledMetrics: prefs.enabledMetrics,
+        enabledStats: prefs.enabledStats,
+      })
     },
   }
 }

@@ -20,56 +20,41 @@
 // revisited: sessionStorage, or a "keep me signed in" checkbox, is a one-line
 // change here and nothing elsewhere.
 //
-// Every call is wrapped: Safari's private mode throws on setItem and some
-// hardened configurations throw on any Storage access at all. A throw inside
-// a React event handler would take the app down, where degrading to "not
-// connected" merely turns one opt-in feature off.
+// Every call goes through lib/safeStorage.js, which cannot throw: Safari's
+// private mode throws on setItem and some hardened configurations throw on any
+// Storage access at all. A throw inside a React event handler would take the
+// app down, where degrading to "not connected" merely turns one opt-in feature
+// off. That guard used to be written out three times across the repo; the
+// reasoning behind it now lives in one header.
+import { createSafeStorage, localStorageOrNull } from '../../lib/safeStorage.js'
 
 export const API_KEY_STORAGE_KEY = 'timeseries-visualizer.intervals-icu.apiKey'
 
-function browserStorage() {
-  // Guarded like the calls below: reading the property itself throws when
-  // storage is disabled, before any get/set is ever attempted.
-  try {
-    return globalThis.localStorage ?? null
-  } catch {
-    return null
-  }
-}
-
 /**
+ * **localStorage, deliberately** — the opposite of what dateRangeStore.js next
+ * door and state/viewPrefsStore.js choose, for the reason in the header above.
+ * It stays a factory argument so that trade is still one line to revisit.
+ *
  * @param {Pick<Storage, 'getItem'|'setItem'|'removeItem'>|null} [storage]
  * @returns {{readApiKey: () => string|null, saveApiKey: (apiKey: string) => boolean, clearApiKey: () => void}}
  */
-export function createCredentialStore(storage = browserStorage()) {
+export function createCredentialStore(storage = localStorageOrNull()) {
+  const safe = createSafeStorage(storage)
   return {
-    /** @returns {string|null} null means "not connected" — including every failure. */
+    /** @returns {string|null} null means "not connected" — including every
+     *  failure, and including a blank stored value, which is not a credential
+     *  (safeStorage's `getString` contract). */
     readApiKey() {
-      try {
-        // `|| null` not `?? null`: a blank stored value is not a credential.
-        return storage?.getItem(API_KEY_STORAGE_KEY) || null
-      } catch {
-        return null
-      }
+      return safe.getString(API_KEY_STORAGE_KEY)
     },
 
     /** @returns {boolean} false when the browser refused to persist it. */
     saveApiKey(apiKey) {
-      try {
-        if (!storage) return false
-        storage.setItem(API_KEY_STORAGE_KEY, apiKey)
-        return true
-      } catch {
-        return false
-      }
+      return safe.setString(API_KEY_STORAGE_KEY, apiKey)
     },
 
     clearApiKey() {
-      try {
-        storage?.removeItem(API_KEY_STORAGE_KEY)
-      } catch {
-        // Already unreachable storage holds nothing to clear.
-      }
+      safe.remove(API_KEY_STORAGE_KEY)
     },
   }
 }
