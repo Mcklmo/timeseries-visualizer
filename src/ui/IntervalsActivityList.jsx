@@ -37,12 +37,18 @@ export function unsupportedReason(activity) {
 }
 
 // Pinned to en-GB rather than the visitor's locale so the row reads
-// "Tue 12 Aug" everywhere — day-before-month, matching the rest of the UI's
-// European conventions, and stable enough to assert on.
+// "Tue 12 Aug 2026" everywhere — day-before-month, matching the rest of the
+// UI's European conventions, and stable enough to assert on.
+//
+// The year is always printed, never dropped for the current one: the date
+// filter (activityDateRange.js) means any year can be on screen, and a list
+// that omits the year on some rows and shows it on others is read as *this
+// year* by default — exactly the wrong default for a range set to 2024.
 const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
   weekday: 'short',
   day: 'numeric',
   month: 'short',
+  year: 'numeric',
 })
 
 function formatStartDate(startDateLocal) {
@@ -55,7 +61,7 @@ function formatStartDate(startDateLocal) {
 }
 
 /**
- * `Tue 12 Aug · Run · 12.40 km · 58:12`, dropping whatever this activity
+ * `Tue 12 Aug 2026 · Run · 12.40 km · 58:12`, dropping whatever this activity
  * didn't tell us. Every field is optional by necessity, not by caution.
  */
 export function describeActivity(activity) {

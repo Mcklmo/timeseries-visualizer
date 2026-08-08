@@ -28,15 +28,23 @@ function renderList(activities, props = {}) {
 
 describe('describeActivity', () => {
   it('builds the secondary line from date, type, distance and duration', () => {
-    expect(describeActivity(garminRun)).toBe('Tue 11 Aug · Run · 12.40 km · 58:12')
+    expect(describeActivity(garminRun)).toBe('Tue 11 Aug 2026 · Run · 12.40 km · 58:12')
   })
 
   it('drops whatever the activity did not report, rather than printing placeholders', () => {
     expect(describeActivity({ id: 'i2', type: 'Ride', start_date_local: '2026-08-11T17:04:00' })).toBe(
-      'Tue 11 Aug · Ride',
+      'Tue 11 Aug 2026 · Ride',
     )
     expect(describeActivity({ id: 'i3' })).toBe('')
     expect(describeActivity({ id: 'i4', start_date_local: 'not a date' })).toBe('')
+  })
+
+  // The date filter puts any year on screen, so the year is stated on every
+  // row — an older activity must not read as one from this year.
+  it('names the year even on an activity from a past season', () => {
+    expect(describeActivity({ id: 'i6', type: 'Run', start_date_local: '2024-03-02T08:15:00' })).toBe(
+      'Sat 2 Mar 2024 · Run',
+    )
   })
 
   it('falls back to elapsed_time when moving_time is absent', () => {
@@ -81,7 +89,7 @@ describe('IntervalsActivityList', () => {
     renderList([garminRun], { onSelect })
 
     const row = screen.getByRole('button', { name: /Tempo 5×1k/ })
-    expect(row).toHaveTextContent('Tue 11 Aug · Run · 12.40 km · 58:12')
+    expect(row).toHaveTextContent('Tue 11 Aug 2026 · Run · 12.40 km · 58:12')
 
     await user.click(row)
     expect(onSelect).toHaveBeenCalledWith(garminRun)
