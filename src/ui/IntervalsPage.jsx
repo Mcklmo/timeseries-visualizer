@@ -32,7 +32,7 @@ function hasGarminData(rows) {
  *
  * @param {{
  *   onBack: () => void,
- *   onSelectActivity: (ref: {type: 'id', id: string, name?: string}) => void,
+ *   onSelectActivity: (ref: import('../data/ActivitySource.js').IdActivityRef) => void,
  *   store?: typeof credentialStore,
  *   fetchImpl?: typeof fetch,
  * }} props
@@ -143,10 +143,19 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
               // widening it is exactly what paging means.
               onLoadEarlier={isSearching ? undefined : loadEarlier}
               emptyMessage={emptyMessage}
+              // `provider` is required on an id ref: sourceRegistry throws on
+              // one without it rather than guessing, because guessing means
+              // loading from the wrong athlete's account.
+              //
               // `row.name` needs no `|| undefined` guard: the mapper already
               // drops an empty title, so a blank one can never override the
-              // name deriveWorkoutName infers for the chart.
-              onSelect={(row) => onSelectActivity({ type: 'id', id: row.id, name: row.name })}
+              // name deriveWorkoutName infers for the chart. `startedAtUtc` is
+              // deliberately not passed on — this provider hands back the
+              // athlete's original file, whose records carry their own
+              // absolute timestamps.
+              onSelect={(row) =>
+                onSelectActivity({ type: 'id', provider: 'intervals', id: row.id, name: row.name })
+              }
             />
           )}
 

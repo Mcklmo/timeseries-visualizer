@@ -157,7 +157,12 @@ describe('IntervalsPage — connected', () => {
 
     await user.click(await screen.findByRole('button', { name: /Tempo 5×1k/ }))
 
-    expect(onSelectActivity).toHaveBeenCalledWith({ type: 'id', id: 'i1', name: 'Tempo 5×1k' })
+    expect(onSelectActivity).toHaveBeenCalledWith({
+      type: 'id',
+      provider: 'intervals',
+      id: 'i1',
+      name: 'Tempo 5×1k',
+    })
   })
 
   it('never dispatches for a Strava row — the guard is the disabled button itself', async () => {
@@ -477,7 +482,12 @@ describe('IntervalsPage — searching', () => {
     await user.type(searchBox(), 'hill')
     await user.click(await screen.findByRole('button', { name: /Hill repeats/ }))
 
-    expect(onSelectActivity).toHaveBeenCalledWith({ type: 'id', id: 'i7', name: 'Hill repeats' })
+    expect(onSelectActivity).toHaveBeenCalledWith({
+      type: 'id',
+      provider: 'intervals',
+      id: 'i7',
+      name: 'Hill repeats',
+    })
   })
 })
 

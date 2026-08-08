@@ -1,13 +1,9 @@
 // Composition root. See ARCHITECTURE.md §5: swapping the ActivitySource is
 // exactly changing the `source` instance passed to AppProviders below —
 // nothing else in the tree touches a concrete adapter.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
-import { FitActivitySource } from './data/fit/FitActivitySource.js'
-import { GpxActivitySource } from './data/gpx/GpxActivitySource.js'
-import { credentialStore } from './data/intervals/credentialStore.js'
-import { IntervalsActivitySource } from './data/intervals/IntervalsActivitySource.js'
-import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
+import { createDefaultSource } from './data/sourceRegistry.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { BrandMark } from './ui/BrandMark.jsx'
@@ -18,31 +14,7 @@ import { ErrorState } from './ui/ErrorState.jsx'
 import { FeedbackWidget } from './ui/FeedbackWidget.jsx'
 import { FileDropZone } from './ui/FileDropZone.jsx'
 import { IntervalsPage } from './ui/IntervalsPage.jsx'
-
-// Below this, the header stays fully opaque — only fades once the user has
-// actually scrolled away from the top, not on a stray 1px wheel tick.
-const HEADER_FADE_SCROLL_THRESHOLD = 8
-
-// Drives .app-header--faded (see global.css): once scrolled, the header's
-// background/border, the load-activity-bar and the quiet text controls
-// collapse away entirely, giving that space back to the charts — only
-// .app-header__title stays put. That cluster is the lockup *and* the
-// activity's identity (name, sport, when, how long), so a mid-scroll
-// screenshot says both which app and which workout it is. Hovering or
-// focusing the header brings everything back without needing to scroll to the
-// top first.
-function useIsScrolled(threshold = HEADER_FADE_SCROLL_THRESHOLD) {
-  const [isScrolled, setIsScrolled] = useState(false)
-
-  useEffect(() => {
-    const handleScroll = () => setIsScrolled(window.scrollY > threshold)
-    handleScroll()
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [threshold])
-
-  return isScrolled
-}
+import { useIsScrolled } from './ui/useIsScrolled.js'
 
 // Exported (not just default-exported App) so tests can drive states the
 // real parsers never produce on demand — e.g. a load stuck pending — by
@@ -166,37 +138,12 @@ export function AppShell() {
   )
 }
 
-// Composition-root dispatcher. A dropped/browsed file (`{type:'file'}`) goes
-// to the real TCX, FIT or GPX parser, chosen by extension; a file with an
-// unrecognised extension falls through to TcxActivitySource, which rejects it
-// with a real error. An `{type:'id'}` ref comes from the intervals.icu picker
-// and goes to IntervalsActivitySource, which downloads the original file and
-// sniffs its format from the bytes — the ref itself carries no format hint,
-// which is what makes ErrorState's "Try again" work on that path too.
-// All concrete adapters are instantiated only here — see ARCHITECTURE.md §5.
-const tcxSource = new TcxActivitySource()
-const fitSource = new FitActivitySource()
-const gpxSource = new GpxActivitySource()
-// The key is read through a function, at call time — never captured here, so
-// a Disconnect takes effect on the very next load. Nothing about this
-// construction touches the network or storage, which is what keeps a visitor
-// who only ever drops files at zero requests.
-const intervalsSource = new IntervalsActivitySource({ getApiKey: () => credentialStore.readApiKey() })
-
-const SOURCE_BY_EXTENSION = { '.fit': fitSource, '.gpx': gpxSource, '.tcx': tcxSource }
-
-function sourceFor(ref) {
-  if (ref.type === 'id') return intervalsSource
-  if (ref.type !== 'file') return tcxSource
-  const name = ref.file.name.toLowerCase()
-  const extension = Object.keys(SOURCE_BY_EXTENSION).find((ext) => name.endsWith(ext))
-  return extension ? SOURCE_BY_EXTENSION[extension] : tcxSource
-}
-
-const defaultSource = {
-  kind: 'tcx',
-  load: (ref) => sourceFor(ref).load(ref),
-}
+// The dispatch table moved to data/sourceRegistry.js the moment a second
+// network provider made "an id ref means intervals.icu" false. Called bare:
+// its defaults read the real credential stores, through thunks, at load time —
+// so nothing about this line touches the network or storage, and a visitor who
+// only ever drops files still makes zero requests.
+const defaultSource = createDefaultSource()
 
 export default function App() {
   return (

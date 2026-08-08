@@ -66,6 +66,14 @@ export function toActivityRow(activity) {
     // No trailing Z is added: `start_date_local` is already the athlete's wall
     // clock, and appending one shifts it into their own offset a second time.
     startedAt: activity.start_date_local ?? null,
+    // Always null on this path, and that is not a gap. intervals.icu does
+    // report a real UTC `start_date` beside the local one — it is simply not
+    // in ACTIVITY_LIST_FIELDS, because nothing here needs it: this adapter
+    // downloads the athlete's original file, whose records carry their own
+    // absolute timestamps. The field exists for providers that hand back
+    // sample offsets instead (Strava), and adding it to the requested fields
+    // for this one would only make every list response bigger.
+    startedAtUtc: null,
     distanceM: positiveNumber(activity.icu_distance),
     // `moving_time` first: it is what an athlete reads as the duration of the
     // session. `elapsed_time` is the fallback for the sources that only report

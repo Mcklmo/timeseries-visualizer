@@ -26,6 +26,14 @@
  * @property {string} id
  * @property {string} [name]              - absent, never empty-string
  * @property {string|null} startedAt      - the athlete's local wall clock; no trailing Z, ever
+ * @property {string|null} startedAtUtc   - the true instant, ISO 8601; null when the provider
+ *                                          only reported wall clock. NOT interchangeable with
+ *                                          `startedAt`: that one is a local clock reading with
+ *                                          no offset attached, this one is an instant. Carried
+ *                                          onto IdActivityRef under the same name, because an
+ *                                          adapter given only relative sample offsets (Strava's
+ *                                          `time` stream) has no other way to rebuild absolute
+ *                                          timestamps without a second request.
  * @property {number|null} distanceM      - null unless finite and > 0
  * @property {number|null} durationS      - null unless finite and > 0
  * @property {string|null} sportLabel     - e.g. 'Run'; the meta line loses the sport without it

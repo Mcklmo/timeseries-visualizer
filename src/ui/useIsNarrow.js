@@ -1,5 +1,5 @@
 // True below the one breakpoint this app has (720px, the sole media query in
-// global.css). Mirrors useIsScrolled in App.jsx.
+// global.css). Mirrors useIsScrolled.js next door.
 //
 // This exists because two narrow-screen adaptations cannot be expressed in
 // CSS: ChartStack's panel heights are JS constants fed to <ResponsiveContainer

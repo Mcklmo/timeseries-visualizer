@@ -424,7 +424,12 @@ describe('AppShell (controlled source, for states the real parsers never produce
       await user.click(screen.getByRole('button', { name: /^intervals\.icu$/i }))
       await user.click(await screen.findByRole('button', { name: /Tempo 5×1k/ }))
 
-      expect(load).toHaveBeenCalledWith({ type: 'id', id: 'i77', name: 'Tempo 5×1k' })
+      expect(load).toHaveBeenCalledWith({
+        type: 'id',
+        provider: 'intervals',
+        id: 'i77',
+        name: 'Tempo 5×1k',
+      })
       // and it leaves the picker, so the chart is what the user lands on
       await waitFor(() => expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument())
     } finally {

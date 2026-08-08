@@ -49,6 +49,10 @@ describe('toActivityRow', () => {
       id: 'i1',
       name: 'Tempo 5×1k',
       startedAt: '2026-08-11T17:04:00',
+      // Always null here: intervals.icu does report a real UTC start_date, but
+      // it is not in ACTIVITY_LIST_FIELDS and this path has no use for it —
+      // the original file it downloads carries absolute timestamps already.
+      startedAtUtc: null,
       distanceM: 12400,
       durationS: 3492,
       sportLabel: 'Run',
@@ -65,6 +69,7 @@ describe('toActivityRow', () => {
       id: 'i9',
       name: undefined,
       startedAt: null,
+      startedAtUtc: null,
       distanceM: null,
       durationS: null,
       sportLabel: null,
