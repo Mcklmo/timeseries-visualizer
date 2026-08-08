@@ -113,15 +113,62 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     setScrollY(200)
     fireEvent.scroll(window)
     expect(header).toHaveClass('app-header--faded')
-    // The h1 itself is exempt from the fade — it stays put as a watermark.
-    // Whatever else the header holds collapses away via the CSS descendant
-    // selector `.app-header--faded .load-activity-bar`, not React state; on
-    // this idle page that's nothing, since the drop zone is the hero in <main>.
+    // .app-header__title is exempt from the fade — it stays put. Whatever else
+    // the header holds collapses away via CSS descendant selectors on
+    // `.app-header--faded`, not React state; on this idle page that's nothing
+    // but the links, since the drop zone is the hero in <main>.
     expect(heading).toBeVisible()
 
     setScrollY(0)
     fireEvent.scroll(window)
     expect(header).not.toHaveClass('app-header--faded')
+  })
+
+  // The requirement the pinned header exists for: what survives the fade has
+  // to identify the *workout*, not just the app, because on touch there is no
+  // :hover and faded is the permanent state once scrolled. All four parts of
+  // the identity live in the one cluster the fade rules exempt.
+  it('keeps the activity identity — name, sport, start and duration — pinned inside the faded header', async () => {
+    const { container } = render(<App />)
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [makeFile()] },
+    })
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+
+    setScrollY(200)
+    fireEvent.scroll(window)
+    const header = container.querySelector('header')
+    expect(header).toHaveClass('app-header--faded')
+
+    const title = header.querySelector('.app-header__title')
+    expect(title).toContainElement(screen.getByRole('heading', { name: /ActivityMaxxer/i }))
+    expect(title).toContainElement(screen.getByRole('heading', { level: 2, name: /run$/i }))
+    expect(title).toContainElement(screen.getByText('Running'))
+    // Not asserted by value: the fixture's timestamps are UTC and the header
+    // renders in the machine's zone. units.test.js pins the format itself.
+    expect(title.querySelector('.activity-datetime')).toBeVisible()
+    // 0 s to 10 s — the two trackpoints in validTcxXml above.
+    expect(title.querySelector('.activity-duration')).toHaveTextContent('0:10')
+  })
+
+  // Chrome on the right, identity on the left. The grouping is what lets one
+  // CSS rule fade all three controls, and what keeps the file path from
+  // wedging itself between the wordmark and the activity name.
+  it('groups the quiet links and the load control to the right of the identity', async () => {
+    const { container } = render(<App />)
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [makeFile()] },
+    })
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+
+    const actions = container.querySelector('header .app-header__actions')
+    expect(actions).toContainElement(screen.getByRole('button', { name: /^intervals\.icu$/i }))
+    expect(actions).toContainElement(screen.getByRole('link', { name: /^about$/i }))
+    expect(actions.querySelector('.load-activity-bar')).not.toBeNull()
+    // and the identity is in the header only — <main> scrolls away, which is
+    // the entire problem this replaced
+    expect(container.querySelector('main .activity-header')).toBeNull()
+    expect(container.querySelectorAll('.activity-header')).toHaveLength(1)
   })
 
   // The lockup is what makes a mid-scroll screenshot attributable: once

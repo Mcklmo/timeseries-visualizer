@@ -334,17 +334,21 @@ path, though (see step 9 below).
 2. **Empty state** — page loads to a dark-themed "Load an activity" hero filling the page
    body: a large dashed drop target ("Drop a TCX, FIT or GPX file here / or click to
    browse") with the "never leaves your device" hint under it, then a quieter outlined
-   "Load from intervals.icu" button below. The header holds the title, an *intervals.icu*
-   button and an **About link** (a real `<a href="/about">`, not a view swap — it navigates
-   to a static page, so `npm run dev` alone will 404 on it; use `wrangler dev` to click it)
-   — no second **drop zone** anywhere while the hero is up.
+   "Load from intervals.icu" button below. The header holds the title on the left and, on
+   the right, an *intervals.icu* button and an **About link** (a real `<a href="/about">`,
+   not a view swap — it navigates to a static page, so `npm run dev` alone will 404 on it;
+   use `wrangler dev` to click it) — no second **drop zone** anywhere while the hero is up.
 3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
    one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
    The hero should be replaced by a control panel (Time/Distance switch + one row per metric
    the file actually has — each with a colored dot, a checkbox, and max/min/avg/median
    checkboxes) and the stacked line charts below it — and the compact drop control should
    now appear in the header, so a *different* activity can be loaded without leaving this
-   view.
+   view. The header's left-hand cluster should now read
+   `⚡ ActivityMaxxer  <name> [Running] 1 Jan 2026, 09:00 · 30:00` — the activity's identity,
+   pinned there rather than in the page body. Scroll down: the drop control and the two
+   links fade away, that cluster stays, legible over chart ink inside one translucent chip.
+   Hover the header — everything comes back, and the chip must not double-darken.
 4. **Synced crosshair/tooltip** — hover anywhere over any chart. Expect a vertical crosshair
    and tooltip at the same x-position on *all* panels, with the tooltip header always showing
    both elapsed time and distance regardless of mode.
@@ -357,7 +361,12 @@ path, though (see step 9 below).
 8. **Zoom** — hold **Ctrl** (or ⌘) and scroll over the charts, or pinch on a trackpad → all
    panels zoom to the same range together, anchored under the cursor, and the crosshair keeps
    tracking. A **Reset zoom** button appears at the top-right of the stack only while zoomed;
-   click it to go back to the full range. Zoom in hard and check the line **clips at the plot
+   click it to go back to the full range. **The header's duration must follow the window** —
+   it drops to the window's span, settling a frame behind the line exactly like the stat
+   chips; cross-check it against the x-axis end labels, and confirm the date beside it does
+   *not* move (that is the activity's identity, not the window's). On the **Distance** axis,
+   zoom again: the duration is still a *time*, now for the distance window. "Reset zoom"
+   restores the activity's total. Zoom in hard and check the line **clips at the plot
    edge** rather than bleeding into the axis gutter — that clipping is `allowDataOverflow`,
    and its absence is the tell that the numeric-domain path has regressed (ARCHITECTURE.md
    §7). Scroll **without** Ctrl → the page scrolls normally and a centred "Use Ctrl + scroll
@@ -432,10 +441,13 @@ path, though (see step 9 below).
       gesture starts on a chart. (Known limit: a pinch *starting* on the control panel still
       page-zooms — `touch-action` only governs gestures whose touches start in the element.)
     - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take
-      one. It must show the bolt + "ActivityMaxxer" legible against chart ink in the
-      upper left, the activity name and sport chip beneath it, charts filling the rest, no
-      half-collapsed chrome, and a **dark** Safari address bar. Repeat at the top of the page
-      and while zoomed in — **all three should be sharable as-is**.
+      one. It must show, in one translucent chip in the upper left, the bolt +
+      "ActivityMaxxer" on the first row and the activity name, sport chip, start date/time
+      and duration wrapped onto a second — the wordmark **not** dropped, the name **not**
+      truncated, all of it legible against chart ink — then charts filling the rest, no
+      half-collapsed chrome, no horizontal overflow, and a **dark** Safari address bar.
+      Repeat at the top of the page and while zoomed in (where the duration should read the
+      window's span, not the activity's) — **all three should be sharable as-is**.
 16. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile

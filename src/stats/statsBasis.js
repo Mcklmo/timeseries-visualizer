@@ -34,6 +34,7 @@ import { isFullDomain, resolveDomain } from '../domain/zoomDomain.js'
  * @property {import('../domain/types.js').Sample[]} samples
  * @property {number} totalMovingTime - s, over `samples` only
  * @property {number} totalDistance - m, over `samples` only
+ * @property {number} elapsedTime - s, wall clock over `samples` only — what the header reports
  * @property {number|undefined} gapThresholdS
  */
 
@@ -63,6 +64,11 @@ export function statsBasisFor(activity, xKey, zoomDomain, fullExtent) {
       samples: activity.samples,
       totalMovingTime: activity.totalMovingTime,
       totalDistance: activity.totalDistance,
+      // ?? 0 upholds this file's "no NaN reaches the DOM" guarantee rather
+      // than guarding against the Activity contract: totalTime is required
+      // (domain/types.js) and always set by normalizeActivity, but plenty of
+      // hand-built test fixtures omit it.
+      elapsedTime: activity.totalTime ?? 0,
       gapThresholdS,
     }
   }
@@ -72,18 +78,24 @@ export function statsBasisFor(activity, xKey, zoomDomain, fullExtent) {
     // Every aggregator answers null on an empty series, and computeMetricStat
     // rejects a non-positive totalDistance, so the chips simply disappear —
     // no NaN reaches the DOM.
-    return { samples, totalMovingTime: 0, totalDistance: 0, gapThresholdS }
+    return { samples, totalMovingTime: 0, totalDistance: 0, elapsedTime: 0, gapThresholdS }
   }
 
   return {
     samples,
     // sampleDurations' last-sample-weighs-0 rule needs no correction over a
     // slice, and must not be "fixed": the durations sum to t[last] - t[first],
-    // which is exactly the window's span. Distance is measured the same way —
-    // first-to-last, not cumulative-from-zero — so the two agree on which
-    // interval they cover and their ratio is a real pace.
+    // which is exactly the window's span. Distance and elapsed time are
+    // measured the same way — first-to-last, not cumulative-from-zero — so all
+    // three describe the same interval and cannot drift apart.
     totalMovingTime: totalMovingTimeOf(samples, gapThresholdS),
     totalDistance: samples[samples.length - 1].d - samples[0].d,
+    // Elapsed, deliberately NOT totalMovingTime: this is the number the header
+    // prints beside the charts, and the pauses it includes are inside the span
+    // the x-axis draws. Moving time would put a duration in the header that
+    // disagrees with the picture next to it. Measured in `t` whichever axis is
+    // showing, so a distance window still reports a time.
+    elapsedTime: samples[samples.length - 1].t - samples[0].t,
     gapThresholdS,
   }
 }

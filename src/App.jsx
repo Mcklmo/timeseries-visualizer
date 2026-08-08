@@ -24,10 +24,13 @@ import { IntervalsPage } from './ui/IntervalsPage.jsx'
 const HEADER_FADE_SCROLL_THRESHOLD = 8
 
 // Drives .app-header--faded (see global.css): once scrolled, the header's
-// background/border and the load-activity-bar collapse away entirely,
-// giving that space back to the charts — only the h1 stays put, as a
-// persistent watermark/logo. Hovering or focusing the header brings
-// everything back without needing to scroll to the top first.
+// background/border, the load-activity-bar and the quiet text controls
+// collapse away entirely, giving that space back to the charts — only
+// .app-header__title stays put. That cluster is the lockup *and* the
+// activity's identity (name, sport, when, how long), so a mid-scroll
+// screenshot says both which app and which workout it is. Hovering or
+// focusing the header brings everything back without needing to scroll to the
+// top first.
 function useIsScrolled(threshold = HEADER_FADE_SCROLL_THRESHOLD) {
   const [isScrolled, setIsScrolled] = useState(false)
 
@@ -97,6 +100,13 @@ export function AppShell() {
           <h1>
             <BrandMark /> ActivityMaxxer
           </h1>
+          {/* Gated on the view, not just on there being an activity: with the
+              intervals.icu page filling <main>, a name up here would describe
+              an activity that is nowhere on screen. ActivityHeader itself
+              returns null without one, which covers idle/loading/error. */}
+          {view === 'activity' && <ActivityHeader />}
+        </div>
+        <div className="app-header__actions">
           {/* Quiet text controls, deliberately not drop zones — the file path
               stays the single loud CTA. "intervals.icu" is also chosen to
               match none of the tests' button queries: not /back/i (the trap
@@ -110,12 +120,12 @@ export function AppShell() {
           <a className="about-link" href="/about">
             About
           </a>
+          {!showEmptyState && (
+            <div className="load-activity-bar">
+              <FileDropZone onFileSelected={handleFileSelected} />
+            </div>
+          )}
         </div>
-        {!showEmptyState && (
-          <div className="load-activity-bar">
-            <FileDropZone onFileSelected={handleFileSelected} />
-          </div>
-        )}
       </header>
       <main>
         {view === 'intervals' && (
@@ -137,7 +147,8 @@ export function AppShell() {
             {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
             {status === 'ready' && activity && (
               <>
-                <ActivityHeader />
+                {/* ActivityHeader is in <header> now, not here — it is what a
+                    scrolled screenshot is missing, and <main> scrolls away. */}
                 <ControlPanel />
                 <ChartStack />
               </>

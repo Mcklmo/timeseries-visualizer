@@ -3,12 +3,12 @@
 // §7. Zooming is a two-finger pinch (or ctrl/⌘+scroll) anywhere on the stack,
 // handled by usePinchZoom, which writes the one zoomDomain every panel's XAxis
 // reads — so all panels zoom and pan together by construction.
-import { useCallback, useDeferredValue, useMemo } from 'react'
-import { extentOf, fullDomain, isFullDomain } from '../domain/zoomDomain.js'
+import { useCallback } from 'react'
+import { fullDomain, isFullDomain } from '../domain/zoomDomain.js'
 import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
-import { statsBasisFor } from '../stats/statsBasis.js'
+import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
 import { usePinchZoom } from './usePinchZoom.js'
@@ -26,24 +26,12 @@ export function ChartStack() {
   const { xMode, zoomDomain, enabledMetrics, enabledStats, setZoomDomain } = useChartView()
   const isNarrow = useIsNarrow()
 
-  // Above the `if (!activity)` guard below — rules of hooks. Computed from
-  // activity.samples rather than the panels' chart rows, which carry
-  // insertGapBreaks' synthetic midpoints (see extentOf's contract).
-  const xKey = xMode === 'distance' ? 'd' : 't'
-  const fullExtent = useMemo(() => extentOf(activity?.samples ?? [], xKey), [activity?.samples, xKey])
-
-  // The stats' window, sliced once for the whole stack rather than once per
-  // panel. Deferred because the two jobs have different deadlines: the chart's
-  // x-domain must track the gesture at framerate, while aggregation (a sort
-  // per metric over the full-resolution series) must not run on every pinch
-  // frame. useDeferredValue lets React paint the new domain first and settle
-  // the numbers on a spare frame — so the chips lag the line by a frame or two
-  // under a fast pinch, and agree with it the moment the fingers stop.
-  const statsZoomDomain = useDeferredValue(zoomDomain)
-  const statsBasis = useMemo(
-    () => statsBasisFor(activity, xKey, statsZoomDomain, fullExtent),
-    [activity, xKey, statsZoomDomain, fullExtent],
-  )
+  // Both the extent the gesture solves against and the window the chips report
+  // come from StatsBasisContext, above this component — the header reports the
+  // same window (its elapsed duration), and one basis is what keeps the two
+  // from drifting. Called above the `if (!activity)` guard below, since a hook
+  // is a hook wherever its value comes from.
+  const { fullExtent, basis: statsBasis } = useStatsBasis()
 
   const { ref: pinchRef, wheelHint } = usePinchZoom({
     domain: zoomDomain,

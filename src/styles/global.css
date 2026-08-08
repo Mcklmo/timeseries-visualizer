@@ -52,8 +52,8 @@ input {
   flex-wrap: wrap;
   gap: 12px 24px;
   padding: 12px 24px;
-  /* Locked to --app-header-h, which is what .activity-header sticks below —
-     a shared token rather than the same magic number written twice. */
+  /* A floor only — the pinned cluster grows past it once an activity is
+     loaded, and nothing offsets itself by it any more. See tokens.css. */
   min-height: var(--app-header-h);
   background: var(--bg);
   border-bottom: 1px solid var(--grid);
@@ -63,12 +63,12 @@ input {
 }
 
 /* Once the page is scrolled past the top, the header's opaque bar (and the
-   load-activity controls it holds) fades away entirely so the charts get
-   the screen space back. The h1 alone is exempt — see .app-header h1 below —
-   so it keeps reading as a small persistent watermark/logo instead of
-   disappearing along with the bar. Hovering or focusing the header (e.g.
-   tabbing to the file drop zone) brings the whole bar back so it stays
-   reachable without having to scroll to the top first. */
+   chrome it holds) fades away entirely so the charts get the screen space
+   back. .app-header__title alone is exempt — see the rules below — so the
+   lockup and the activity's identity keep reading as a small persistent
+   caption instead of disappearing along with the bar. Hovering or focusing
+   the header (e.g. tabbing to the file drop zone) brings the whole bar back so
+   it stays reachable without having to scroll to the top first. */
 .app-header--faded {
   background: transparent;
   border-bottom-color: transparent;
@@ -103,12 +103,16 @@ input {
 /* Sharing this app means taking an OS screenshot, so whatever is on screen
    mid-scroll has to already be a good image — and on touch there is no
    :hover, which makes the faded state the *permanent* state once scrolled.
-   The lockup therefore gets its own translucent chip so it stays legible over
-   chart ink instead of reading as unstyled text floating over the lines. The
-   negative margin cancels the padding exactly, so adding the chip shifts
-   nothing in the unfaded layout. Only the lockup persists — .about-link is
-   chrome and fades away with the bar. */
-.app-header--faded h1 {
+   The pinned cluster therefore gets its own translucent chip so it stays
+   legible over chart ink instead of reading as unstyled text floating over
+   the lines. The negative margin cancels the padding exactly, so adding the
+   chip shifts nothing in the unfaded layout.
+
+   The chip sits on .app-header__title rather than the h1 because that cluster
+   now carries the activity's identity — name, sport, start and elapsed — not
+   just the lockup, and one chip has to cover both rows once it wraps on a
+   phone. Everything in .app-header__actions is chrome and still fades away. */
+.app-header--faded .app-header__title {
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   backdrop-filter: blur(8px);
   border-radius: var(--radius);
@@ -119,29 +123,48 @@ input {
 /* Hover/focus restores the opaque bar, so the chip would double-darken a
    strip behind the title — drop it and the hovered header reads exactly like
    the top-of-page one. */
-.app-header--faded:hover h1,
-.app-header--faded:focus-within h1 {
+.app-header--faded:hover .app-header__title,
+.app-header--faded:focus-within .app-header__title {
   background: transparent;
   backdrop-filter: none;
 }
 
-.app-header--faded .about-link {
+.app-header--faded .app-header__actions {
   opacity: 0;
 }
 
-/* Opacity rather than display/visibility, so the links keep their place in
-   the tab order and :focus-within can bring them back for a keyboard user. */
-.app-header--faded:hover .about-link,
-.app-header--faded:focus-within .about-link {
+/* Opacity rather than display/visibility, and no pointer-events: none, so the
+   links keep their place in the tab order and :focus-within can bring them
+   back for a keyboard user. */
+.app-header--faded:hover .app-header__actions,
+.app-header--faded:focus-within .app-header__actions {
   opacity: 1;
 }
 
-/* Keeps the h1 and the About link together on the left, so space-between
-   only pushes against the load-activity bar. */
+/* The pinned cluster: lockup plus the activity's identity, together on the
+   left, so space-between only pushes against the chrome on the right.
+   flex-wrap is what gives a phone its two rows — lockup, then name, chip and
+   numbers — with no media query, since it only breaks when it has to.
+   min-width: 0 lets it do that inside the header's own flex row instead of
+   forcing an overflow. */
 .app-header__title {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 12px;
+}
+
+/* Everything that is chrome rather than content: the two quiet links and the
+   compact load control, grouped so one fade rule covers all three. */
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  /* Matches .app-header's own background transition, so the chrome and the bar
+     it belongs to fade together rather than one snapping and one easing. */
+  transition: opacity 0.2s ease;
 }
 
 /* Quiet text-style link — must not compete with the load-activity CTA. One
@@ -157,9 +180,6 @@ input {
   padding: 0;
   cursor: pointer;
   text-decoration: none;
-  /* Matches .app-header's own background transition, so the links and the bar
-     they belong to fade together rather than one snapping and one easing. */
-  transition: opacity 0.2s ease;
 }
 
 .about-link:hover {
@@ -348,17 +368,47 @@ main {
   background: rgba(76, 201, 240, 0.08);
 }
 
-/* Activity header */
+/* Activity header — an inline cluster inside .app-header__title, not a block
+   in <main>, so it shares that row's baseline alignment and wraps with it. */
 .activity-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 10px;
 }
 
+/* A step under the 20px lockup rather than level with it: the name is the
+   caption to the wordmark, and at 16px the two competed for the same rank. */
 .activity-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+}
+
+/* When the activity was recorded, and how much of it the charts currently
+   cover. Tabular figures are not optional here: the duration is recomputed on
+   every settled zoom, and proportional digits make it twitch sideways as it
+   changes. Same rule as the axis ticks and stat chips (see this file's header
+   comment). */
+.activity-datetime,
+.activity-duration {
+  font-family: var(--font-data);
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two dim monospace numbers side by side read as one string; a separator
+   fixes that without a DOM node. Adjacent-sibling so it appears only when
+   there is actually a date in front of it — an activity whose file carried no
+   usable start time renders no .activity-datetime at all. */
+.activity-datetime + .activity-duration::before {
+  content: '·';
+  margin-right: 10px;
+  /* A dimmer --text-dim rather than --grid: the grid hue is tuned to sit
+     behind data, and at this size on --bg it reads as a smudge. */
+  color: color-mix(in srgb, var(--text-dim) 60%, transparent);
 }
 
 .sport-chip {
@@ -1040,25 +1090,6 @@ main {
 
   main {
     padding: 16px;
-  }
-
-  /* The activity name is the *content* of a screenshot — it says which ride
-     the charts belong to — so on a phone it rides along under the header
-     instead of scrolling away. z-index sits below .app-header's 10 so the
-     header still wins where they meet. The negative margin bleeds the
-     background past main's 16px gutters, or chart content peeks through at
-     the edges while sliding underneath.
-
-     Cosmetic imperfection, accepted: while the header is mid-transition from
-     unfaded (taller, load bar still expanded) to faded, this offset is briefly
-     short by the collapsing bar's height and the chip slides up a few pixels. */
-  .activity-header {
-    position: sticky;
-    top: var(--app-header-h);
-    z-index: 9;
-    background: var(--bg);
-    margin: 0 -16px;
-    padding: 8px 16px;
   }
 
   .empty-state {

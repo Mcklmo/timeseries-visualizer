@@ -57,6 +57,38 @@ export function formatDistanceKm(metres) {
   return `${(metres / METRES_PER_KM).toFixed(2)} km`
 }
 
+// Pinned to en-GB, and to 24-hour time, for the same reason
+// IntervalsActivityList pins its row dates: day-before-month everywhere,
+// stable enough to assert on, and a picker row and the header of the activity
+// it loads should read the same way. No weekday here though — the pinned
+// header cluster has to wrap onto one phone row, and the weekday identifies
+// nothing the date doesn't.
+//
+// Rendered in the *viewer's* zone, which is the only one available: the parsed
+// model keeps an absolute instant and no recording offset, so an activity
+// exported from another timezone reads in local time. Right for the usual case
+// (you look at your own runs from where you ran them) and honest about the
+// rest — there is no offset to be faithful to.
+const START_DATE_TIME_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+/**
+ * @param {Date|null|undefined} startTime
+ * @returns {string|null} e.g. '8 Aug 2026, 07:14' — null when there is nothing
+ *   valid to print, so a caller renders no element at all rather than the
+ *   'Invalid Date' that Intl would otherwise emit.
+ */
+export function formatStartDateTime(startTime) {
+  if (!(startTime instanceof Date) || Number.isNaN(startTime.getTime())) return null
+  return START_DATE_TIME_FORMAT.format(startTime)
+}
+
 // Axis ticks are their own formatting problem: a tick has to stay short enough
 // to sit under a gridline, and what "short" means depends entirely on how much
 // ground the axis covers. "6:22" is the right tick for a half-hour run and

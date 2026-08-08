@@ -9,6 +9,7 @@ import { statsBasisFor } from './statsBasis.js'
 // numbers — the only way to catch a basis that slices samples but forgets the
 // totals.
 const activity = {
+  totalTime: 200,
   totalMovingTime: 200,
   totalDistance: 700,
   samples: [
@@ -70,6 +71,54 @@ describe('statsBasisFor', () => {
 
     const slowHalf = statsBasisFor(activity, 't', [0, 100], fullExtent)
     expect(avgPace(slowHalf)).toBeCloseTo(500, 6)
+  })
+
+  // The header prints this one next to the activity's name, so it has to agree
+  // with the span the x-axis draws — elapsed, pauses included, and measured
+  // first-to-last exactly like the window's distance.
+  describe('elapsedTime', () => {
+    it("reports the activity's own elapsed total while unzoomed", () => {
+      expect(statsBasisFor(activity, 't', fullDomain(), fullExtent).elapsedTime).toBe(200)
+    })
+
+    it('falls back to 0 rather than NaN when a fixture carries no totalTime', () => {
+      const noTotalTime = { ...activity, totalTime: undefined }
+      expect(statsBasisFor(noTotalTime, 't', fullDomain(), fullExtent).elapsedTime).toBe(0)
+    })
+
+    it('narrows to the window, measured first-to-last', () => {
+      expect(statsBasisFor(activity, 't', [100, 200], fullExtent).elapsedTime).toBe(100)
+    })
+
+    // The axis may be metres; the duration never is. A distance window still
+    // answers in seconds, or the header would print a length.
+    it('is still measured in t when the x-axis is distance', () => {
+      expect(statsBasisFor(activity, 'd', [0, 200], [0, 700]).elapsedTime).toBe(100)
+    })
+
+    // Elapsed, not moving: the 200→300 pause is inside the span the axis
+    // draws, so a header that excluded it would disagree with the picture.
+    it('counts a pause inside the window, unlike totalMovingTime', () => {
+      const withPause = {
+        samplingIntervalS: 100,
+        totalMovingTime: 300,
+        totalDistance: 600,
+        samples: [
+          { t: 0, d: 0, moving: true },
+          { t: 100, d: 200, moving: true },
+          { t: 200, d: 200, moving: false },
+          { t: 300, d: 200, moving: false },
+          { t: 400, d: 600, moving: true },
+        ],
+      }
+      const basis = statsBasisFor(withPause, 't', [0, 400], [0, 400])
+      expect(basis.elapsedTime).toBe(400)
+      expect(basis.totalMovingTime).toBe(300)
+    })
+
+    it('reports an empty window as 0', () => {
+      expect(statsBasisFor({ ...activity, samples: [] }, 't', [10, 20], fullExtent).elapsedTime).toBe(0)
+    })
   })
 
   it('measures distance first-to-last inside the window, not cumulatively from the start', () => {

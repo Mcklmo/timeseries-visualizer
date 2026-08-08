@@ -6,6 +6,7 @@ import {
   formatSpeedKmh,
   formatDuration,
   formatDistanceKm,
+  formatStartDateTime,
   makeElapsedTickFormatter,
   makeDistanceTickFormatter,
 } from './units.js'
@@ -81,6 +82,29 @@ describe('formatDuration', () => {
 
   it('is unchanged for anything under a day', () => {
     expect(formatDuration(86399)).toBe('23:59:59')
+  })
+})
+
+describe('formatStartDateTime', () => {
+  // Built from local components on purpose: the formatter renders in the
+  // viewer's zone, so a UTC literal here would make this assertion depend on
+  // the machine's TZ.
+  it('formats day-before-month, 24-hour, no weekday', () => {
+    expect(formatStartDateTime(new Date(2026, 7, 8, 7, 14))).toBe('8 Aug 2026, 07:14')
+  })
+
+  it('zero-pads the hour rather than dropping to a 12-hour clock', () => {
+    expect(formatStartDateTime(new Date(2026, 11, 31, 23, 5))).toBe('31 Dec 2026, 23:05')
+  })
+
+  // The header renders no element at all for a null — 'Invalid Date' in a
+  // screenshot is worse than no date, and GPX in particular can arrive
+  // without a usable timestamp.
+  it('returns null for a missing or unparseable start time', () => {
+    expect(formatStartDateTime(null)).toBeNull()
+    expect(formatStartDateTime(undefined)).toBeNull()
+    expect(formatStartDateTime(new Date('not a date'))).toBeNull()
+    expect(formatStartDateTime('2026-08-08T07:14:00Z')).toBeNull()
   })
 })
 
