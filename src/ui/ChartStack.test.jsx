@@ -205,6 +205,40 @@ describe('ChartStack', () => {
     expect(new Set(xPositions).size).toBe(1)
   })
 
+  // The mobile freeze (useTouchHoverHandoff): a panel that has been touched
+  // holds its OWN Recharts hover, which outranks the incoming syncId event, so
+  // without the handoff it stays pinned at its last index while every other
+  // panel follows the new finger. mouseOver+mouseMove is the same
+  // `setMouseOverAxisIndex` state a touchmove produces, so it reproduces the
+  // stale hover without needing touch events jsdom can't build.
+  it('releases a previously-touched panel back to the synced crosshair when another panel is touched', async () => {
+    const { container } = await renderStack()
+    const wrappers = [...container.querySelectorAll('.recharts-wrapper')]
+    const settle = async () => {
+      // Recharts' mouse middleware is rAF-throttled.
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    }
+    const cursorXs = () =>
+      wrappers.map((w) => w.querySelector('.recharts-tooltip-cursor').getAttribute('d').match(/M(-?[\d.]+),/)[1])
+
+    // Panel 0 takes the crosshair and is left holding a self-hover.
+    fireEvent.mouseOver(wrappers[0])
+    fireEvent.mouseMove(wrappers[0], { clientX: 300, clientY: 50 })
+    await settle()
+    expect(new Set(cursorXs()).size).toBe(1)
+
+    // The finger lands on panel 1. Remove this line and the assertion below
+    // fails — that contrast is what makes this a regression guard.
+    fireEvent.touchStart(wrappers[1], { touches: [{ clientX: 500, clientY: 50 }] })
+    fireEvent.mouseOver(wrappers[1])
+    fireEvent.mouseMove(wrappers[1], { clientX: 500, clientY: 50 })
+    await settle()
+
+    // Panel 0 moved to panel 1's position instead of freezing at 300.
+    expect(new Set(cursorXs()).size).toBe(1)
+  })
+
   it('drops a panel when its metric is toggled off via ChartViewContext', async () => {
     const { container } = await renderStack({ extra: <ToggleMetric metricId="cadence" /> })
     expect(container.querySelectorAll('.metric-panel')).toHaveLength(4)

@@ -3,7 +3,7 @@
 // §7. Zooming is a two-finger pinch (or ctrl/⌘+scroll) anywhere on the stack,
 // handled by usePinchZoom, which writes the one zoomDomain every panel's XAxis
 // reads — so all panels zoom and pan together by construction.
-import { useDeferredValue, useMemo } from 'react'
+import { useCallback, useDeferredValue, useMemo } from 'react'
 import { extentOf, fullDomain, isFullDomain } from '../domain/zoomDomain.js'
 import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
@@ -12,6 +12,7 @@ import { statsBasisFor } from '../stats/statsBasis.js'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
 import { usePinchZoom } from './usePinchZoom.js'
+import { useTouchHoverHandoff } from './useTouchHoverHandoff.js'
 
 const FIRST_PANEL_HEIGHT = 200
 const OTHER_PANEL_HEIGHT = 140
@@ -49,6 +50,21 @@ export function ChartStack() {
     fullExtent,
     onZoomChange: setZoomDomain,
   })
+  const handoffRef = useTouchHoverHandoff()
+
+  // Two callback refs, one node. Both return a React 19 cleanup, so both have
+  // to be collected and both have to run — dropping either leaks its listeners
+  // on every remount. Both are useCallback(…, []), so this stays stable too and
+  // the listeners are never torn down mid-gesture.
+  const stackRef = useCallback(
+    (node) => {
+      const cleanups = [pinchRef(node), handoffRef(node)]
+      return () => {
+        for (const cleanup of cleanups) cleanup?.()
+      }
+    },
+    [pinchRef, handoffRef],
+  )
 
   if (!activity) return null
 
@@ -60,7 +76,7 @@ export function ChartStack() {
   return (
     <div
       className="chart-stack"
-      ref={pinchRef}
+      ref={stackRef}
       // Documents the touch gesture as well as the desktop one, and costs
       // nothing in a screenshot — unlike a permanent hint line under the stack.
       // role="group" is what makes the aria-label reachable at all: a bare div
