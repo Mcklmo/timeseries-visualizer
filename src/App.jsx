@@ -9,7 +9,6 @@ import { credentialStore } from './data/intervals/credentialStore.js'
 import { IntervalsActivitySource } from './data/intervals/IntervalsActivitySource.js'
 import { TcxActivitySource } from './data/tcx/TcxActivitySource.js'
 import { useActivity } from './state/ActivityContext.jsx'
-import { AboutPage } from './ui/AboutPage.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { BrandMark } from './ui/BrandMark.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
@@ -49,19 +48,21 @@ export function AppShell() {
   const { activity, status, error, load } = useActivity()
   const lastRef = useRef(null)
   const isScrolled = useIsScrolled()
-  // No router here (see AboutPage.jsx) — the non-chart views overlay <main>
-  // via state, leaving the status-driven branches untouched underneath. One
-  // enum rather than a boolean per view, so `about && intervals` is
-  // unrepresentable rather than merely unlikely.
-  const [view, setView] = useState(/** @type {'activity'|'about'|'intervals'} */ ('activity'))
+  // Still no router. intervals.icu overlays <main> via state, leaving the
+  // status-driven branches untouched underneath. About is *not* in here: it is
+  // a real static page at /about, prerendered by scripts/build-seo-pages.mjs,
+  // so its prose has one home and one crawlable address rather than existing
+  // twice and drifting. The enum survives the loss of its second view because
+  // a third is the likeliest next change.
+  const [view, setView] = useState(/** @type {'activity'|'intervals'} */ ('activity'))
 
   // Exactly one FileDropZone is mounted at any time: the hero in <main> while
   // idle, the compact header control otherwise. Not simply `status === 'idle'`
-  // — About and intervals.icu each replace the whole of <main>, so without the
-  // view term a visitor who opened one on a fresh page would have no load
-  // control at all. Rendering both instead would put two competing CTAs on the
-  // idle page (the thing this layout exists to fix) and give the drop-zone
-  // queries in the tests two matches to choose between.
+  // — intervals.icu replaces the whole of <main>, so without the view term a
+  // visitor who opened it on a fresh page would have no load control at all.
+  // Rendering both instead would put two competing CTAs on the idle page (the
+  // thing this layout exists to fix) and give the drop-zone queries in the
+  // tests two matches to choose between.
   const showEmptyState = status === 'idle' && view === 'activity'
 
   const loadRef = useCallback(
@@ -94,19 +95,21 @@ export function AppShell() {
       <header className={`app-header${isScrolled ? ' app-header--faded' : ''}`}>
         <div className="app-header__title">
           <h1>
-            <BrandMark /> Activity Visualiser
+            <BrandMark /> ActivityMaxxer
           </h1>
-          {/* Quiet text buttons, deliberately not drop zones — the file path
+          {/* Quiet text controls, deliberately not drop zones — the file path
               stays the single loud CTA. "intervals.icu" is also chosen to
               match none of the tests' button queries: not /back/i (the trap
-              "Feedback" already sprang once), not /^about$/i, and not the
-              drop-zone label. */}
+              "Feedback" already sprang once) and not the drop-zone label.
+              About is a real <a>, not a view swap: it is the site's only prose
+              page, and a crawler has to be able to reach it by href. That also
+              makes it the app's one internal link into the static pages. */}
           <button type="button" className="about-link" onClick={() => setView('intervals')}>
             intervals.icu
           </button>
-          <button type="button" className="about-link" onClick={() => setView('about')}>
+          <a className="about-link" href="/about">
             About
-          </button>
+          </a>
         </div>
         {!showEmptyState && (
           <div className="load-activity-bar">
@@ -115,7 +118,6 @@ export function AppShell() {
         )}
       </header>
       <main>
-        {view === 'about' && <AboutPage onBack={() => setView('activity')} />}
         {view === 'intervals' && (
           <IntervalsPage onBack={() => setView('activity')} onSelectActivity={handleActivitySelected} />
         )}

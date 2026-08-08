@@ -144,7 +144,10 @@ input {
   gap: 12px;
 }
 
-/* Quiet text-style link — must not compete with the load-activity CTA. */
+/* Quiet text-style link — must not compete with the load-activity CTA. One
+   rule covers both a <button> (intervals.icu, an in-app view swap) and an <a>
+   (About, a real static page at /about), so the two read identically despite
+   being different elements. */
 .about-link {
   font: inherit;
   font-size: 13px;
@@ -153,6 +156,7 @@ input {
   border: none;
   padding: 0;
   cursor: pointer;
+  text-decoration: none;
   /* Matches .app-header's own background transition, so the links and the bar
      they belong to fade together rather than one snapping and one easing. */
   transition: opacity 0.2s ease;
@@ -577,41 +581,10 @@ main {
   color: var(--text);
 }
 
-/* About page — prose column, so left-aligned with a roomier line-height,
-   unlike .error-state's short centered card. */
-.about-page {
-  max-width: 640px;
-  margin: 48px auto;
-  width: 100%;
-}
-
-.about-page h2 {
-  margin: 24px 0 16px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.about-page p {
-  margin: 0 0 16px;
-  color: var(--text-dim);
-  line-height: 1.6;
-}
-
-.about-page__link {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.about-page__back {
-  font: inherit;
-  color: var(--text-dim);
-  background: transparent;
-  border: 1px solid var(--grid);
-  border-radius: var(--radius);
-  padding: 6px 14px;
-  cursor: pointer;
-}
+/* The About prose column used to live here. It is now a static page at
+   /about, emitted by scripts/build-seo-pages.mjs, which links this same
+   bundle and carries its own layout rules — the tokens above are still what
+   colours it, so the two cannot drift apart visually. */
 
 /* Footer + feedback dialog. The footer is a quiet strip at the bottom of
    .app — it must never compete with the charts, so it mirrors .about-link's

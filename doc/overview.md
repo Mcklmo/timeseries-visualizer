@@ -1,8 +1,8 @@
-# Activity Visualiser — Overview
+# ActivityMaxxer — Overview
 
 ## What it is
 
-Activity Visualiser is a web app for inspecting a single running or cycling
+ActivityMaxxer is a web app for inspecting a single running or cycling
 activity in detail. You drop in a workout file exported from a GPS watch (a
 Garmin `.tcx` or `.fit` export) and the app turns it into a set of
 synchronized, scrollable charts — pace/speed, heart rate, cadence, power, and

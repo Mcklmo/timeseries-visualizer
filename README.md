@@ -1,4 +1,6 @@
-# Activity Visualiser
+# ActivityMaxxer
+
+**[activitymaxxer.com](https://activitymaxxer.com)**
 
 A web UI, in the spirit of Intervals.ICU / Garmin Connect, for inspecting a single running
 or cycling activity — or a plain GPS track — as vertically stacked, time-synced charts
@@ -203,10 +205,15 @@ src/
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
   ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
-              # EmptyState, ErrorState, FileDropZone, AboutPage,
+              # EmptyState, ErrorState, FileDropZone,
               # IntervalsPage/ConnectForm/ActivityList + useDebouncedValue,
               # FeedbackWidget/Dialog/Form + useTurnstile
   styles/     # tokens.css (dark theme + metric hues), global.css (layout, chrome)
+scripts/
+  build-seo-pages.mjs  # runs after `vite build`: emits the static landing pages,
+                       # sitemap.xml and robots.txt into dist/ (see "Static pages")
+  seo/pages.mjs        # their content, as plain data — including the About prose
+  seo/pages.test.mjs   # the content rules, enforced rather than reviewed
 shared/       # environment-agnostic values imported by BOTH src/ and worker/ (feedbackLimits)
 worker/       # the Cloudflare Worker: routes /api/feedback, serves dist/ via env.ASSETS
   routes/     # feedback.js — the request orchestration
@@ -225,6 +232,39 @@ file upload without touching any component. `shared/` extends it across the clie
 line: plain values only, importable by both `src/` and `worker/`, which never import each
 other. See ARCHITECTURE.md §3–§6 for the full layer diagram and the metric registry
 contract.
+
+## Static pages (`/about` and the format landing pages)
+
+Four pages on this site are **not** the React app: `/about`, `/fit-file-viewer`,
+`/tcx-file-viewer` and `/gpx-viewer`. They are plain HTML with zero JavaScript, written by
+`scripts/build-seo-pages.mjs`, which `npm run build` runs *after* `vite build` — it has to
+come second, because Vite empties `dist/` and because the script links the CSS bundle Vite
+just produced. That link is **globbed**, never hardcoded: the content hash changes every
+build, and a stale href means an unstyled page rather than an error.
+
+Their content lives in `scripts/seo/pages.mjs` as plain data. Editing prose means editing
+that file — including the About prose, which no longer exists as a React component. The
+header's About control is a real `<a href="/about">`, so it navigates; under `npm run dev`
+it will 404, since Vite's dev server does not serve `dist/`. Use `wrangler dev` to click
+through them.
+
+Three things about this are load-bearing and easy to undo by accident:
+
+- **`scripts/seo/pages.test.mjs` fails the suite on thin or duplicated copy** — under 400
+  words of body, or two pages whose vocabulary overlaps too far. Five pages differing only
+  in a filename are doorway pages: search engines filter them, and the site ends up worse
+  off than with one good page. The test is the rule, not a comment about it.
+- **Do not set `not_found_handling: "single-page-application"`** in `wrangler.jsonc`. It is
+  the tempting default once you add routes, and it would answer every typo'd URL with 200 +
+  the app shell — soft 404s at scale. Real 404s are correct and already work; nothing else
+  in the assets config needs changing, since the default `auto-trailing-slash` handling
+  already serves `about.html` at `/about`.
+- **Do not add an analytics script.** `/about` states there is none, and search performance
+  is measured through Search Console, which reports from Google's own crawl logs and puts
+  no code on the page. Adding one makes that page a lie.
+
+`sitemap.xml` and `robots.txt` are generated from the same page list, so they cannot fall
+out of sync with what actually exists.
 
 ## Testing notes
 
@@ -295,7 +335,9 @@ path, though (see step 9 below).
    body: a large dashed drop target ("Drop a TCX, FIT or GPX file here / or click to
    browse") with the "never leaves your device" hint under it, then a quieter outlined
    "Load from intervals.icu" button below. The header holds the title, an *intervals.icu*
-   link and About — no second **drop zone** anywhere while the hero is up.
+   button and an **About link** (a real `<a href="/about">`, not a view swap — it navigates
+   to a static page, so `npm run dev` alone will 404 on it; use `wrangler dev` to click it)
+   — no second **drop zone** anywhere while the hero is up.
 3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
    one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
    The hero should be replaced by a control panel (Time/Distance switch + one row per metric
@@ -390,7 +432,7 @@ path, though (see step 9 below).
       gesture starts on a chart. (Known limit: a pinch *starting* on the control panel still
       page-zooms — `touch-action` only governs gestures whose touches start in the element.)
     - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take
-      one. It must show the bolt + "Activity Visualiser" legible against chart ink in the
+      one. It must show the bolt + "ActivityMaxxer" legible against chart ink in the
       upper left, the activity name and sport chip beneath it, charts filling the rest, no
       half-collapsed chrome, and a **dark** Safari address bar. Repeat at the top of the page
       and while zoomed in — **all three should be sharable as-is**.
@@ -407,6 +449,15 @@ path, though (see step 9 below).
     `<dialog>` behaviour that jsdom does not simulate, so it is *only* covered here, never
     by the automated suite. Re-opening afterwards should show empty fields, not the previous
     attempt.
+18. **Static pages** — needs `wrangler dev`, since these are files in `dist/` rather than
+    app views. Click **About** in the header: it should *navigate* to `/about`, arriving on
+    a dark prose page that looks like it belongs to the app (it links the same CSS bundle),
+    with the bolt lockup top-left linking back to `/` and an "Open a file →" control
+    top-right. Follow the footer links round `/fit-file-viewer`, `/tcx-file-viewer` and
+    `/gpx-viewer` and back into the app. Then check the two properties that are easy to
+    break and invisible from the page itself:
+    `curl -sI localhost:8787/nope` must still be **404** (not the app shell), and
+    `curl -s localhost:8787/sitemap.xml` must list all five URLs.
 
 ## Deploying (Cloudflare Workers)
 
@@ -429,9 +480,13 @@ Then, for every deploy:
 npm run deploy   # == npm run build && wrangler deploy
 ```
 
-Cloudflare gives you a `*.workers.dev` URL; a custom domain attaches under the Worker's
-own **Settings → Domains & Routes** in the dashboard. Auto-deploy-on-push is deliberately
-out of scope — this is the manual flow.
+The site serves from **https://activitymaxxer.com** and nowhere else. Both halves of that
+live in `wrangler.jsonc`, not the dashboard: `routes` attaches the apex as a custom domain
+(Cloudflare provisions the DNS record and certificate itself, which needs the zone's
+nameservers delegated to Cloudflare), and `"workers_dev": false` retires the
+`*.workers.dev` hostname. Keep them together — two hostnames serving the same bytes is a
+duplicate-content split, and toggling workers.dev off in the dashboard alone is undone by
+the next deploy. Auto-deploy-on-push is deliberately out of scope — this is the manual flow.
 
 No `base` path needs setting in `vite.config.ts` — the Worker serves from the domain root
 (unlike GitHub Pages, which would need a repo-subpath `base` if used instead).

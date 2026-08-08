@@ -3,12 +3,63 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- iOS ignores the SVG favicon entirely; these two are what it and
+         Android actually read when the site is saved to a home screen. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Matches --bg. Sharing this app means taking an OS screenshot, and
          without this iOS Safari paints its address bar white — a bright slab
          across the top of every otherwise-dark capture. -->
     <meta name="theme-color" content="#12151a" />
-    <title>activity visualizer</title>
+
+    <!-- SEO. This is the app shell — the one client-rendered page. The static
+         landing pages (/about, /fit-file-viewer, …) carry their own head,
+         written by scripts/build-seo-pages.mjs; the two must agree on brand,
+         origin and og:image, so change them together. -->
+    <title>ActivityMaxxer — FIT, TCX &amp; GPX File Viewer in Your Browser</title>
+    <meta
+      name="description"
+      content="Open a .fit, .tcx or .gpx file and see pace, heart rate, cadence, power and elevation as stacked, time-synced charts. Your file never leaves your browser."
+    />
+    <link rel="canonical" href="https://activitymaxxer.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ActivityMaxxer" />
+    <meta property="og:title" content="ActivityMaxxer — FIT, TCX &amp; GPX File Viewer in Your Browser" />
+    <meta
+      property="og:description"
+      content="Open a .fit, .tcx or .gpx file and see pace, heart rate, cadence, power and elevation as stacked, time-synced charts. Your file never leaves your browser."
+    />
+    <meta property="og:url" content="https://activitymaxxer.com/" />
+    <!-- Absolute, deliberately: a relative og:image resolves for a browser but
+         silently fails in most link scrapers. -->
+    <meta property="og:image" content="https://activitymaxxer.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="ActivityMaxxer — stacked, time-synced pace, heart rate, cadence and elevation charts" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ActivityMaxxer — FIT, TCX &amp; GPX File Viewer in Your Browser" />
+    <meta
+      name="twitter:description"
+      content="Open a .fit, .tcx or .gpx file and see pace, heart rate, cadence, power and elevation as stacked, time-synced charts. Your file never leaves your browser."
+    />
+    <meta name="twitter:image" content="https://activitymaxxer.com/og.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ActivityMaxxer",
+        "description": "A browser-based viewer for FIT, TCX and GPX activity files. Pace, heart rate, cadence, power and elevation render as stacked, time-synced charts. Files are parsed locally and never uploaded.",
+        "url": "https://activitymaxxer.com/",
+        "applicationCategory": "HealthApplication",
+        "operatingSystem": "Web browser",
+        "browserRequirements": "Requires JavaScript",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

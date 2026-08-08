@@ -97,14 +97,14 @@ describe('App (wired against the real TCX/FIT sources)', () => {
   // matches to pick between.
   it('shows the empty state — and nothing in the header — before any activity is loaded', () => {
     const { container } = render(<App />)
-    expect(screen.getByRole('heading', { name: /activity visualiser/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /ActivityMaxxer/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
     expect(container.querySelector('header .load-activity-bar')).toBeNull()
   })
 
   it('marks the header faded once the page scrolls (collapsing the load-activity bar, per global.css), and un-fades back at the top', () => {
     render(<App />)
-    const heading = screen.getByRole('heading', { name: /activity visualiser/i })
+    const heading = screen.getByRole('heading', { name: /ActivityMaxxer/i })
     const header = heading.closest('header')
     expect(header).not.toHaveClass('app-header--faded')
 
@@ -131,28 +131,25 @@ describe('App (wired against the real TCX/FIT sources)', () => {
   // name every other test queries by.
   it('renders the brand mark inside the h1, hidden from the accessible name', () => {
     render(<App />)
-    const heading = screen.getByRole('heading', { name: /^activity visualiser$/i })
+    const heading = screen.getByRole('heading', { name: /^ActivityMaxxer$/i })
     const mark = heading.querySelector('svg.brand-mark')
     expect(mark).toBeInTheDocument()
     expect(mark).toHaveAttribute('aria-hidden', 'true')
   })
 
-  it('shows the About page from the header link and returns via Back', async () => {
-    const user = userEvent.setup()
-    const { container } = render(<App />)
+  // About is no longer a view — it is a static page at /about, prerendered by
+  // scripts/build-seo-pages.mjs. What the app still owes it is a real href: it
+  // is the only internal link a crawler can follow off the app shell, and a
+  // <button> that swapped state would be invisible to one. Asserting the
+  // element and its target is therefore the whole contract from this side; the
+  // prose itself is pinned by scripts/seo/pages.test.mjs.
+  it('links About to the static /about page rather than swapping a view', () => {
+    render(<App />)
 
-    await user.click(screen.getByRole('button', { name: /^about$/i }))
-    expect(screen.getByText(/runs entirely in your browser/i)).toBeInTheDocument()
-    // About replaces the whole of <main>, hero included — so the header picks
-    // the control back up (the view term in AppShell's showEmptyState), or a
-    // visitor who opened About on a fresh page could load nothing at all.
-    expect(screen.queryByRole('heading', { name: /load an activity/i })).not.toBeInTheDocument()
-    expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
-
-    // anchored, since the footer's "Feedback" trigger also contains "back"
-    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
+    const about = screen.getByRole('link', { name: /^about$/i })
+    expect(about).toHaveAttribute('href', '/about')
+    // and nothing in the app renders the prose any more — one About, one URL
     expect(screen.queryByText(/runs entirely in your browser/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
   })
 
   it('shows the intervals.icu page from the header link and returns via Back', async () => {
@@ -181,22 +178,21 @@ describe('App (wired against the real TCX/FIT sources)', () => {
   })
 
   // The one-FileDropZone invariant (AppShell's showEmptyState comment) has to
-  // hold in every view, not just the two it was written for: a DOM id
-  // collision, three getByLabelText queries that throw on two matches, and two
-  // competing CTAs on the idle page all ride on it.
-  it('keeps exactly one FileDropZone mounted in all three views', async () => {
+  // hold in every view: a DOM id collision, three getByLabelText queries that
+  // throw on two matches, and two competing CTAs on the idle page all ride
+  // on it.
+  it('keeps exactly one FileDropZone mounted in both views', async () => {
     const user = userEvent.setup()
     const { container } = render(<App />)
     const zoneCount = () => container.querySelectorAll('input[type="file"]').length
 
     expect(zoneCount()).toBe(1) // activity (idle: the hero)
 
-    await user.click(screen.getByRole('button', { name: /^about$/i }))
-    expect(zoneCount()).toBe(1) // about (header control)
-
-    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
     await user.click(screen.getByRole('button', { name: /^intervals\.icu$/i }))
     expect(zoneCount()).toBe(1) // intervals (header control)
+
+    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
+    expect(zoneCount()).toBe(1) // back to the hero
   })
 
   // Pins the opt-in privacy stance mechanically rather than by convention:

@@ -2,9 +2,21 @@
   // "Workers with static assets": one Worker serves both the API route and
   // ./dist. Not Cloudflare Pages — there is no functions/ auto-routing here,
   // the routing lives in worker/index.js. See README "Deploying".
-  "name": "activity-visualizer",
+  "name": "activitymaxxer",
   "compatibility_date": "2026-08-07",
   "main": "worker/index.js",
+  // The one canonical origin. Apex, no `www` — every canonical tag, sitemap
+  // entry and og:url in the build output hardcodes exactly this form, so a
+  // second hostname serving the same bytes is a duplicate-content split, not a
+  // convenience. `custom_domain` makes Cloudflare provision the DNS record and
+  // certificate itself; it requires the zone's nameservers to be delegated to
+  // Cloudflare (a registrar CNAME at the apex will not do).
+  "routes": [{ "pattern": "activitymaxxer.com", "custom_domain": true }],
+  // Retires *.workers.dev. Without this the app stays reachable on two
+  // indexable hostnames serving byte-identical content. It has to live here
+  // rather than in the dashboard: toggling it in the UI alone is undone by the
+  // next `wrangler deploy`.
+  "workers_dev": false,
   "assets": {
     "directory": "./dist",
     // Bound so worker/index.js can hand every non-API request straight back
