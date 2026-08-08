@@ -1,22 +1,41 @@
 // The date-range filter's whole model, in one pure module: no React, no DOM,
-// nothing imported but `toApiDate`. useIntervalsActivities owns the state and
-// IntervalsDateFilter renders it; both read their rules from here.
+// zero imports. A picker hook owns the state and a date-filter component
+// renders it; both read their rules from here.
 //
-// It filters `ActivityRow`s, not raw intervals.icu payloads, so nothing in it
-// is provider-specific any more. It stays under `data/intervals/` only because
-// `toApiDate` still lives in intervalsApi.js — moving one means moving both,
-// which is a batch of its own (ARCHITECTURE_STATUS.md §7 item 3).
+// It filters `ActivityRow`s, not any provider's raw payload, which is what
+// finally let it out of `data/intervals/`. `toApiDate` came with it: it had
+// two consumers, both date-range concerns, and leaving it behind in
+// intervalsApi.js was the single import that pinned this module to one
+// provider.
 //
 // **A range is two `YYYY-MM-DD` strings, never two Dates.** That is exactly
 // what `<input type="date">`.value reads and writes regardless of display
-// locale, it is already the API's wire format, and — the part that matters —
-// lexicographic comparison of `YYYY-MM-DD` *is* chronological comparison. So
-// the predicate, the `from <= to` check and the request bounds are all plain
-// string operations, sidestepping every timezone trap the rest of this folder
-// carries warnings about. Dates appear only where a calendar has to be walked
-// (`dayAfter`) or formatted (`formatRangeLabel`), and both go through
-// `parseDay` for the reason documented there.
-import { toApiDate } from './intervalsApi.js'
+// locale, it is already intervals.icu's wire format, and — the part that
+// matters — lexicographic comparison of `YYYY-MM-DD` *is* chronological
+// comparison. So the predicate, the `from <= to` check and the request bounds
+// are all plain string operations, sidestepping every timezone trap the
+// providers' folders carry warnings about. Dates appear only where a calendar
+// has to be walked (`dayAfter`) or formatted (`formatRangeLabel`), and both go
+// through `parseDay` for the reason documented there.
+//
+// A provider whose API wants something other than a day string converts at its
+// own boundary — Strava's `before`/`after` are epoch seconds, so
+// `data/strava/stravaBoundsFor.js` sits on top of this rather than inside it.
+
+/**
+ * `YYYY-MM-DD` in the **local** calendar. `toISOString().slice(0, 10)` is the
+ * obvious spelling and is wrong: it is UTC, so it silently shifts a window by
+ * a day for anyone not on UTC, dropping or duplicating a day's activities at
+ * the boundary. intervals.icu compares `oldest`/`newest` against
+ * `start_date_local`, and every other consumer here is likewise reasoning
+ * about the athlete's own calendar.
+ * @param {Date} date
+ */
+export function toApiDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
 
 /**
  * No filter. Not a state the UI offers any more — the page starts at
@@ -79,7 +98,7 @@ function parseDay(day) {
  * appending one shifts it into their own offset a second time. The mapper that
  * fills the field has the same rule for the same reason.
  *
- * @param {import('../activityRow.js').ActivityRow} [row]
+ * @param {import('./activityRow.js').ActivityRow} [row]
  */
 export function startDayOf(row) {
   const startedAt = row?.startedAt
@@ -99,7 +118,7 @@ export function startDayOf(row) {
  * the default view — ActivityRowList's rule is that an activity the athlete
  * knows they recorded is never silently hidden.
  *
- * @param {import('../activityRow.js').ActivityRow} row
+ * @param {import('./activityRow.js').ActivityRow} row
  * @param {DateRange} range
  */
 export function activityInRange(row, range) {
@@ -167,7 +186,7 @@ export function requestBoundsFor(range, fallbackOldest) {
  * the rest of this module is built on.
  *
  * @param {DateRange} range
- * @param {import('../activityRow.js').ActivityRow[]} rows
+ * @param {import('./activityRow.js').ActivityRow[]} rows
  * @param {number} days
  * @param {string} fallbackFrom - used when the start field was emptied by hand
  */

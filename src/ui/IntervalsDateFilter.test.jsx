@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { EMPTY_RANGE, PRESETS, defaultRange } from '../data/intervals/activityDateRange.js'
-import { toApiDate } from '../data/intervals/intervalsApi.js'
+import { EMPTY_RANGE, PRESETS, defaultRange, toApiDate } from '../data/activityDateRange.js'
 import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
 
 // userEvent.type is unreliable against type="date" in jsdom (it drives the

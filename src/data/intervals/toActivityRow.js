@@ -18,7 +18,7 @@
  * enough about itself gets the message that actually helps.
  *
  * `file_type` being absent is deliberately *not* a reason — the bytes are the
- * authority (detectActivityFormat.js) and this is only a pre-flight guard.
+ * authority (data/fileFormat.js) and this is only a pre-flight guard.
  *
  * Raw-shaped by nature: every question it asks is about a provider's own
  * fields, which is why it belongs on this side of the boundary rather than in

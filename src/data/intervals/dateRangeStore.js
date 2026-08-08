@@ -24,7 +24,7 @@
 // Every call is wrapped, same as both siblings: Safari's private mode throws
 // on setItem, and some hardened configurations throw on touching Storage at
 // all. Losing a remembered range is a shrug; taking the app down with it is not.
-import { isValidRange } from './activityDateRange.js'
+import { isValidRange } from '../activityDateRange.js'
 
 export const DATE_RANGE_STORAGE_KEY = 'timeseries-visualizer.intervals-icu.dateRange'
 
@@ -34,7 +34,7 @@ const SCHEMA_VERSION = 1
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
-/** @typedef {import('./activityDateRange.js').DateRange} DateRange */
+/** @typedef {import('../activityDateRange.js').DateRange} DateRange */
 
 function browserSessionStorage() {
   // Guarded like the calls below: reading the property itself throws when

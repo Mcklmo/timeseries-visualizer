@@ -21,8 +21,8 @@ import {
   defaultRange,
   isSameRange,
   isValidRange,
-} from '../data/intervals/activityDateRange.js'
-import { toApiDate } from '../data/intervals/intervalsApi.js'
+  toApiDate,
+} from '../data/activityDateRange.js'
 
 /**
  * @param {{range: {from: string | null, to: string | null}, onChange: (range: object) => void}} props

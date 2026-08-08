@@ -32,7 +32,7 @@ describe('unsupportedReason', () => {
     expect(unsupportedReason({ id: 'i2', name: 'X', start_date_local: '2026-08-11T17:04:00', file_type: fileType })).toBeNull()
   })
 
-  // The bytes are the authority (detectActivityFormat.js); file_type is only
+  // The bytes are the authority (data/fileFormat.js); file_type is only
   // a pre-flight hint, so its absence must never disable a row.
   it('leaves a row without a file_type pickable', () => {
     expect(unsupportedReason({ id: 'i2', name: 'X', start_date_local: '2026-08-11T17:04:00' })).toBeNull()

@@ -8,7 +8,7 @@
 // the date range, the coded-error handling — lives in useIntervalsActivities,
 // so what is left here is copy, layout and the wording that is genuinely
 // intervals.icu's rather than any provider's.
-import { formatRangeLabel, isRangeActive } from '../data/intervals/activityDateRange.js'
+import { formatRangeLabel, isRangeActive } from '../data/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
 import { ActivityRowList } from './ActivityRowList.jsx'
 import { IntervalsConnectForm } from './IntervalsConnectForm.jsx'

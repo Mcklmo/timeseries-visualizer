@@ -33,7 +33,7 @@ import {
   isValidRange,
   requestBoundsFor,
   widenedStart,
-} from '../data/intervals/activityDateRange.js'
+} from '../data/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
 import { dateRangeStore } from '../data/intervals/dateRangeStore.js'
 import { IntervalsApiError, listActivities, searchActivities } from '../data/intervals/intervalsApi.js'

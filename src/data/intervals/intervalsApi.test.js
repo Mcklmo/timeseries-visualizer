@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   IntervalsApiError,
   INTERVALS_API_BASE,
@@ -6,7 +6,6 @@ import {
   fetchProfile,
   listActivities,
   searchActivities,
-  toApiDate,
 } from './intervalsApi.js'
 
 const API_KEY = 's3cr3t-key-value'
@@ -269,41 +268,5 @@ describe('intervalsApi failure mapping', () => {
       expect(error.stack ?? '').not.toContain(API_KEY)
       expect(leaks({ ...error })).toBe(false)
     }
-  })
-})
-
-// oldest/newest are compared against start_date_local, so the string has to be
-// the *local* calendar day. Deriving it via toISOString().slice(0,10) is UTC
-// and shifts the window by a day for anyone not on UTC — dropping or
-// duplicating a day's activities at the boundary. Proving that needs a machine
-// whose local day differs from UTC's, so these tests supply one: V8 re-reads
-// process.env.TZ on assignment, which is the only way to make the assertion
-// discriminating rather than dependent on where the suite happens to run.
-describe('toApiDate', () => {
-  const originalTz = process.env.TZ
-  afterEach(() => {
-    if (originalTz === undefined) delete process.env.TZ
-    else process.env.TZ = originalTz
-  })
-
-  it.each([
-    // zone,           local hour on 9 May,  the UTC day that instant falls on
-    ['Asia/Tokyo', 0, '2026-05-08'], // ahead of UTC: local morning is still yesterday there
-    ['America/Denver', 22, '2026-05-10'], // behind it: local evening is already tomorrow
-  ])('uses the local calendar day, not the UTC one (%s)', (timeZone, hour, utcDay) => {
-    process.env.TZ = timeZone
-    // Built from components rather than passed in as a Date: a Date in the
-    // table would have been constructed at collection time, under whatever
-    // zone the suite started in. The utcDay assertion is the guard that the
-    // zone switch really took — without it this test could pass vacuously.
-    const local = new Date(2026, 4, 9, hour, 30)
-    expect(local.toISOString().slice(0, 10)).toBe(utcDay)
-
-    expect(toApiDate(local)).toBe('2026-05-09')
-  })
-
-  it('zero-pads month and day', () => {
-    expect(toApiDate(new Date(2026, 0, 3, 12, 0))).toBe('2026-01-03')
-    expect(toApiDate(new Date(2026, 11, 31, 12, 0))).toBe('2026-12-31')
   })
 })

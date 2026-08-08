@@ -1,15 +1,20 @@
 // Which parser does this buffer want? Pure — bytes in, format out.
 //
-// The bytes decide, not intervals.icu's `file_type` field. Three reasons:
-// the browser cannot read Content-Disposition across this CORS boundary (see
-// intervalsApi.js), so there is no filename to take an extension from;
-// `file_type` is whatever the syncing service claimed and can be stale or
-// simply wrong; and sniffing needs no second API call. It also keeps
-// ActivityRef exactly as ARCHITECTURE.md §5 defines it, which matters because
-// ErrorState's "Try again" replays a ref carrying no metadata at all.
-// `file_type` is still useful as a pre-flight hint in the picker — it greys
-// out rows that can't work before a request is made — but it is never the
-// authority here.
+// It lives at the top of `data/` rather than under one provider's folder
+// because nothing in it is that provider's: it names no wire field, and any
+// network source that hands back an original uploaded file needs the same
+// answer. intervals.icu is simply the first caller.
+//
+// **The bytes decide, not whatever the provider called the file.** Three
+// reasons, all first learned on the intervals.icu path: the browser cannot
+// read Content-Disposition across that CORS boundary (see intervalsApi.js), so
+// there is no filename to take an extension from; a `file_type` field is
+// whatever the syncing service claimed and can be stale or simply wrong; and
+// sniffing needs no second API call. It also keeps ActivityRef exactly as
+// ARCHITECTURE.md §5 defines it, which matters because ErrorState's "Try
+// again" replays a ref carrying no metadata at all. A declared type is still
+// useful as a pre-flight hint in a picker — it greys out rows that can't work
+// before a request is made — but it is never the authority here.
 
 const GZIP_MAGIC_0 = 0x1f
 const GZIP_MAGIC_1 = 0x8b
@@ -30,8 +35,8 @@ function isGzip(bytes) {
 }
 
 /**
- * Inflates the gzip stream intervals.icu's /file endpoint returns, if it is
- * still compressed by the time it reaches us.
+ * Inflates a gzip stream — intervals.icu's /file endpoint returns one — if it
+ * is still compressed by the time it reaches us.
  *
  * Checks the magic bytes rather than a header: it is unverified whether the
  * response arrives as `Content-Encoding: gzip` (the browser auto-inflates,

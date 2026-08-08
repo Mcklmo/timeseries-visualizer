@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import App, { AppShell } from './App.jsx'
 import { AppProviders } from './app/providers.jsx'
 import { API_KEY_STORAGE_KEY } from './data/intervals/credentialStore.js'
-import { toApiDate } from './data/intervals/intervalsApi.js'
+import { toApiDate } from './data/activityDateRange.js'
 
 // App wires the real credentialStore, which is backed by jsdom's real
 // localStorage — so "not connected" has to be established rather than assumed.

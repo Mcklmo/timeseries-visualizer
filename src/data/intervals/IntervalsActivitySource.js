@@ -22,7 +22,7 @@ import { normalizeActivity } from '../../domain/normalizeActivity.js'
 import { parseFit } from '../fit/parseFit.js'
 import { parseGpx } from '../gpx/parseGpx.js'
 import { parseTcx } from '../tcx/parseTcx.js'
-import { detectActivityFormat, gunzipIfNeeded } from './detectActivityFormat.js'
+import { detectActivityFormat, gunzipIfNeeded } from '../fileFormat.js'
 import { IntervalsApiError, downloadOriginalFile } from './intervalsApi.js'
 
 /** parseFit wants an ArrayBuffer, and only the view's own bytes are the file. */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { detectActivityFormat, gunzipIfNeeded } from './detectActivityFormat.js'
+import { detectActivityFormat, gunzipIfNeeded } from './fileFormat.js'
 
 const FIXTURE_DIR = join(process.cwd(), 'fixtures')
 const encoder = new TextEncoder()

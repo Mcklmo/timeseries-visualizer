@@ -25,7 +25,7 @@ const FIXTURE_DIR = join(process.cwd(), 'fixtures')
 const fitBytes = new Uint8Array(readFileSync(join(FIXTURE_DIR, '23870166877_ACTIVITY.fit')))
 const meta = JSON.parse(readFileSync(join(FIXTURE_DIR, 'activity_23870166877-meta.json'), 'utf-8'))
 
-// Response, not Blob — see detectActivityFormat.js for why mixing jsdom's
+// Response, not Blob — see data/fileFormat.js for why mixing jsdom's
 // Blob with Node's streams breaks under this test environment.
 async function gzip(bytes) {
   const compressed = await new Response(

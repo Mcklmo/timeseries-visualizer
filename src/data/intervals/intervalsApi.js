@@ -13,7 +13,7 @@
 // until you know:
 //   - No Access-Control-Expose-Headers is sent, so the browser cannot read
 //     Content-Disposition (hence no server-supplied filename — see
-//     detectActivityFormat.js) or Retry-After / X-RateLimit-*. A 429 gives us
+//     data/fileFormat.js) or Retry-After / X-RateLimit-*. A 429 gives us
 //     a status and nothing else, which is why the rate-limit copy names no
 //     wait time.
 //   - No Access-Control-Allow-Credentials either, so credentials must be
@@ -76,19 +76,10 @@ export class IntervalsApiError extends Error {
   }
 }
 
-/**
- * `YYYY-MM-DD` in the **local** calendar, because `oldest`/`newest` are
- * compared against `start_date_local`. `toISOString().slice(0, 10)` is the
- * obvious spelling and is wrong: it is UTC, so it silently shifts the window
- * by a day for anyone not on UTC, dropping or duplicating a day's activities
- * at the boundary.
- * @param {Date} date
- */
-export function toApiDate(date) {
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
+// `toApiDate` used to live here, next to the endpoints whose `oldest`/`newest`
+// params it formats. It is in data/activityDateRange.js now: both its consumers
+// are date-range concerns, and this import was the only thing keeping that
+// otherwise provider-neutral module inside data/intervals/.
 
 function basicAuthHeader(apiKey) {
   try {

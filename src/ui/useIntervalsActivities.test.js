@@ -6,7 +6,7 @@
 // spanning two windows.
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { toApiDate } from '../data/intervals/intervalsApi.js'
+import { toApiDate } from '../data/activityDateRange.js'
 import { useIntervalsActivities } from './useIntervalsActivities.js'
 
 // Every fixture is relative to now for the same reason IntervalsPage's are:
