@@ -2,6 +2,7 @@
 
 > **Audience:** an implementing coding agent (or human) working from an empty Vite project.
 > **Status:** implementation in progress — see checklist below.
+> **This is a decision record, not a description of the system as built** — for the current map (layers, dependency graph, known couplings, Strava readiness) see [`ARCHITECTURE_STATUS.md`](ARCHITECTURE_STATUS.md).
 > **Scope of v1:** running, cycling and generic GPS tracks, metric units only, TCX/FIT/GPX file input, stacked synced charts, statistic reference lines.
 
 ---
