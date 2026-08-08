@@ -601,6 +601,16 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+/* The derivative axis's numbers, tinted to the overlay they label. Recharts
+   emits `fill` on <text> as a presentation ATTRIBUTE (component/Text.js:274-280),
+   and any stylesheet rule outranks a presentation attribute — so the rule above
+   was silently greying out the tint MetricPanel asks for, leaving only the tick
+   line and axis line (which are `stroke`) actually tinted. Recharts also hoists
+   tick labels out of the .recharts-yAxis group into a shared z-index layer, so
+   `orientation` is the only handle left to select them by. The fallback is for
+   the reserve-only panel, which sets no hue because it labels nothing. */
+.metric-panel .recharts-text[orientation='right'] { fill: var(--deriv-hue, var(--text-dim)); }
+
 .stat-summary {
   display: flex;
   flex-wrap: wrap;

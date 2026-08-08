@@ -191,7 +191,7 @@ export function MetricPanel({
   )
 
   return (
-    <div className="metric-panel" style={{ minHeight: height }}>
+    <div className="metric-panel" style={{ minHeight: height, ...(hasOverlay && { '--deriv-hue': derivColor }) }}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={data} syncId={SYNC_ID} margin={CHART_MARGIN}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />

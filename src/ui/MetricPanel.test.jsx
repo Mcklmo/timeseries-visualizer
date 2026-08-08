@@ -243,7 +243,7 @@ describe('MetricPanel', () => {
     return container.querySelector('.deriv-line .recharts-curve')
   }
 
-  it('draws the derivative under the main line, thinner and in a lighter step of the hue', () => {
+  it('draws the derivative under the main line, thinner and in a stepped shade of the hue', () => {
     const { container } = renderPanel(withOverlay)
     const curves = [...container.querySelectorAll('.recharts-line .recharts-curve')]
     const main = container.querySelector('.metric-line .recharts-curve')
@@ -255,8 +255,10 @@ describe('MetricPanel', () => {
     expect(curves).toHaveLength(2)
 
     // One hue per metric (§9) — this IS that metric, seen as a rate, so it is
-    // a lighter step of the same hue and not a colour of its own. Reading it
-    // from the shared helper is the point: the checkbox reads the same one.
+    // a step of the same hue and not a colour of its own. Which DIRECTION that
+    // step goes is the helper's business, not this test's (heart rate steps
+    // lighter, power darker — see derivativeStyle.test.js). Reading it from the
+    // shared helper is the point: the checkbox reads the same one.
     expect(deriv.getAttribute('stroke')).toBe(derivativeStroke(metricRegistry.heartRate))
     expect(main.getAttribute('stroke')).toBe(metricRegistry.heartRate.color)
 
@@ -271,6 +273,33 @@ describe('MetricPanel', () => {
     // reasons the overlay could not be found at all.
     expect(main.getAttribute('stroke-dasharray')).toBeNull()
     expect(deriv.getAttribute('stroke-dasharray')).toBeNull()
+  })
+
+  // The shared fixture is a run with no power channel, and neither has the
+  // repo's only .fit (0 power samples in 1801 records) — which is why power's
+  // overlay was the one metric nothing here ever rendered, and why the user
+  // found it by eye before a test did. Built exactly as derivActivity is.
+  const powerActivity = {
+    ...derivActivity,
+    samples: activity.samples.map((s, i) => ({ ...s, power: 200 + i * 10 })),
+    availableMetrics: [...activity.availableMetrics, 'power'],
+  }
+
+  it('steps power’s derivative darker, amber having no headroom toward white', () => {
+    const { container } = renderPanel({
+      activity: powerActivity,
+      metricId: 'power',
+      enabledStats: ['d1'],
+      rightInset: Y_AXIS_RIGHT_WIDTH,
+    })
+    const deriv = derivPath(container)
+    const main = container.querySelector('.metric-line .recharts-curve')
+
+    // A fixed 72% mix toward white moved amber only 0.034 in oklab L against
+    // heart rate's 0.099, and the two lines landed 1.1:1 apart on the panel.
+    expect(deriv.getAttribute('stroke')).toBe(derivativeStroke(metricRegistry.power))
+    expect(deriv.getAttribute('stroke')).not.toBe(metricRegistry.power.color)
+    expect(main.getAttribute('stroke')).toBe(metricRegistry.power.color)
   })
 
   it('draws no overlay when no derivative is enabled, whatever the gutter says', () => {
@@ -311,7 +340,18 @@ describe('MetricPanel', () => {
     const rightTickText = [...labelled.querySelectorAll('.recharts-cartesian-axis-tick-value')].find(
       (t) => t.getAttribute('orientation') === 'right',
     )
+    // This checks the DECLARATION only. Recharts emits `fill` on <text> as a
+    // presentation ATTRIBUTE (component/Text.js), which every stylesheet rule
+    // outranks — and global.css paints .metric-panel .recharts-text with
+    // --text-dim, so in a real browser this attribute lost and the numbers came
+    // out grey. What actually paints them is the custom property below, which
+    // the stylesheet reads. jsdom loads no CSS, so the cascade itself is not
+    // observable from here; asserting both ends is as close as a test gets.
     expect(rightTickText.getAttribute('fill')).toBe(tint)
+    expect(labelled.querySelector('.metric-panel').style.getPropertyValue('--deriv-hue')).toBe(tint)
+    // The reserve-only panel labels nothing, so it sets no hue and the rule
+    // falls back to --text-dim.
+    expect(reservedOnly.querySelector('.metric-panel').style.getPropertyValue('--deriv-hue')).toBe('')
   })
 
   it('draws no overlay at all without a gutter to draw it in', () => {
