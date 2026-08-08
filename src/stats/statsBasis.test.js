@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { fullDomain } from '../domain/zoomDomain.js'
 import { metricRegistry } from '../metrics/metricRegistry.js'
 import { computeMetricStat } from './aggregate.js'
-import { statsBasisFor } from './statsBasis.js'
+import { elapsedTimeFor, statsBasisFor } from './statsBasis.js'
 
 // Slow first half (200 m in 100 s), fast second half (500 m in 100 s), so the
 // window's average pace and the whole activity's are genuinely different
@@ -198,6 +198,57 @@ describe('statsBasisFor', () => {
       expect(computeMetricStat({ ...basis, metric: metricRegistry.pace, statKind })).toBeNull()
       expect(computeMetricStat({ ...basis, metric: metricRegistry.heartRate, statKind })).toBeNull()
     }
+  })
+
+  // THE anti-drift oracle, and the reason it is safe for the header to read a
+  // live elapsedTime while the chips settle behind useDeferredValue. Header
+  // and chips used to be pinned together by sharing one basis OBJECT; they now
+  // share one FUNCTION, and this is what pins it. If the two ever compute the
+  // window differently, one of these cases will catch it.
+  describe('elapsedTimeFor is the only definition of the window duration', () => {
+    const withPause = {
+      samplingIntervalS: 100,
+      totalTime: 400,
+      totalMovingTime: 300,
+      totalDistance: 600,
+      samples: [
+        { t: 0, d: 0, moving: true },
+        { t: 100, d: 200, moving: true },
+        { t: 200, d: 200, moving: false },
+        { t: 300, d: 200, moving: false },
+        { t: 400, d: 600, moving: true },
+      ],
+    }
+
+    const cases = [
+      ['unzoomed', activity, 't', fullDomain(), fullExtent],
+      ['no totalTime on the fixture', { ...activity, totalTime: undefined }, 't', fullDomain(), fullExtent],
+      ['no extent to resolve against', activity, 't', [10, 20], null],
+      ['the fast half', activity, 't', [100, 200], fullExtent],
+      ['the slow half', activity, 't', [0, 100], fullExtent],
+      ['a distance window', activity, 'd', [0, 200], [0, 700]],
+      ['a reversed domain', activity, 't', [200, 100], fullExtent],
+      ['a single-sample window', activity, 't', [95, 105], fullExtent],
+      ['a window too narrow to contain a sample', activity, 't', [40, 60], fullExtent],
+      ['an empty activity', { ...activity, samples: [] }, 't', [10, 20], fullExtent],
+      ['a window spanning a pause', withPause, 't', [0, 400], [0, 400]],
+      ['a window inside a pause', withPause, 't', [200, 300], [0, 400]],
+    ]
+
+    for (const [name, act, xKey, zoomDomain, extent] of cases) {
+      it(`agrees with the basis for ${name}`, () => {
+        expect(elapsedTimeFor(act, xKey, zoomDomain, extent)).toBe(
+          statsBasisFor(act, xKey, zoomDomain, extent).elapsedTime,
+        )
+      })
+    }
+
+    it('answers 0 rather than null when there is no activity at all', () => {
+      // statsBasisFor returns null here and the header would have nothing to
+      // read; the live path has to print something, and 0 formats.
+      expect(statsBasisFor(null, 't', fullDomain(), fullExtent)).toBeNull()
+      expect(elapsedTimeFor(null, 't', fullDomain(), fullExtent)).toBe(0)
+    })
   })
 
   it('reports a single-sample window without dividing by zero', () => {

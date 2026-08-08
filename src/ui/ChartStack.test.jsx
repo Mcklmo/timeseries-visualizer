@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { useEffect } from 'react'
+import { ActivityHeader } from './ActivityHeader.jsx'
 import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
 import { useActivity } from '../state/ActivityContext.jsx'
@@ -373,6 +374,48 @@ describe('ChartStack', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /reset zoom/i }))
     await waitFor(() => expect(hrChip()).toContain('AVG 135 bpm'))
+  })
+
+  // The header's duration and the chips read the same window through the same
+  // function (stats/statsBasis.js elapsedTimeFor), but on two different
+  // deadlines, and this is where that split is pinned. The header is rendered
+  // here rather than in ActivityHeader.test.jsx because the difference only
+  // shows under a real gesture: a lone setZoomDomain inside act() settles a
+  // deferred render too, so nothing short of the pinch path can tell the two
+  // apart. Put the duration back behind useDeferredValue and the synchronous
+  // assertion below fails while everything else stays green.
+  it('updates the header duration mid-gesture, ahead of the chips', async () => {
+    const withTotalTime = { ...fixtureActivity, totalTime: 40, name: 'Test run' }
+    const { container } = await renderStack({
+      activity: withTotalTime,
+      extra: (
+        <>
+          <ActivityHeader />
+          <ToggleStat metricId="heartRate" statKind="avg" />
+        </>
+      ),
+    })
+    fireEvent.click(screen.getByText('toggle-heartRate-avg'))
+    const duration = () => container.querySelector('.activity-duration').textContent
+    const hrChip = () => [...container.querySelectorAll('.metric-panel')][1].querySelector('.stat-chip')?.textContent
+    await waitFor(() => expect(hrChip()).toContain('AVG 135 bpm'))
+    expect(duration()).toBe('0:40')
+
+    // The pinch lands on ≈6.7–33.3 s, i.e. the samples at 10/20/30 s.
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+
+    // NO waitFor: one frame after the gesture emitted, the duration already
+    // reports the window. Under a sustained gesture this is the whole feature
+    // — emit()'s urgent update restarts the deferred render every frame, so a
+    // deferred duration does not lag by a frame, it does not move at all until
+    // the fingers stop.
+    expect(duration()).toBe('0:20')
+
+    // And the chips still settle behind it, deliberately: making them live
+    // would put a sort per metric over the full-resolution series on every
+    // frame, which is the cost this design refuses to pay.
+    await waitFor(() => expect(hrChip()).toContain('AVG 140 bpm'))
+    expect(duration()).toBe('0:20')
   })
 
   // Encodes the decision that there is no one-finger drag-to-pan, so it can't

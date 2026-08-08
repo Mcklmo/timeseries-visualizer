@@ -6,10 +6,17 @@
 // activity.sport, not activity's richer FIT sportLabel — that would just
 // duplicate the name.
 //
-// The duration follows the zoom, exactly like the stat chips and from the same
-// basis, so a screenshot of a zoomed interval says how long *that* interval
-// is. The start time deliberately does not: it is what identifies the
-// activity, and a clock that slid to the window's start would make two
+// The duration follows the zoom, so a screenshot of a zoomed interval says how
+// long *that* interval is. It shares ONE FUNCTION with the stat chips
+// (elapsedTimeFor, in stats/statsBasis.js) rather than one basis object: the
+// chips settle behind useDeferredValue and cannot move at framerate, while a
+// duration that freezes for a whole pinch and only catches up on release reads
+// as broken. So this number is live and the chips lag it mid-gesture; both are
+// exact the moment the fingers stop, and statsBasis.test.js pins them to the
+// same definition so they can never disagree about a settled window.
+//
+// The start time deliberately does not follow the zoom: it is what identifies
+// the activity, and a clock that slid to the window's start would make two
 // different claims in one cluster.
 import { formatDuration, formatStartDateTime } from '../domain/units.js'
 import { useActivity } from '../state/ActivityContext.jsx'
@@ -19,7 +26,7 @@ const SPORT_CHIP_LABEL = { running: 'Running', cycling: 'Cycling', track: 'Track
 
 export function ActivityHeader() {
   const { activity } = useActivity()
-  const { basis } = useStatsBasis() // above the guard — rules of hooks
+  const { elapsedTime } = useStatsBasis() // above the guard — rules of hooks
   if (!activity) return null
 
   const startedAt = formatStartDateTime(activity.startTime)
@@ -31,9 +38,7 @@ export function ActivityHeader() {
       {startedAt && <span className="activity-datetime">{startedAt}</span>}
       {/* No aria-live: the stat chips don't announce on zoom either, and a
           polite region firing on every settle would be noise. */}
-      <span className="activity-duration">
-        {formatDuration(basis?.elapsedTime ?? activity.totalTime ?? 0)}
-      </span>
+      <span className="activity-duration">{formatDuration(elapsedTime)}</span>
     </div>
   )
 }

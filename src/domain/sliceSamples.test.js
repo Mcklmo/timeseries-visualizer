@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sliceSamplesByX } from './sliceSamples.js'
+import { sliceBoundsByX, sliceSamplesByX } from './sliceSamples.js'
 
 const samples = [
   { t: 0, d: 0 },
@@ -85,5 +85,76 @@ describe('sliceSamplesByX', () => {
     const out = sliceSamplesByX(samples, 't', [0, 40])
     expect(out).not.toBe(samples)
     expect(out).toEqual(samples)
+  })
+
+  // The one exception, and it is load-bearing rather than incidental:
+  // statsBasisFor's unzoomed path is what keeps the default render
+  // byte-identical, and it rests on the activity's own array coming back.
+  it('hands back the input array itself for a garbage domain', () => {
+    expect(sliceSamplesByX(samples, 't', ['dataMin', 'dataMax'])).toBe(samples)
+  })
+})
+
+// The same cases as above, one level down: sliceSamplesByX is built on these
+// bounds, and elapsedTimeFor and displayIndices read them without the copy.
+describe('sliceBoundsByX', () => {
+  it('reports the half-open range of the window, both edges inclusive', () => {
+    expect(sliceBoundsByX(samples, 't', [10, 30])).toEqual([1, 4])
+  })
+
+  it('excludes samples just outside either edge', () => {
+    expect(sliceBoundsByX(samples, 't', [10.001, 29.999])).toEqual([2, 3])
+  })
+
+  it('bounds on distance when asked for distance', () => {
+    expect(sliceBoundsByX(samples, 'd', [50, 150])).toEqual([1, 4])
+  })
+
+  it('reports the whole array for a window covering the full extent', () => {
+    expect(sliceBoundsByX(samples, 't', [0, 40])).toEqual([0, 5])
+  })
+
+  it('clips a window that hangs off the start or the end', () => {
+    expect(sliceBoundsByX(samples, 't', [-100, 15])).toEqual([0, 2])
+    expect(sliceBoundsByX(samples, 't', [35, 900])).toEqual([4, 5])
+  })
+
+  // The bracketing pair: a window narrower than one breadcrumb interval still
+  // has a line drawn across it, so it still has bounds.
+  it('widens an empty window to the pair the line is drawn across', () => {
+    expect(sliceBoundsByX(samples, 't', [22, 24])).toEqual([2, 4])
+  })
+
+  it('reports an empty range for a window off either end of the recording', () => {
+    expect(sliceBoundsByX(samples, 't', [-50, -10])).toEqual([0, 0])
+    expect(sliceBoundsByX(samples, 't', [60, 90])).toEqual([0, 0])
+  })
+
+  it('reports an empty range for an empty or absent sample array', () => {
+    expect(sliceBoundsByX([], 't', [0, 40])).toEqual([0, 0])
+    expect(sliceBoundsByX(null, 't', [0, 40])).toEqual([0, 0])
+  })
+
+  // NOT [0, 0]: a domain nobody can read is "everything", the same answer
+  // sliceSamplesByX gives, or an unzoomed chart would draw nothing at all.
+  it('falls back to the whole range rather than throwing on a garbage domain', () => {
+    expect(sliceBoundsByX(samples, 't', ['dataMin', 'dataMax'])).toEqual([0, 5])
+    expect(sliceBoundsByX(samples, 't', null)).toEqual([0, 5])
+    expect(sliceBoundsByX(samples, 't', [NaN, 30])).toEqual([0, 5])
+  })
+
+  it('accepts a reversed domain', () => {
+    expect(sliceBoundsByX(samples, 't', [30, 10])).toEqual([1, 4])
+  })
+
+  // Identity with the slice it backs, over every case above: two
+  // implementations of "what is in the window" is exactly the drift this
+  // extraction exists to prevent.
+  it('agrees with sliceSamplesByX on every window', () => {
+    const domains = [[10, 30], [10.001, 29.999], [0, 40], [-100, 15], [35, 900], [22, 24], [60, 90], [30, 10]]
+    for (const domain of domains) {
+      const [start, end] = sliceBoundsByX(samples, 't', domain)
+      expect(sliceSamplesByX(samples, 't', domain)).toEqual(samples.slice(start, end))
+    }
   })
 })

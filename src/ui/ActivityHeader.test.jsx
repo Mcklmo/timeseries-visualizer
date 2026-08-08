@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useEffect } from 'react'
+import { fullDomain } from '../domain/zoomDomain.js'
 import { ActivityHeader } from './ActivityHeader.jsx'
 import { AppProviders } from '../app/providers.jsx'
 import { useActivity } from '../state/ActivityContext.jsx'
@@ -47,6 +48,16 @@ function Loader() {
 function ZoomTo({ domain }) {
   const { setZoomDomain } = useChartView()
   return <button onClick={() => setZoomDomain(domain)}>zoom</button>
+}
+
+function ResetZoom() {
+  const { setZoomDomain } = useChartView()
+  return <button onClick={() => setZoomDomain(fullDomain())}>reset</button>
+}
+
+function SwitchXMode({ mode }) {
+  const { setXMode } = useChartView()
+  return <button onClick={() => setXMode(mode)}>switch-x-{mode}</button>
 }
 
 describe('ActivityHeader', () => {
@@ -122,7 +133,16 @@ describe('ActivityHeader', () => {
 
   // The point of putting the duration here: a screenshot of a zoomed interval
   // has to say how long *that* interval is, and the number comes from the same
-  // basis the stat chips do — so it windows silently, with no "zoomed" marker.
+  // FUNCTION the stat chips do — so it windows silently, with no "zoomed"
+  // marker.
+  //
+  // The waitFor this used to need is gone, since the duration no longer comes
+  // off the deferred basis. Do NOT read that as the regression guard, though:
+  // a single setZoomDomain inside act() settles a deferred render too, so this
+  // would stay green either way. What the live path actually buys is only
+  // visible under a *continuous* stream of urgent updates, and is pinned by
+  // 'updates the header duration mid-gesture, ahead of the chips' in
+  // ChartStack.test.jsx, against a real pinch.
   it('narrows the duration to the zoom window', async () => {
     const user = userEvent.setup()
     render(
@@ -136,11 +156,49 @@ describe('ActivityHeader', () => {
 
     await user.click(screen.getByRole('button', { name: 'zoom' }))
 
-    // useDeferredValue settles the basis a frame later, so this cannot be a
-    // synchronous getByText.
-    await waitFor(() => expect(screen.getByText('30:00')).toBeInTheDocument())
+    expect(screen.getByText('30:00')).toBeInTheDocument()
     expect(screen.queryByText('1:02:05')).not.toBeInTheDocument()
     // and the start time is identity, not a window — it does not move
     expect(screen.getByText('8 Aug 2026, 07:14')).toBeInTheDocument()
+  })
+
+  // A distance window still has to report a time: the axis may be metres, the
+  // duration never is (elapsedTimeFor measures in `t` whichever axis shows).
+  it('reports a time for a distance window', async () => {
+    const user = userEvent.setup()
+    render(
+      <AppProviders source={makeSource(fixtureActivity)}>
+        <Loader />
+        <SwitchXMode mode="distance" />
+        <ZoomTo domain={[0, 100]} />
+        <ActivityHeader />
+      </AppProviders>,
+    )
+    expect(await screen.findByText('1:02:05')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'switch-x-distance' }))
+    await user.click(screen.getByRole('button', { name: 'zoom' }))
+
+    // 0–100 m covers the samples at t=0 and t=1800.
+    expect(screen.getByText('30:00')).toBeInTheDocument()
+  })
+
+  it('returns to the whole activity when the zoom is reset', async () => {
+    const user = userEvent.setup()
+    render(
+      <AppProviders source={makeSource(fixtureActivity)}>
+        <Loader />
+        <ZoomTo domain={[0, 1800]} />
+        <ResetZoom />
+        <ActivityHeader />
+      </AppProviders>,
+    )
+    expect(await screen.findByText('1:02:05')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'zoom' }))
+    expect(screen.getByText('30:00')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'reset' }))
+    expect(screen.getByText('1:02:05')).toBeInTheDocument()
   })
 })

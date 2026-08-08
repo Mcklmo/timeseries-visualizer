@@ -26,15 +26,57 @@
 
 import { totalMovingTimeOf } from '../domain/sampleDurations.js'
 import { gapThresholdFor } from '../domain/samplingInterval.js'
-import { sliceSamplesByX } from '../domain/sliceSamples.js'
+import { sliceBoundsByX, sliceSamplesByX } from '../domain/sliceSamples.js'
 import { isFullDomain, resolveDomain } from '../domain/zoomDomain.js'
+
+/**
+ * How long the window lasts, in seconds — the number the header prints beside
+ * the activity's name.
+ *
+ * Split out of the basis and exported because the header updates LIVE under a
+ * gesture while the chips settle behind useDeferredValue (§6). The invariant
+ * was "one basis object, so header and chips cannot drift"; it is now "one
+ * function, called from both paths" — `statsBasisFor` fills its `elapsedTime`
+ * field from here rather than computing its own, and statsBasis.test.js pins
+ * the two against each other. Anything cheap enough to run at framerate can
+ * call this; anything that needs a sort over the window cannot, and stays on
+ * the basis.
+ *
+ * Elapsed, deliberately NOT totalMovingTime: the pauses it includes are inside
+ * the span the x-axis draws, and moving time would put a duration in the
+ * header that disagrees with the picture next to it. Measured in `t` whichever
+ * axis is showing, so a distance window still reports a time.
+ *
+ * @param {import('../domain/types.js').Activity|null|undefined} activity
+ * @param {'t'|'d'} xKey - which axis `zoomDomain` is expressed in
+ * @param {unknown} zoomDomain - sentinel or numeric pair (domain/zoomDomain.js)
+ * @param {[number, number]|null} fullExtent - the activity's x-extent
+ * @returns {number} seconds; 0 rather than NaN whenever there is nothing to measure
+ */
+export function elapsedTimeFor(activity, xKey, zoomDomain, fullExtent) {
+  if (!activity) return 0
+
+  // ?? 0 upholds this file's "no NaN reaches the DOM" guarantee rather than
+  // guarding against the Activity contract: totalTime is required
+  // (domain/types.js) and always set by normalizeActivity, but plenty of
+  // hand-built test fixtures omit it. A null fullExtent (nothing plottable)
+  // has no window to resolve against and takes the same path.
+  if (isFullDomain(zoomDomain) || !fullExtent) return activity.totalTime ?? 0
+
+  const samples = activity.samples
+  const [start, end] = sliceBoundsByX(samples, xKey, resolveDomain(zoomDomain, fullExtent))
+  if (start >= end) return 0
+  // First-to-last, exactly like the window's distance and its moving time, so
+  // all three describe the same interval and cannot drift apart.
+  return samples[end - 1].t - samples[start].t
+}
 
 /**
  * @typedef {object} StatsBasis
  * @property {import('../domain/types.js').Sample[]} samples
  * @property {number} totalMovingTime - s, over `samples` only
  * @property {number} totalDistance - m, over `samples` only
- * @property {number} elapsedTime - s, wall clock over `samples` only — what the header reports
+ * @property {number} elapsedTime - s, wall clock over `samples` only; always elapsedTimeFor's answer
  * @property {number|undefined} gapThresholdS
  */
 
@@ -59,16 +101,19 @@ export function statsBasisFor(activity, xKey, zoomDomain, fullExtent) {
   // zoom — the same "conditional, not unconditional" rule `allowDataOverflow`
   // follows. A null fullExtent (nothing plottable) has no window to resolve
   // against and takes the same path.
+  // Every branch takes its elapsedTime from elapsedTimeFor rather than
+  // computing the same number a second way. The field stays ON the basis: it
+  // is what the existing tests assert, and asserting both against each other
+  // is what proves the header's live path and the chips' settled path can
+  // never disagree.
+  const elapsedTime = elapsedTimeFor(activity, xKey, zoomDomain, fullExtent)
+
   if (isFullDomain(zoomDomain) || !fullExtent) {
     return {
       samples: activity.samples,
       totalMovingTime: activity.totalMovingTime,
       totalDistance: activity.totalDistance,
-      // ?? 0 upholds this file's "no NaN reaches the DOM" guarantee rather
-      // than guarding against the Activity contract: totalTime is required
-      // (domain/types.js) and always set by normalizeActivity, but plenty of
-      // hand-built test fixtures omit it.
-      elapsedTime: activity.totalTime ?? 0,
+      elapsedTime,
       gapThresholdS,
     }
   }
@@ -77,8 +122,8 @@ export function statsBasisFor(activity, xKey, zoomDomain, fullExtent) {
   if (samples.length === 0) {
     // Every aggregator answers null on an empty series, and computeMetricStat
     // rejects a non-positive totalDistance, so the chips simply disappear —
-    // no NaN reaches the DOM.
-    return { samples, totalMovingTime: 0, totalDistance: 0, elapsedTime: 0, gapThresholdS }
+    // no NaN reaches the DOM. (elapsedTime is 0 here by the same emptiness.)
+    return { samples, totalMovingTime: 0, totalDistance: 0, elapsedTime, gapThresholdS }
   }
 
   return {
@@ -90,12 +135,7 @@ export function statsBasisFor(activity, xKey, zoomDomain, fullExtent) {
     // three describe the same interval and cannot drift apart.
     totalMovingTime: totalMovingTimeOf(samples, gapThresholdS),
     totalDistance: samples[samples.length - 1].d - samples[0].d,
-    // Elapsed, deliberately NOT totalMovingTime: this is the number the header
-    // prints beside the charts, and the pauses it includes are inside the span
-    // the x-axis draws. Moving time would put a duration in the header that
-    // disagrees with the picture next to it. Measured in `t` whichever axis is
-    // showing, so a distance window still reports a time.
-    elapsedTime: samples[samples.length - 1].t - samples[0].t,
+    elapsedTime,
     gapThresholdS,
   }
 }

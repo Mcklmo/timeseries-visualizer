@@ -38,25 +38,36 @@ function upperBound(samples, xKey, target) {
 }
 
 /**
- * The samples whose x falls inside `domain`, bounds INCLUSIVE on both ends.
+ * Where `domain` starts and ends in `samples`, as a half-open index range,
+ * bounds INCLUSIVE of the edges.
  *
  * Inclusive because the window's edges are where the user put them: a sample
  * sitting exactly on the left edge is visibly on screen, and dropping it would
  * shorten the window's measured span by one interval.
  *
+ * The bounds are the primitive and the slice below is built on them, because
+ * two callers want the window without paying for the copy. `elapsedTimeFor`
+ * (stats/statsBasis.js) reads only the two end samples and now runs on every
+ * animation frame of a live gesture; `displayIndices` (domain/downsample.js)
+ * picks indices *inside* the range and would only have to find them again.
+ *
  * @param {import('./types.js').Sample[]} samples - ascending in `xKey`
  * @param {'t'|'d'} xKey
- * @param {[number, number]} domain - numeric, already resolved (zoomDomain.js)
- * @returns {import('./types.js').Sample[]}
+ * @param {unknown} domain - numeric pair (zoomDomain.js), or anything at all
+ * @returns {[number, number]} `[start, end)`; `[0, 0]` when nothing is in view
  */
-export function sliceSamplesByX(samples, xKey, domain) {
-  if (!Array.isArray(samples) || samples.length === 0) return []
-  if (!Array.isArray(domain) || !Number.isFinite(domain[0]) || !Number.isFinite(domain[1])) return samples
+export function sliceBoundsByX(samples, xKey, domain) {
+  if (!Array.isArray(samples) || samples.length === 0) return [0, 0]
+  // A garbage domain is the whole array, not an empty window — see the file
+  // header on why this is total rather than defensive.
+  if (!Array.isArray(domain) || !Number.isFinite(domain[0]) || !Number.isFinite(domain[1])) {
+    return [0, samples.length]
+  }
   const [x0, x1] = domain[0] <= domain[1] ? domain : [domain[1], domain[0]]
 
   const start = lowerBound(samples, xKey, x0)
   const end = upperBound(samples, xKey, x1)
-  if (start < end) return samples.slice(start, end)
+  if (start < end) return [start, end]
 
   // Empty strict slice. MAX_ZOOM (50) caps the window at 2% of the activity,
   // which on a breadcrumb log — 10-minute sampling over three days — is a
@@ -68,7 +79,30 @@ export function sliceSamplesByX(samples, xKey, domain) {
   // start === end here, so both bounds agree on the insertion point, and
   // (start - 1, start) is that bracketing pair. At either extreme of the array
   // there is no pair — the window is off the end of the recording and nothing
-  // is drawn there either — so the empty slice is the honest answer.
-  if (start === 0 || start === samples.length) return []
-  return samples.slice(start - 1, start + 1)
+  // is drawn there either — so the empty range is the honest answer.
+  if (start === 0 || start === samples.length) return [0, 0]
+  return [start - 1, start + 1]
+}
+
+/**
+ * The samples whose x falls inside `domain`, bounds INCLUSIVE on both ends.
+ *
+ * @param {import('./types.js').Sample[]} samples - ascending in `xKey`
+ * @param {'t'|'d'} xKey
+ * @param {[number, number]} domain - numeric, already resolved (zoomDomain.js)
+ * @returns {import('./types.js').Sample[]}
+ */
+export function sliceSamplesByX(samples, xKey, domain) {
+  if (!Array.isArray(samples) || samples.length === 0) return []
+  // Kept here rather than read back out of sliceBoundsByX's [0, length], and
+  // deliberately the ONLY by-reference return: a garbage domain hands back the
+  // activity's own array, which is what statsBasisFor's unzoomed guarantee
+  // rests on (§6 — the default render stays byte-identical). A numeric domain
+  // that happens to span the whole extent still copies, as it always has;
+  // snapToFull means the app itself never takes that path.
+  if (!Array.isArray(domain) || !Number.isFinite(domain[0]) || !Number.isFinite(domain[1])) return samples
+
+  const [start, end] = sliceBoundsByX(samples, xKey, domain)
+  if (start === end) return []
+  return samples.slice(start, end)
 }
