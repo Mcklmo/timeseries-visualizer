@@ -17,7 +17,7 @@ export class GpxActivitySource {
       throw new Error('GpxActivitySource can only load a file reference')
     }
     const xmlText = await ref.file.text()
-    const { id, sport, trackpoints } = parseGpx(xmlText)
-    return normalizeActivity({ id, sport, trackpoints })
+    const { sport, trackpoints } = parseGpx(xmlText)
+    return normalizeActivity({ sport, trackpoints })
   }
 }

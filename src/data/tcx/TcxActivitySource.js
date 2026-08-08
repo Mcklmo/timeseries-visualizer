@@ -17,7 +17,7 @@ export class TcxActivitySource {
       throw new Error('TcxActivitySource can only load a file reference')
     }
     const xmlText = await ref.file.text()
-    const { id, sport, trackpoints } = parseTcx(xmlText)
-    return normalizeActivity({ id, sport, trackpoints })
+    const { sport, trackpoints } = parseTcx(xmlText)
+    return normalizeActivity({ sport, trackpoints })
   }
 }

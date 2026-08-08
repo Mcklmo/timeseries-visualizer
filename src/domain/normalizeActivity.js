@@ -2,6 +2,7 @@
 // §3 layer diagram (normalizeActivity -> derive* -> Activity) and §8 for the
 // TCX-specific edge cases this exists to absorb, so every ActivitySource
 // adapter can stay a dumb field-mapper.
+import { activityKeyOf } from './activityKey.js'
 import { buildDistanceAxis } from './buildDistanceAxis.js'
 import { deriveSpeed } from './deriveSpeed.js'
 import { deriveWorkoutName } from './deriveWorkoutName.js'
@@ -40,13 +41,12 @@ function availableMetricsOf(samples) {
 
 /**
  * @param {object} args
- * @param {string} args.id
  * @param {import('./types.js').Sport} args.sport
  * @param {string} [args.sportLabel] - watch sport-profile name, FIT only (e.g. "Trail Run")
  * @param {import('./types.js').RawTrackpoint[]} args.trackpoints
  * @returns {import('./types.js').Activity}
  */
-export function normalizeActivity({ id, sport, sportLabel, trackpoints }) {
+export function normalizeActivity({ sport, sportLabel, trackpoints }) {
   const usable = trackpoints.filter(hasAnyData)
   const startTime = usable.length > 0 ? usable[0].time : new Date()
 
@@ -74,16 +74,25 @@ export function normalizeActivity({ id, sport, sportLabel, trackpoints }) {
   // is named by its duration rather than by a time-of-day bucket.
   const totalTime = samples.length > 0 ? samples[samples.length - 1].t : 0
 
+  // Locals rather than inlined into the object below, because the identity is
+  // a fingerprint *of* them (activityKey.js) — no adapter supplies an id any
+  // more, and the ones they used to supply were unusable as identity.
+  const totalDistance = samples.length > 0 ? samples[samples.length - 1].d : 0
+  const availableMetrics = availableMetricsOf(samples)
+
   return {
-    id,
+    // An activity with no usable trackpoints falls back to `new Date()` above,
+    // so its key is non-deterministic. Left alone: it renders no charts, so
+    // there is no remembered view for the key to fail to find.
+    id: activityKeyOf({ sport, startTime, totalTime, totalDistance, samples, availableMetrics }),
     sport,
     name: deriveWorkoutName({ sport, sportLabel, startTime, totalTime }),
     startTime,
     totalTime,
     totalMovingTime: totalMovingTimeOf(samples, gapThresholdFor(intervalS)),
-    totalDistance: samples.length > 0 ? samples[samples.length - 1].d : 0,
+    totalDistance,
     samples,
     samplingIntervalS: intervalS,
-    availableMetrics: availableMetricsOf(samples),
+    availableMetrics,
   }
 }

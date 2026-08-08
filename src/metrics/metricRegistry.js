@@ -85,6 +85,13 @@ export const metricRegistry = {
 
 export const metricOrder = ['pace', 'speed', 'heartRate', 'power', 'cadence', 'altitude']
 
+/** Every StatKind (§5), in the order they are offered and drawn. THE list —
+ *  `MetricPanel`, `StatCheckboxes` and `state/viewPrefsStore.js` all read it
+ *  rather than writing the four strings out again. (`stats/aggregate.js` is
+ *  the exception on purpose: it dispatches on the kinds with a switch, so it
+ *  fails loudly on an unknown one instead of quietly iterating past it.) */
+export const statKinds = ['max', 'min', 'avg', 'median']
+
 /** Resolves a metric's display unit, which may vary by sport (e.g. cadence: spm vs rpm). */
 export function metricUnit(metric, sport) {
   return typeof metric.unit === 'function' ? metric.unit(sport) : metric.unit

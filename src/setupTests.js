@@ -5,7 +5,20 @@ import { cleanup } from '@testing-library/react'
 // With `globals: false` in vite.config.js, @testing-library/react's automatic
 // afterEach cleanup never registers (it looks for a global `afterEach`) — so
 // without this, DOM from one test leaks into the next within the same file.
-afterEach(cleanup)
+//
+// sessionStorage is cleared for the same reason: jsdom's environment is per
+// *file*, not per test, and ChartViewContext now persists the chart view per
+// activity key (state/viewPrefsStore.js). Several suites reuse one fixture
+// activity across many tests, so without this a view toggled in one test is
+// restored into the next one's fresh render.
+afterEach(() => {
+  cleanup()
+  try {
+    sessionStorage.clear()
+  } catch {
+    // Same tolerance the store itself has for unavailable storage.
+  }
+})
 
 // Recharts' ResponsiveContainer needs ResizeObserver and real layout, neither
 // of which jsdom provides. Stub it so charts mount with a fixed size in tests.

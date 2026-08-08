@@ -70,9 +70,6 @@ describe('parseGpx', () => {
     expect(tp.lat).toBe(57.01)
   })
 
-  it('uses <trk><name> as the id', () => {
-    expect(parseGpx(gpx({ name: 'Hike day 2', segmentsXml: seg([trkpt()]) })).id).toBe('Hike day 2')
-  })
 })
 
 describe('parseGpx sport resolution', () => {

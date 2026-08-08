@@ -75,7 +75,7 @@ function parseTrackpoint(trkptEl, ns) {
 
 /**
  * @param {string} xmlText
- * @returns {{id: string, sport: import('../../domain/types.js').Sport, trackpoints: import('../../domain/types.js').RawTrackpoint[]}}
+ * @returns {{sport: import('../../domain/types.js').Sport, trackpoints: import('../../domain/types.js').RawTrackpoint[]}}
  */
 export function parseGpx(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
@@ -115,7 +115,5 @@ export function parseGpx(xmlText) {
     )
   }
 
-  const id = (trkEl && trimmedTextOf(directChildNS(trkEl, ns, 'name'))) ?? `gpx-${Date.now()}`
-
-  return { id, sport, trackpoints }
+  return { sport, trackpoints }
 }

@@ -6,7 +6,7 @@ import { ControlPanel } from './ControlPanel.jsx'
 import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
 import { useActivity } from '../state/ActivityContext.jsx'
-import { metricRegistry, metricOrder } from '../metrics/metricRegistry.js'
+import { metricRegistry, metricOrder, statKinds } from '../metrics/metricRegistry.js'
 
 // Same shape as ChartStack's own fixture, minus `power` — lets tests assert
 // that ControlPanel only offers controls for metrics the activity actually
@@ -121,27 +121,42 @@ describe('ControlPanel', () => {
     expect(panelFor(container, 'cadence')).toBeDefined()
   })
 
-  it('avg is enabled by default, drawing one reference line per visible metric panel', async () => {
+  it('starts every stat unchecked, drawing no reference lines until one is asked for', async () => {
     const { container } = await renderApp()
     for (const id of visibleOrder) {
-      expect(panelFor(container, id).querySelectorAll('.recharts-reference-line')).toHaveLength(1)
+      for (const kind of statKinds) {
+        expect(screen.getByRole('checkbox', { name: `${metricRegistry[id].label} ${kind}` })).not.toBeChecked()
+      }
+      expect(panelFor(container, id).querySelectorAll('.recharts-reference-line')).toHaveLength(0)
     }
   })
 
-  it('checking max adds a second reference line to that metric only', async () => {
+  it('checking max adds a reference line to that metric only', async () => {
     const { container } = await renderApp()
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Heart rate max' }))
 
-    await waitFor(() => expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(2))
-    expect(panelFor(container, 'cadence').querySelectorAll('.recharts-reference-line')).toHaveLength(1)
+    await waitFor(() => expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(1))
+    expect(panelFor(container, 'cadence').querySelectorAll('.recharts-reference-line')).toHaveLength(0)
   })
 
-  it('unchecking avg removes its reference line', async () => {
+  it('checking a second stat on the same metric adds a second reference line', async () => {
     const { container } = await renderApp()
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Cadence avg' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Heart rate max' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Heart rate avg' }))
 
+    await waitFor(() => expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(2))
+  })
+
+  it('unchecking avg removes its reference line again', async () => {
+    const { container } = await renderApp()
+    const avg = screen.getByRole('checkbox', { name: 'Cadence avg' })
+
+    await userEvent.click(avg)
+    await waitFor(() => expect(panelFor(container, 'cadence').querySelectorAll('.recharts-reference-line')).toHaveLength(1))
+
+    await userEvent.click(avg)
     await waitFor(() => expect(panelFor(container, 'cadence').querySelectorAll('.recharts-reference-line')).toHaveLength(0))
   })
 

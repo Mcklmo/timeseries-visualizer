@@ -57,7 +57,7 @@ function parseTrackpoint(tpEl, sport) {
 
 /**
  * @param {string} xmlText
- * @returns {{id: string, sport: import('../../domain/types.js').Sport, trackpoints: import('../../domain/types.js').RawTrackpoint[]}}
+ * @returns {{sport: import('../../domain/types.js').Sport, trackpoints: import('../../domain/types.js').RawTrackpoint[]}}
  */
 export function parseTcx(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
@@ -76,8 +76,6 @@ export function parseTcx(xmlText) {
     throw new Error(`Only running and cycling activities are supported right now (this file is "${sportAttr ?? 'unknown'}")`)
   }
 
-  const id = textOfNS(activityEl, TCX_NS, 'Id') ?? `tcx-${Date.now()}`
-
   const trackpoints = Array.from(activityEl.getElementsByTagNameNS(TCX_NS, 'Trackpoint'))
     .map((tpEl) => parseTrackpoint(tpEl, sport))
     .filter((tp) => tp.time != null) // a trackpoint with no timestamp can't be placed on any axis
@@ -86,5 +84,5 @@ export function parseTcx(xmlText) {
     throw new Error("That TCX file doesn't contain any trackpoints")
   }
 
-  return { id, sport, trackpoints }
+  return { sport, trackpoints }
 }

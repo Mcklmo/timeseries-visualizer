@@ -11,7 +11,7 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, heartRateBpm: 120, speedMps: 3 }),
       tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, heartRateBpm: 125, speedMps: 3 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
 
     expect(activity.samples).toHaveLength(2)
     expect(activity.samples[0].t).toBe(0)
@@ -27,7 +27,7 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:05.000Z') }), // time only — should be dropped
       tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
     expect(activity.samples).toHaveLength(2)
     expect(activity.samples.map((s) => s.t)).toEqual([0, 10])
   })
@@ -37,7 +37,7 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3 }),
       tp({ time: new Date('2026-01-01T00:00:20.000Z'), distanceMeters: 60, speedMps: 3 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
     expect(activity.totalTime).toBe(20)
     expect(activity.totalDistance).toBe(60)
   })
@@ -55,7 +55,7 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:32.000Z'), distanceMeters: 6, speedMps: 3 }), // 30s gap
       tp({ time: new Date('2026-01-01T00:00:33.000Z'), distanceMeters: 9, speedMps: 3 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
     expect(activity.totalTime).toBe(33)
     // Exactly 3 of the 4 intervals count: 0->1 and 1->2 are ordinary travel,
     // 2->32 is the 30s recording gap and scores 0, and 32->33 is the boundary
@@ -78,7 +78,7 @@ describe('normalizeActivity', () => {
         speedMps: speedAt(i),
       }),
     )
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
 
     expect(activity.samples.slice(10, 26).every((s) => s.moving === false)).toBe(true)
     expect(activity.totalTime).toBe(30)
@@ -92,7 +92,7 @@ describe('normalizeActivity', () => {
     const trackpoints = [0, 600, 1200, 1800].map((s) =>
       tp({ time: new Date(Date.UTC(2026, 0, 1, 0, 0, s)), lat: 47 + s / 100000, lon: 8 }),
     )
-    const activity = normalizeActivity({ id: 'a1', sport: 'track', trackpoints })
+    const activity = normalizeActivity({ sport: 'track', trackpoints })
     expect(activity.samplingIntervalS).toBe(600)
   })
 
@@ -103,7 +103,7 @@ describe('normalizeActivity', () => {
     const trackpoints = Array.from({ length: 12 }, (_, i) =>
       tp({ time: new Date(Date.UTC(2026, 0, 1, 0, 0, i * 600)), lat: 47 + i * 0.01, lon: 8, altitudeMeters: 400 + i }),
     )
-    const activity = normalizeActivity({ id: 'a1', sport: 'track', trackpoints })
+    const activity = normalizeActivity({ sport: 'track', trackpoints })
 
     expect(activity.samples.every((s) => s.moving)).toBe(true)
     expect(activity.totalMovingTime).toBe(activity.totalTime)
@@ -118,7 +118,7 @@ describe('normalizeActivity', () => {
     const trackpoints = times.map((s, i) =>
       tp({ time: new Date(Date.UTC(2026, 0, 1, 0, 0, s)), lat: 47 + i * 0.01, lon: 8 }),
     )
-    const activity = normalizeActivity({ id: 'a1', sport: 'track', trackpoints })
+    const activity = normalizeActivity({ sport: 'track', trackpoints })
 
     expect(activity.samples.map((s) => s.moving)).toEqual([true, true, true, true, false, true])
     // Four of the five intervals are ordinary 600s breadcrumbs; the 6-hour
@@ -131,7 +131,7 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3, heartRateBpm: 120 }),
       tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3, heartRateBpm: 125 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
     expect(activity.availableMetrics).toEqual(['pace', 'speed', 'heartRate'])
   })
 
@@ -142,7 +142,7 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3 }),
       tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'cycling', trackpoints })
+    const activity = normalizeActivity({ sport: 'cycling', trackpoints })
     expect(activity.availableMetrics).toEqual(['pace', 'speed'])
   })
 
@@ -151,31 +151,56 @@ describe('normalizeActivity', () => {
       tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3, cadenceSpm: 170 }),
       tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3, cadenceSpm: 172 }),
     ]
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints })
+    const activity = normalizeActivity({ sport: 'running', trackpoints })
     expect(activity.availableMetrics).not.toContain('power')
   })
 
   it('handles an empty trackpoint list without throwing', () => {
-    const activity = normalizeActivity({ id: 'a1', sport: 'running', trackpoints: [] })
+    const activity = normalizeActivity({ sport: 'running', trackpoints: [] })
     expect(activity.samples).toEqual([])
     expect(activity.totalTime).toBe(0)
     expect(activity.totalDistance).toBe(0)
     expect(activity.availableMetrics).toEqual([])
   })
 
-  it('passes id and sport through unchanged', () => {
-    const activity = normalizeActivity({
-      id: 'garmin-123',
-      sport: 'running',
-      trackpoints: [tp({ distanceMeters: 0, speedMps: 3 })],
-    })
-    expect(activity.id).toBe('garmin-123')
+  it('passes sport through unchanged', () => {
+    const activity = normalizeActivity({ sport: 'running', trackpoints: [tp({ distanceMeters: 0, speedMps: 3 })] })
     expect(activity.sport).toBe('running')
+  })
+
+  // No adapter supplies an id any more: it is a fingerprint of the normalized
+  // content, computed here (domain/activityKey.js). The property that matters
+  // is that reopening the same file lands on the same id, since that is what
+  // the remembered chart view is keyed by.
+  it('derives a stable id from the content: same trackpoints in, same id out', () => {
+    const trackpoints = [
+      tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3 }),
+      tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3 }),
+    ]
+    const first = normalizeActivity({ sport: 'running', trackpoints })
+    const second = normalizeActivity({ sport: 'running', trackpoints: trackpoints.map((p) => ({ ...p })) })
+
+    expect(first.id).toBe(second.id)
+    expect(first.id).toMatch(/^running-/)
+  })
+
+  it('gives a different id to a different recording', () => {
+    const base = [
+      tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3 }),
+      tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3 }),
+    ]
+    const shifted = base.map((p) => ({ ...p, time: new Date(p.time.getTime() + 1000) }))
+
+    expect(normalizeActivity({ sport: 'running', trackpoints: shifted }).id).not.toBe(
+      normalizeActivity({ sport: 'running', trackpoints: base }).id,
+    )
+    expect(normalizeActivity({ sport: 'running', trackpoints: base.slice(0, 1) }).id).not.toBe(
+      normalizeActivity({ sport: 'running', trackpoints: base }).id,
+    )
   })
 
   it('derives a name from sport and the computed startTime when no sportLabel is given', () => {
     const activity = normalizeActivity({
-      id: 'a1',
       sport: 'running',
       trackpoints: [tp({ time: new Date(2026, 0, 1, 6), distanceMeters: 0, speedMps: 3 })],
     })
@@ -184,7 +209,6 @@ describe('normalizeActivity', () => {
 
   it('uses sportLabel in the derived name when given', () => {
     const activity = normalizeActivity({
-      id: 'a1',
       sport: 'cycling',
       sportLabel: 'Gravel Ride',
       trackpoints: [tp({ time: new Date(2026, 0, 1, 6), distanceMeters: 0, speedMps: 3 })],

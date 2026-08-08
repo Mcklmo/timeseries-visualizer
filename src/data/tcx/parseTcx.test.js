@@ -54,9 +54,8 @@ const bikeTrackpoint = `
   </Trackpoint>`
 
 describe('parseTcx', () => {
-  it('extracts id, sport, and field-mapped trackpoints', () => {
+  it('extracts sport and field-mapped trackpoints', () => {
     const result = parseTcx(tcx({ trackpointsXml: fullTrackpoint }))
-    expect(result.id).toBe('2026-01-01T00:00:00.000Z')
     expect(result.sport).toBe('running')
     expect(result.trackpoints).toHaveLength(1)
 

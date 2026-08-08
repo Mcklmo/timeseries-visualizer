@@ -59,7 +59,7 @@ function parseTrackpoint(record, powerKey, sport) {
 
 /**
  * @param {ArrayBuffer} buffer
- * @returns {Promise<{id: string, sport: import('../../domain/types.js').Sport, sportLabel: (string|undefined), trackpoints: import('../../domain/types.js').RawTrackpoint[]}>}
+ * @returns {Promise<{sport: import('../../domain/types.js').Sport, sportLabel: (string|undefined), trackpoints: import('../../domain/types.js').RawTrackpoint[]}>}
  */
 export async function parseFit(buffer) {
   const { Decoder, Stream } = await import('@garmin/fitsdk')
@@ -98,10 +98,5 @@ export async function parseFit(buffer) {
     throw new Error("That FIT file doesn't contain any trackpoints")
   }
 
-  // FIT has no direct equivalent of TCX's <Id>, and no code downstream
-  // consumes this id, so a timestamp fallback (same kind TCX uses for a
-  // missing <Id>) is enough.
-  const id = `fit-${Date.now()}`
-
-  return { id, sport, sportLabel, trackpoints }
+  return { sport, sportLabel, trackpoints }
 }

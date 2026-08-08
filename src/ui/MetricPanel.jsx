@@ -8,7 +8,7 @@ import { insertGapBreaks } from '../domain/insertGapBreaks.js'
 import { gapThresholdFor } from '../domain/samplingInterval.js'
 import { makeDistanceTickFormatter, makeElapsedTickFormatter } from '../domain/units.js'
 import { isFullDomain } from '../domain/zoomDomain.js'
-import { metricRegistry, metricUnit } from '../metrics/metricRegistry.js'
+import { metricRegistry, metricUnit, statKinds } from '../metrics/metricRegistry.js'
 import { computeYDomain } from '../stats/aggregate.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
 import { CHART_MARGIN, Y_AXIS_WIDTH } from './chartGeometry.js'
@@ -20,7 +20,8 @@ import { SyncedTooltip } from './SyncedTooltip.jsx'
 // gesture would quietly grab a few pixels off the line it looks like it's on.
 const SYNC_ID = 'activity'
 
-const STAT_ORDER = ['max', 'min', 'avg', 'median']
+// Draw order comes from the registry's `statKinds`; the dash patterns stay
+// here, being presentation rather than domain.
 const STAT_DASH = { max: '4 4', min: '1 2', avg: undefined, median: '2 3' }
 
 // Plain-HTML summary row below the chart — a flex row naturally avoids
@@ -72,7 +73,7 @@ export function MetricPanel({ activity, metricId, xMode, zoomDomain, statsBasis,
   // the point of keeping it fixed.
   const yDomain = useMemo(() => computeYDomain({ samples: activity.samples, metric }), [activity.samples, metric])
 
-  const statEntries = STAT_ORDER.filter((kind) => enabledStats.includes(kind) && stats[kind] != null).map(
+  const statEntries = statKinds.filter((kind) => enabledStats.includes(kind) && stats[kind] != null).map(
     (kind) => ({ kind, value: stats[kind] }),
   )
 

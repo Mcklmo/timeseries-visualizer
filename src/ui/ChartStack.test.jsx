@@ -40,6 +40,17 @@ function ToggleMetric({ metricId }) {
   return <button onClick={() => toggleMetric(metricId)}>toggle-{metricId}</button>
 }
 
+// Every stat is off until asked for, so any test that wants a reference line
+// or a stat chip has to switch one on first.
+function ToggleStat({ metricId, statKind }) {
+  const { toggleStat } = useChartView()
+  return (
+    <button onClick={() => toggleStat(metricId, statKind)}>
+      toggle-{metricId}-{statKind}
+    </button>
+  )
+}
+
 function SwitchXMode({ mode }) {
   const { setXMode } = useChartView()
   return <button onClick={() => setXMode(mode)}>switch-x-{mode}</button>
@@ -152,13 +163,25 @@ describe('ChartStack', () => {
     // normalizeActivity flags both pace and speed as available whenever
     // speed data exists (it's sport-agnostic by design) — the sport-based
     // pick between them happens here, via isMetricForSport. pace and speed
-    // share a line color (they never render together), so disambiguate via
-    // the default-on avg stat label's unit text instead.
+    // share a line color (they never render together), so disambiguate via a
+    // stat chip's unit text — switching avg on for *both*, since which of the
+    // two rendered is the very thing under test.
     const cycling = { ...fixtureActivity, sport: 'cycling', availableMetrics: ['pace', 'speed', 'heartRate'] }
-    const { container } = await renderStack({ activity: cycling })
+    const { container } = await renderStack({
+      activity: cycling,
+      extra: (
+        <>
+          <ToggleStat metricId="pace" statKind="avg" />
+          <ToggleStat metricId="speed" statKind="avg" />
+        </>
+      ),
+    })
+    fireEvent.click(screen.getByText('toggle-pace-avg'))
+    fireEvent.click(screen.getByText('toggle-speed-avg'))
+
     const panels = container.querySelectorAll('.metric-panel')
     expect(panels).toHaveLength(2) // only one "how fast" panel, not both pace and speed
-    expect(panels[0].textContent).toContain('km/h')
+    await waitFor(() => expect(panels[0].textContent).toContain('km/h'))
     expect(panels[0].textContent).not.toContain('min/km')
   })
 
@@ -328,13 +351,14 @@ describe('ChartStack', () => {
   // forgot to recompute the window's totals still changes most chips, and
   // would leave average pace silently reporting the whole ride.
   it('reports the zoom window in the stat chips, and the whole activity again after reset', async () => {
-    const { container } = await renderStack()
-    // Second panel is heart rate (metricOrder ∩ availableMetrics), and every
-    // metric's default enabledStats is ['avg'].
-    const hrChip = () => [...container.querySelectorAll('.metric-panel')][1].querySelector('.stat-chip').textContent
+    const { container } = await renderStack({ extra: <ToggleStat metricId="heartRate" statKind="avg" /> })
+    // Second panel is heart rate (metricOrder ∩ availableMetrics). Stats are
+    // off until switched on, so there is no chip to read before this click.
+    fireEvent.click(screen.getByText('toggle-heartRate-avg'))
+    const hrChip = () => [...container.querySelectorAll('.metric-panel')][1].querySelector('.stat-chip')?.textContent
     // Whole activity, time-weighted, last sample weighing 0:
     // (120 + 130 + 150 + 140) × 10 / 40 = 135.
-    expect(hrChip()).toContain('AVG 135 bpm')
+    await waitFor(() => expect(hrChip()).toContain('AVG 135 bpm'))
 
     await pinchStack(container, { from: [242, 606], to: [151, 697] })
 

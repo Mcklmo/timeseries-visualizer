@@ -25,7 +25,6 @@ describe('GpxActivitySource', () => {
   it('loads a file ref through parseGpx + normalizeActivity into a full Activity', async () => {
     const activity = await new GpxActivitySource().load({ type: 'file', file: fileOf(validGpx) })
 
-    expect(activity.id).toBe('Test track')
     expect(activity.sport).toBe('track')
     expect(activity.samples).toHaveLength(2)
     expect(activity.totalTime).toBe(10)

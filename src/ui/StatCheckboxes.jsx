@@ -3,10 +3,8 @@
 // "avg pace" toggle independently. Each input carries an explicit aria-label
 // ("Heart rate max") since three checkboxes on the page are all just named
 // "max" visually — the metric name alone would collide across rows.
-import { metricRegistry } from '../metrics/metricRegistry.js'
+import { metricRegistry, statKinds } from '../metrics/metricRegistry.js'
 import { useChartView } from '../state/ChartViewContext.jsx'
-
-const STAT_KINDS = ['max', 'min', 'avg', 'median']
 
 export function StatCheckboxes({ metricId }) {
   const metric = metricRegistry[metricId]
@@ -15,7 +13,7 @@ export function StatCheckboxes({ metricId }) {
 
   return (
     <span className="stat-checkboxes">
-      {STAT_KINDS.map((kind) => (
+      {statKinds.map((kind) => (
         <label key={kind} className="stat-checkbox">
           <input
             type="checkbox"

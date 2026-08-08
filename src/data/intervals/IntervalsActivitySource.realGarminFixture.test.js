@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { formatPace } from '../../domain/units.js'
 import { metricRegistry } from '../../metrics/metricRegistry.js'
 import { computeMetricStat } from '../../stats/aggregate.js'
+import { FitActivitySource } from '../fit/FitActivitySource.js'
 import { IntervalsActivitySource } from './IntervalsActivitySource.js'
 
 const FIXTURE_DIR = join(process.cwd(), 'fixtures')
@@ -101,5 +102,24 @@ describe('real Garmin original downloaded from intervals.icu (gzipped fixtures/2
   it('carries the picker\'s real title through onto the activity', async () => {
     const activity = await loadFixtureActivity({ type: 'id', id: 'i23870166877', name: 'Aalborg tempo' })
     expect(activity.name).toBe('Aalborg tempo')
+  })
+
+  // The cross-path guarantee the content fingerprint exists for
+  // (domain/activityKey.js): this file downloaded from intervals.icu and the
+  // same file dropped onto the page are ONE activity as far as the remembered
+  // chart view is concerned (§10), not two.
+  //
+  // The title override is the trap this pins. It is applied *after*
+  // normalizeActivity returns, so a key that included `name` would silently
+  // fork the two routes apart — and only for activities the picker had a
+  // title for, which is the subset hardest to notice.
+  it('produces the same id as dropping that same file in, title override and all', async () => {
+    const downloaded = await loadFixtureActivity({ type: 'id', id: 'i23870166877', name: 'Aalborg tempo' })
+    const file = new File([fitBytes], '23870166877_ACTIVITY.fit', { type: 'application/vnd.ant.fit' })
+    const dropped = await new FitActivitySource().load({ type: 'file', file })
+
+    expect(downloaded.id).toBe(dropped.id)
+    expect(downloaded.name).not.toBe(dropped.name)
+    expect(dropped.id).toMatch(/^running-/)
   })
 })
