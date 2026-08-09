@@ -225,9 +225,24 @@ describe('MapPanel', () => {
 
   describe('the basemap', () => {
     /** Stubs the two globals the tile path uses, so the REAL loader runs.
-     *  `createImageBitmap` does not exist in jsdom at all. */
+     *  `createImageBitmap` does not exist in jsdom at all.
+     *
+     *  It HONOURS THE ABORT SIGNAL, and that is load bearing rather than
+     *  thoroughness: a stub that resolved anyway would let an aborted batch
+     *  paint tiles, and this panel's whole basemap bug lived in what happens
+     *  when a relayout aborts a batch and immediately asks for it again. The
+     *  body settles in a later microtask for the same reason — a real transfer
+     *  cannot possibly complete before the synchronous block that aborts it. */
     function stubTileNetwork() {
-      const fetchSpy = vi.fn(async () => ({ ok: true, blob: async () => ({}) }))
+      const fetchSpy = vi.fn(
+        (_url, { signal } = {}) =>
+          new Promise((resolve, reject) => {
+            const fail = () => reject(new Error('aborted'))
+            if (signal?.aborted) return fail()
+            signal?.addEventListener('abort', fail)
+            queueMicrotask(() => resolve({ ok: true, blob: async () => ({}) }))
+          }),
+      )
       vi.stubGlobal('fetch', fetchSpy)
       vi.stubGlobal('createImageBitmap', async () => ({ close() {} }))
       return fetchSpy
@@ -270,6 +285,37 @@ describe('MapPanel', () => {
       const lastTile = base.calls.findLastIndex((c) => c.name === 'drawImage')
       const lastStroke = base.calls.findLastIndex((c) => c.name === 'stroke')
       expect(lastTile).toBeLessThan(lastStroke)
+    })
+
+    // Switching the background on is the path that used to paint nothing at
+    // all: relayout ran a second time (a real ResizeObserver delivers one
+    // callback on observe(), and the stub in setupTests.js now does too),
+    // aborted the batch the first pass had started, and was handed those same
+    // doomed promises back instead of new requests. See map/tileLoader.js.
+    it('draws tiles when the basemap is switched on after mount', async () => {
+      stubTileNetwork()
+      const { container, rerender, activity } = renderPanel({ basemap: 'none' })
+      const base = layers(container)[BASE]
+
+      rerender(<MapPanel {...DEFAULTS} activity={activity} basemap="standard" />)
+
+      await waitFor(() => expect(base.calls.some((c) => c.name === 'drawImage')).toBe(true))
+    })
+
+    // relayout() reassigns canvas.width on all three layers, which wipes them,
+    // but only the base is repainted from inside relayout. Until the effect
+    // repainted the other two, switching the background on blanked the bright
+    // zoom window and the crosshair dot until the next resize.
+    it('restores the bright route after a basemap change resets the layers', () => {
+      stubTileNetwork()
+      const { container, rerender, activity } = renderPanel({ basemap: 'none' })
+      const windowLayer = layers(container)[WINDOW]
+      const before = windowLayer.calls.length
+
+      rerender(<MapPanel {...DEFAULTS} activity={activity} basemap="standard" />)
+
+      const since = windowLayer.calls.slice(before)
+      expect(since.filter((c) => c.name === 'lineTo' || c.name === 'moveTo')).toHaveLength(LATS.length)
     })
 
     // Legally required by both OSM's and CARTO's terms. Not optional, not

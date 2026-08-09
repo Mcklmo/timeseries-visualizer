@@ -133,10 +133,25 @@ export function createTileLoader({
       const controller = new AbortController()
       controllers.add(controller)
 
-      const request = (async () => {
+      // Declared and assigned in two steps rather than `const request = …`: the
+      // `finally` below reads this binding, and on the one path where fetchImpl
+      // throws SYNCHRONOUSLY that read happens before the assignment. `let`
+      // reads as undefined there — a `const` would throw a TDZ ReferenceError
+      // out of the finally and turn this module's "never rejects" contract into
+      // an unhandled rejection at every call site.
+      let request
+      request = (async () => {
         try {
           const response = await fetchImpl(tileUrl(provider, tile), { signal: controller.signal })
           if (!response.ok) return null
+          // A 200 whose body is not an image. The shape that matters is Vite's
+          // SPA fallback under `npm run dev`, which answers /api/tiles/… with
+          // index.html at HTTP 200 — `ok` is true, and without this check the
+          // only symptom is `decode` rejecting into the catch below and a map
+          // that stays silently blank. Missing headers are NOT a failure: the
+          // check only fires on a content-type we can positively see is wrong.
+          const type = response.headers?.get?.('content-type')
+          if (type && !type.startsWith('image/')) return null
           const bitmap = await decode(await response.blob())
           store(key, bitmap)
           return bitmap
@@ -147,7 +162,12 @@ export function createTileLoader({
           // noise would be per tile.
           return null
         } finally {
-          inFlight.delete(key)
+          // Only ever evict the entry THIS request still owns. `abort()` clears
+          // the whole map, and a newer load() for the same tile may already
+          // have registered its own promise by the time an aborted request's
+          // `finally` finally runs — deleting blindly would evict that newer
+          // entry and silently break the dedupe every caller depends on.
+          if (inFlight.get(key) === request) inFlight.delete(key)
           controllers.delete(controller)
         }
       })()
@@ -164,6 +184,16 @@ export function createTileLoader({
     abort() {
       for (const controller of controllers) controller.abort()
       controllers.clear()
+      // ⚠️ The dedupe map has to go with them, and this is not bookkeeping
+      // tidiness — it is the whole reason the basemap used to paint nothing.
+      // `fetch` rejects an aborted request ASYNCHRONOUSLY, so the `finally`
+      // that unregisters each key has not run yet and every entry here is
+      // still present but already doomed to resolve to null. The panel's
+      // relayout path aborts and re-requests the same tiles in the same
+      // synchronous block (ui/MapPanel.jsx), so leaving them would hand that
+      // second pass the promises this call just killed — no fetch, no bitmap,
+      // no repaint, and nothing left to trigger another attempt.
+      inFlight.clear()
     },
 
     /** Test seam: how many bitmaps are held. */

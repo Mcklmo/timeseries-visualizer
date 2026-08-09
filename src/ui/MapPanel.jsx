@@ -298,19 +298,48 @@ export function MapPanel({
     })
   }, [])
 
+  /** @returns {boolean} whether a new layout was actually built — the caller
+   *  has to repaint the other two layers when one was, see the effect below. */
   const relayout = useCallback(() => {
     const host = hostRef.current
-    if (!host) return
+    if (!host) return false
 
     const rect = host.getBoundingClientRect()
     const width = Math.round(rect.width)
     const canvasHeight = Math.round(rect.height)
-    if (!(width > 0) || !(canvasHeight > 0)) return
+    if (!(width > 0) || !(canvasHeight > 0)) return false
 
     // Read inside the resize path rather than once at mount: this is what
     // covers dragging the window to a second monitor and browser zoom, both of
     // which change devicePixelRatio and both of which also fire a resize.
     const dpr = window.devicePixelRatio || 1
+
+    // Nothing this layout is a function of has changed, so bail BEFORE
+    // prepareLayer wipes three canvases and abort() cancels the tiles that are
+    // on their way to them.
+    //
+    // This is the common path, not a rare one: a real ResizeObserver delivers
+    // one callback the moment observe() is called whether or not anything
+    // moved, so every mount and every basemap change used to run this twice.
+    // The second pass cost a redundant simplifyTrack, three backing-store
+    // resets and a full re-stroke — and, until tileLoader.abort() learned to
+    // clear its dedupe map, it also killed the basemap outright.
+    //
+    // `track` belongs in here with the geometry: it feeds both the fit and the
+    // decimation, and this panel is not remounted when a second activity is
+    // loaded, so a same-size same-basemap swap would otherwise keep the old
+    // route on screen.
+    const previous = layoutRef.current
+    if (
+      previous &&
+      previous.track === track &&
+      previous.width === width &&
+      previous.height === canvasHeight &&
+      previous.dpr === dpr &&
+      previous.providerId === provider.id
+    ) {
+      return false
+    }
 
     const fit = fitFor(track.bounds, { width, height: canvasHeight })
 
@@ -329,6 +358,11 @@ export function MapPanel({
     layoutRef.current = {
       width,
       height: canvasHeight,
+      // Carried only so the short-circuit above can compare them. Everything
+      // else in here is something a draw reads.
+      dpr,
+      track,
+      providerId: provider.id,
       fit,
       // Once per resize, never per frame — the whole point of the fixed fit.
       indices: simplifyTrack(track, fit),
@@ -356,31 +390,48 @@ export function MapPanel({
         if (bitmap && generationRef.current === generation) scheduleBasePaint()
       })
     }
+
+    return true
   }, [track, provider, paintBase, scheduleBasePaint])
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return undefined
 
-    // Mount: lay out and paint the base only. The two effects below paint the
-    // window and the marker on this same pass, so painting them here as well
-    // would draw each of them twice on every mount.
-    relayout()
+    // On MOUNT, lay out and paint the base only: the two effects below run on
+    // this same pass and paint the window and the marker themselves, so doing
+    // it here as well would draw each of them twice.
+    //
+    // On a LATER run — the basemap changed, or the activity did — that no
+    // longer holds. relayout() reassigns `canvas.width` on all three layers,
+    // which WIPES them, and a basemap change touches none of the dependencies
+    // of the window or marker effects, so neither re-runs to restore its layer.
+    // Left alone, switching the background on would blank the bright zoom
+    // window and the crosshair dot until the next resize. (This was masked
+    // until now by the ResizeObserver's initial callback repainting all three
+    // by accident; the short-circuit in relayout() correctly removes that.)
+    const hadLayout = layoutRef.current !== null
+    if (relayout() && hadLayout) {
+      paintWindowRef.current()
+      paintMarkerRef.current(currentCrosshair())
+    }
 
     // Resize: the fit, the decimation and all three backing stores are stale,
     // so every layer has to be repainted at the new geometry — through the refs
-    // above, for the reason documented there.
+    // above, for the reason documented there. Gated on relayout() having done
+    // real work, because a real ResizeObserver fires once on observe() whether
+    // or not the element ever changed size.
     const observer = new ResizeObserver(() => {
-      relayout()
+      if (!relayout()) return
       paintWindowRef.current()
       paintMarkerRef.current(currentCrosshair())
     })
     observer.observe(host)
 
     // Called directly as well as observed because ResizeObserver's initial
-    // callback is not something to depend on for a first paint: the stub in
-    // setupTests.js never fires at all, so without the direct call the panel
-    // would render blank in every test.
+    // callback is not something to depend on for a first paint: it is delivered
+    // asynchronously in a browser, and the stub in setupTests.js fires it
+    // synchronously, so without the direct call the first frame would be blank.
     return () => observer.disconnect()
   }, [relayout])
 

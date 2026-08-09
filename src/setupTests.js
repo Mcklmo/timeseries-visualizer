@@ -22,8 +22,31 @@ afterEach(() => {
 
 // Recharts' ResponsiveContainer needs ResizeObserver and real layout, neither
 // of which jsdom provides. Stub it so charts mount with a fixed size in tests.
+//
+// ⚠️ **observe() delivers one callback, because a real ResizeObserver does** —
+// unconditionally, as soon as you observe an element, whether or not it ever
+// changes size. A stub that never fired at all made every observer callback in
+// the app dead code under test, and hid a bug that blanked the route map's
+// basemap in every browser: MapPanel's second, observer-driven relayout aborted
+// the tile requests its first one had just started (see map/tileLoader.js
+// `abort`). Firing here is what makes that class of bug visible to the suite.
+//
+// The one liberty taken is timing: a browser delivers the callback
+// asynchronously, before the next paint. Firing synchronously inside observe()
+// keeps it inside the effect — and therefore inside React's act() — which an
+// await-free test can actually observe. Nothing in the app depends on the
+// callback landing in a later task.
 class ResizeObserverStub {
-  observe() {}
+  constructor(callback) {
+    this._callback = callback
+  }
+
+  observe(target) {
+    // Entries, not a bare call: ResponsiveContainer reads `contentRect` off
+    // them. getBoundingClientRect is pinned to 800×200 below.
+    this._callback([{ target, contentRect: target?.getBoundingClientRect?.() }], this)
+  }
+
   unobserve() {}
   disconnect() {}
 }
