@@ -3,11 +3,16 @@
 // convention here, so the API route is matched explicitly and everything else
 // is handed to the static-assets binding, which serves ./dist.
 import { handleFeedbackRequest } from './routes/feedback.js'
+import { STRAVA_ROUTE_PREFIX, handleStravaRequest } from './routes/strava.js'
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     if (url.pathname === '/api/feedback') return handleFeedbackRequest(request, env)
+    // A prefix, not an exact path: routes/strava.js owns its own sub-routing,
+    // so the five Strava endpoints stay one line here. The OAuth *callback*
+    // needs nothing — it lands on `/`, which is already served below.
+    if (url.pathname.startsWith(STRAVA_ROUTE_PREFIX)) return handleStravaRequest(request, env)
     return env.ASSETS.fetch(request)
   },
 }

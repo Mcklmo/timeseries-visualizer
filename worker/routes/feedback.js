@@ -73,7 +73,7 @@ export async function handleFeedbackRequest(request, env) {
     // dev server), where every request then shares one bucket.
     const clientIp = request.headers.get('cf-connecting-ip') ?? 'unknown'
 
-    if (!(await isWithinRateLimit(env, clientIp))) {
+    if (!(await isWithinRateLimit(env.FEEDBACK_RATE_LIMITER, clientIp))) {
       return errorResponse(
         429,
         'rate_limited',

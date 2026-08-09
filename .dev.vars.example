@@ -10,3 +10,20 @@ GITHUB_TOKEN=github_pat_your_token_scoped_to_this_repo_with_issues_write
 # and fine for local dev. Pair it with the matching test sitekey
 # (1x00000000000000000000AA) in .env's VITE_TURNSTILE_SITE_KEY.
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+
+# Strava OAuth. The client id is NOT secret (it ships in the authorize URL) —
+# it lives in wrangler.jsonc `vars` for production and here for local dev, and
+# its browser-side twin is VITE_STRAVA_CLIENT_ID in .env / .env.local.
+#
+# REGISTER TWO STRAVA APPS. A Strava app has exactly one "Authorization
+# Callback Domain", so one app cannot serve both activitymaxxer.com and
+# localhost. Use the localhost app's credentials here, the production app's in
+# wrangler.jsonc + `wrangler secret put STRAVA_CLIENT_SECRET`.
+#
+# Note also that Standard Tier caps an app at 10 connected athletes and
+# requires a paid Strava subscription on the owning account.
+#
+# This feature needs `npx wrangler dev`, not `npm run dev` — `vite` alone
+# serves no Worker routes, so every /api/strava/* call 404s.
+STRAVA_CLIENT_ID=your_localhost_strava_app_client_id
+STRAVA_CLIENT_SECRET=your_localhost_strava_app_client_secret

@@ -23,13 +23,21 @@
     // to the static asset server.
     "binding": "ASSETS"
   },
-  // Non-secret. The two secrets (GITHUB_TOKEN, TURNSTILE_SECRET_KEY) are set
-  // with `wrangler secret put` in prod and live in .dev.vars locally.
+  // Non-secret. The three secrets (GITHUB_TOKEN, TURNSTILE_SECRET_KEY,
+  // STRAVA_CLIENT_SECRET) are set with `wrangler secret put` in prod and live
+  // in .dev.vars locally.
   "vars": {
     "GITHUB_REPO_OWNER": "Mcklmo",
-    "GITHUB_REPO_NAME": "timeseries-visualizer"
+    "GITHUB_REPO_NAME": "timeseries-visualizer",
+    // Non-secret **by design**, not by oversight: a Strava client id ships in
+    // the authorize URL every athlete's browser is sent to. The same value is
+    // duplicated as VITE_STRAVA_CLIENT_ID in .env, which the client bundle
+    // needs to build that URL — keep the two in step; both files say so.
+    // A Strava app has exactly ONE Authorization Callback Domain, so this is
+    // the *production* app's id and local dev overrides it (see .env).
+    "STRAVA_CLIENT_ID": "REPLACE_WITH_PRODUCTION_STRAVA_CLIENT_ID"
   },
-  // Native rate limiting, keyed by CF-Connecting-IP in worker/routes/feedback.js.
+  // Native rate limiting, keyed by CF-Connecting-IP in the routes.
   // namespace_id only has to be unique within this Cloudflare account; there is
   // nothing to provision in the dashboard for it.
   "ratelimits": [
@@ -37,6 +45,21 @@
       "name": "FEEDBACK_RATE_LIMITER",
       "namespace_id": "1001",
       "simple": { "limit": 5, "period": 60 }
+    },
+    {
+      // A per-IP BURST CAP and nothing more. `period` accepts only 10 or 60
+      // seconds, and the counters are per-colo and eventually consistent —
+      // Cloudflare's own docs call it "intentionally designed to not be used
+      // as an accurate accounting system". So this cannot express Strava's
+      // real limits, which are 200 reads/15 min and 2,000/day **per
+      // application, shared across every connected athlete**. That budget is
+      // observed through the X-ReadRateLimit-Usage header the proxy forwards,
+      // never enforced here. 30/60s is roughly "a picker that keeps working
+      // while someone taps through activities" and well under the upstream
+      // window. See worker/lib/rateLimit.js.
+      "name": "STRAVA_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 30, "period": 60 }
     }
   ]
 }
