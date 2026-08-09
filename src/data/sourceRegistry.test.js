@@ -1,10 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
 import { createDefaultSource } from './sourceRegistry.js'
 
-/** A ref for a file with the given name; the bytes never matter here, because
- *  every assertion is about *which* adapter a ref routes to, not what it
- *  eventually parses. */
-const fileRef = (name) => ({ type: 'file', file: new File(['x'], name) })
+/** A ref for a file with the given name; the bytes only matter in the sniffing
+ *  block below, because every other assertion is about *which* adapter a ref
+ *  routes to, not what it eventually parses. */
+const fileRef = (name, bytes = 'x') => ({ type: 'file', file: new File([bytes], name) })
+
+async function gzip(bytes) {
+  const stream = new Response(bytes).body.pipeThrough(new CompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
 
 describe('sourceFor — file refs dispatch on the extension', () => {
   it.each([
@@ -19,12 +25,63 @@ describe('sourceFor — file refs dispatch on the extension', () => {
     expect(createDefaultSource().sourceFor(fileRef('RUN.FIT')).kind).toBe('fit')
   })
 
-  // Deliberate, and long-standing: TcxActivitySource then rejects it with a
-  // real parser error, which is a better answer than a shrug from the registry.
-  it('falls through to TCX for an unrecognised extension', () => {
+  // Naming a file is only half the dispatch now: an unrecognised extension has
+  // no answer until the bytes have been read, so `sourceFor` says so rather
+  // than guessing TCX and being overruled a moment later.
+  it('returns null for an unrecognised extension, deferring to the byte sniff', () => {
     const registry = createDefaultSource()
-    expect(registry.sourceFor(fileRef('run.kml')).kind).toBe('tcx')
-    expect(registry.sourceFor(fileRef('run')).kind).toBe('tcx')
+    expect(registry.sourceFor(fileRef('run.kml'))).toBeNull()
+    expect(registry.sourceFor(fileRef('run'))).toBeNull()
+  })
+})
+
+// The defect this closes: the *file* path trusted the filename while the
+// *network* path sniffed bytes, so a `.fit.gz` — which is what a bulk export
+// hands you — fell through to the TCX parser and died on "invalid XML", with
+// the inflate code sitting one directory away.
+describe('load — an unrecognised extension falls back to sniffing the bytes', () => {
+  const fitFixture = () => readFile('fixtures/23870166877_ACTIVITY.fit')
+
+  it('parses a gzipped FIT dropped as .fit.gz', async () => {
+    const bytes = await gzip(await fitFixture())
+    const activity = await createDefaultSource().load(fileRef('activity.fit.gz', bytes))
+
+    expect(activity.sport).toBe('running')
+    expect(activity.samples.length).toBeGreaterThan(0)
+  })
+
+  it('parses an uncompressed FIT whose name says nothing at all', async () => {
+    const activity = await createDefaultSource().load(fileRef('activity', await fitFixture()))
+    expect(activity.sport).toBe('running')
+  })
+
+  it('parses a TCX that arrived as .xml', async () => {
+    const xml = await readFile('fixtures/activity_23870166877.tcx', 'utf8')
+    const activity = await createDefaultSource().load(fileRef('export.xml', xml))
+    expect(activity.samples.length).toBeGreaterThan(0)
+  })
+
+  // A recognised extension is trusted and never read twice — the common path
+  // must not pay for the fallback.
+  it('never sniffs a file whose extension is recognised', async () => {
+    const file = new File([await fitFixture()], 'run.fit')
+    const arrayBuffer = vi.spyOn(file, 'arrayBuffer')
+
+    await createDefaultSource().load({ type: 'file', file })
+
+    // Exactly one read, and it is the parser's own.
+    expect(arrayBuffer).toHaveBeenCalledTimes(1)
+  })
+
+  // Still deliberate, and still load-bearing: bytes that match nothing get a
+  // real parser error rather than a shrug from the registry.
+  it('falls through to TCX when the bytes match nothing either', async () => {
+    await expect(createDefaultSource().load(fileRef('run.kml', 'not an activity'))).rejects.toThrow()
+  })
+
+  it('falls through rather than crashing on a truncated gzip stream', async () => {
+    const truncated = (await gzip(await fitFixture())).subarray(0, 12)
+    await expect(createDefaultSource().load(fileRef('run.gz', truncated))).rejects.toThrow()
   })
 })
 

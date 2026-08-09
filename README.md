@@ -44,8 +44,11 @@ This project is **functional end-to-end, including real Garmin file upload** —
 - The domain pipeline (`buildDistanceAxis`, `deriveSpeed`, `detectPauses`, `smooth`,
   `normalizeActivity`) and `data/tcx/` (`parseTcx` + `TcxActivitySource`) are built and
   tested, including a cross-check against a real Garmin export (see Testing notes below):
-  computed average pace matches Garmin's own reported value to the second. `App.jsx`
-  routes a dropped/browsed file to the real TCX, FIT or GPX parser by extension.
+  computed average pace matches Garmin's own reported value to the second.
+  `data/sourceRegistry.js` routes a dropped/browsed file to the real TCX, FIT or GPX parser
+  by extension — and, when the name says nothing useful, by **sniffing the bytes**, gunzipping
+  first if needed. So a `.fit.gz` straight out of a bulk export opens, rather than reaching
+  the XML parser and dying on "invalid XML".
 - **GPX** (`data/gpx/`) covers everything that isn't a training watch — satellite messengers
   (SPOT), cameras (OM System Tough TG-7 via OI.Track), phone apps. A GPX carries position,
   elevation and time and nothing else, so distance is reconstructed by haversine and speed

@@ -9,13 +9,15 @@
 //
 // Two dispatch axes, and they are genuinely different questions:
 //
-//   - **A file ref dispatches on the filename extension.** An unrecognised
-//     extension falls through to TcxActivitySource, which rejects it with a
-//     real parser error rather than a shrug — deliberate, and load-bearing in
-//     the tests. (Known rough edge, its own change: the *file* path trusts the
-//     extension while the *network* path sniffs bytes via fileFormat.js, so a
-//     `.fit.gz` dropped on the page dies on "invalid XML" with the inflate
-//     code sitting one directory away.)
+//   - **A file ref dispatches on the filename extension, and falls back to
+//     sniffing its bytes.** A recognised extension is trusted and costs
+//     nothing: `.fit`, `.gpx` and `.tcx` route straight to their parser as they
+//     always did. Anything else is read, gunzipped if it is gzipped, and put
+//     through the same `fileFormat.js` the network path uses — which is what
+//     makes a `.fit.gz` work instead of dying on "invalid XML" with the inflate
+//     code sitting one directory away. Bytes that match nothing still fall
+//     through to TcxActivitySource, so an unparseable file gets a real parser
+//     error rather than a shrug — deliberate, and load-bearing in the tests.
 //   - **An id ref dispatches on `ref.provider`, and never on the id itself.**
 //     Strava ids and intervals.icu ids are both opaque strings; there is no
 //     shape to tell them apart by. Before this file existed, `type === 'id'`
@@ -34,6 +36,7 @@
 // registry touches neither. The defaults read the real app-wide stores so
 // App.jsx can call this with no arguments, and tests inject their own —
 // exactly the pattern credentialStore.js documents.
+import { detectActivityFormat, gunzipIfNeeded } from './fileFormat.js'
 import { FitActivitySource } from './fit/FitActivitySource.js'
 import { GpxActivitySource } from './gpx/GpxActivitySource.js'
 import { credentialStore } from './intervals/credentialStore.js'
@@ -101,7 +104,44 @@ export function createDefaultSource({
     if (ref?.type !== 'file') return tcxSource
     const name = ref.file.name.toLowerCase()
     const extension = Object.keys(SOURCE_BY_EXTENSION).find((ext) => name.endsWith(ext))
-    return extension ? SOURCE_BY_EXTENSION[extension] : tcxSource
+    return extension ? SOURCE_BY_EXTENSION[extension] : null
+  }
+
+  /**
+   * The fallback for a file whose name told us nothing — `.fit.gz` straight out
+   * of a bulk export, a `.xml` that is really a TCX, a file the OS renamed.
+   *
+   * Only reached when the extension is unrecognised, so the common path pays
+   * nothing: a `.fit` is never read twice, and this function never runs for one.
+   *
+   * The inflated bytes are re-wrapped as a `File` rather than handed to the
+   * parser directly, because that keeps every adapter's contract exactly as it
+   * was — they take a `File`, and none of them needs to learn that some files
+   * arrive pre-decompressed. The name is carried across so an error message
+   * still names what the athlete dropped.
+   *
+   * `null` means "the bytes matched nothing either", and the caller then falls
+   * through to TcxActivitySource so the athlete gets a real parser error rather
+   * than a shrug.
+   *
+   * @param {import('./ActivitySource.js').FileActivityRef} ref
+   * @returns {Promise<{source: ActivitySource, ref: ActivityRef}|null>}
+   */
+  async function sniffFileRef(ref) {
+    let bytes
+    try {
+      bytes = await gunzipIfNeeded(new Uint8Array(await ref.file.arrayBuffer()))
+    } catch {
+      // A truncated or corrupt gzip stream. Nothing useful to say here that
+      // the parser's own error will not say better about the bytes as given.
+      return null
+    }
+    const format = detectActivityFormat(bytes)
+    if (!format) return null
+    return {
+      source: SOURCE_BY_EXTENSION[`.${format}`],
+      ref: { type: 'file', file: new File([bytes], ref.file.name) },
+    }
   }
 
   return {
@@ -113,10 +153,19 @@ export function createDefaultSource({
     // throw. The port says load returns a Promise, and ActivityContext's caller
     // only has a `.catch` — a sync throw from here would escape it and land as
     // an unhandled error in a React event handler instead of in ErrorState.
-    load: async (ref) => sourceFor(ref).load(ref),
+    load: async (ref) => {
+      const byName = sourceFor(ref)
+      if (byName) return byName.load(ref)
+      // Only an unrecognised *file* extension reaches here — `sourceFor`
+      // returns a source for everything else, or throws.
+      const sniffed = await sniffFileRef(ref)
+      return sniffed ? sniffed.source.load(sniffed.ref) : tcxSource.load(ref)
+    },
     // Exposed for the registry's own tests, which assert *which* adapter a ref
     // routes to rather than what it eventually loads. Not part of the
-    // ActivitySource port — no component may reach for it.
+    // ActivitySource port — no component may reach for it. **Null for a file
+    // whose extension is unrecognised**: naming it is only half the dispatch
+    // now, and the other half needs the bytes.
     sourceFor,
   }
 }

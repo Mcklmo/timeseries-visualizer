@@ -387,10 +387,18 @@ Stage 3 is what gives it a third value.
 folded into it — the single import that had pinned an otherwise provider-neutral module to one
 provider.
 
-**The latent defect this exposed is still open**, and is now a ~6-line change rather than a
-refactor: the network path sniffs bytes and gunzips, while `sourceFor` trusts the filename
-extension — so a `.fit.gz` dropped on the page still falls through to `TcxActivitySource` and dies
-on "invalid XML", using inflate code one directory away. Its own commit or not at all.
+**The latent defect this exposed is now closed too**, in its own commit and only because
+`fileFormat.js` had become provider-neutral first: `sourceRegistry.load` falls back to sniffing
+the bytes (gunzipping first) when a filename's extension is unrecognised, so the file path and
+the network path finally agree about what a file is. A `.fit.gz` out of a bulk export opens
+instead of reaching the XML parser and dying on "invalid XML". A recognised extension is still
+trusted and still read exactly once — the common path pays nothing, and there is a test pinning
+that. Bytes that match nothing still fall through to `TcxActivitySource` for a real parser error,
+which was the deliberate part of the old behaviour and is kept.
+
+The one visible consequence: **`sourceFor` now returns `null` for an unrecognised file
+extension** rather than `TcxActivitySource`. Naming a file is only half the dispatch, and
+guessing a source that the byte sniff would overrule a moment later would make the seam lie.
 
 ### 4. Split `metricRegistry` into model + presentation *(medium — highest leverage of the non-Strava items)*
 
