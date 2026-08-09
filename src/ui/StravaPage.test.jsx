@@ -399,82 +399,133 @@ describe('StravaPage — the connected half', () => {
   })
 })
 
-// **The regression suite for the ~50-row wall.** Every test here needs
-// `windowedStubApi`: paging past the first page is invisible against a stub
-// that returns its whole list however narrow the window, which is exactly why
-// the old "widens the range backwards" test passed while the button was dead.
+// **The regression suite for "the range is a filter, not a window".** Every
+// test here needs `windowedStubApi`: none of this is visible against a stub that
+// returns its whole list however narrow the window, which is exactly why the
+// original "widens the range backwards" test passed while the button was dead.
 //
-// One activity a day for 120 days, against a 90-day default range and a 50-row
-// page: the first window can only return days 1-50, so days 51+ exist solely on
-// the far side of a working *Load earlier activities*.
-describe('StravaPage — paging past the first window', () => {
-  const POOL_DAYS = 120
+// One activity a day for 240 days against a 50-row page, so no single response
+// can ever cover the 90-day default range, let alone a 12-month one.
+describe('StravaPage — loading the whole window', () => {
+  const POOL_DAYS = 240
+
+  // A fill is several sequential round trips, each re-rendering a list a few
+  // hundred rows long. That is comfortably under RTL's 1s default on its own
+  // and not always under it when the whole suite runs in parallel, so the waits
+  // that span a fill say how long they mean rather than inheriting a timeout
+  // sized for a single render.
+  const FILL = { timeout: 5000 }
 
   async function renderPaged() {
     const user = userEvent.setup()
     const fetchImpl = windowedStubApi(activityPool(POOL_DAYS))
     renderPage({ store: tokenStoreDouble(LIVE_TOKENS), fetchImpl })
     await screen.findByRole('button', { name: /^Day 1\D/ })
+    // The fill runs on its own after the first page lands, so "rendered" is not
+    // "settled" here — every test below waits for the state it actually needs.
     return { user, fetchImpl }
   }
 
   const loadEarlier = (user) =>
     user.click(screen.getByRole('button', { name: /load earlier activities/i }))
 
-  // **The bug, stated directly.** `before` used to stay pinned to the range's
-  // end, so a wider window ending on the same day re-fetched the same newest 50
-  // activities, mergeById deduped every one of them away, and the list never
-  // grew past its first page.
-  it('reaches activities the first window could not return', async () => {
-    const { user } = await renderPaged()
+  /** Resolved once no further request has been made for a turn of the loop —
+   *  the only way to assert a *fill has stopped* rather than merely paused. */
+  async function settled(fetchImpl) {
+    let count = -1
+    await waitFor(() => {
+      const now = listWindows(fetchImpl).length
+      const wasStable = now === count
+      count = now
+      expect(wasStable).toBe(true)
+    }, FILL)
+    return listWindows(fetchImpl)
+  }
 
-    expect(screen.queryByRole('button', { name: /^Day 60\D/ })).not.toBeInTheDocument()
+  // **The default range, and the shape of the whole bug.** One request returns
+  // the newest 50 days; the other 40 of the 90 the filter claims exist only
+  // behind a second request that the hook has to make for itself.
+  it('keeps requesting until the range is covered, not just its newest page', async () => {
+    const { fetchImpl } = await renderPaged()
 
-    await loadEarlier(user)
-
-    expect(await screen.findByRole('button', { name: /^Day 60\D/ })).toBeInTheDocument()
-  })
-
-  // The floor still has to widen too — a fetched row that falls outside the
-  // range is filtered straight back out of the list by `activityInRange`.
-  it('widens the range backwards *and* adds rows', async () => {
-    const { user, fetchImpl } = await renderPaged()
-    const before = visibleDays().length
-
-    await loadEarlier(user)
-
-    await waitFor(() => expect(visibleDays().length).toBeGreaterThan(before))
-    const windows = listWindows(fetchImpl)
-    expect(windows[1].after).toBeLessThan(windows[0].after)
-  })
-
-  // The ceiling lands on the whole of the oldest day held, not the day before
-  // it: one day can hold several activities and only some of them may have
-  // fitted in the last response. The overlapping day costs one duplicate that
-  // mergeById drops; skipping it would silently lose rows.
-  it('walks the request ceiling back to the oldest day held', async () => {
-    const { user, fetchImpl } = await renderPaged()
-
-    await loadEarlier(user)
-    await waitFor(() => expect(listWindows(fetchImpl).length).toBe(2))
-
-    const windows = listWindows(fetchImpl)
-    // First request: the range's own end — today, sent exclusive as midnight
-    // at the start of tomorrow, which is what `dayAgo(-1)` spells.
-    expect(windows[0].before).toBe(midnightOn(dayAgo(-1)))
-    // Second: the 50th day back is the oldest row held, so the ceiling is
-    // midnight at the start of the day after it.
+    expect(await screen.findByRole('button', { name: /^Day 89\D/ }, FILL)).toBeInTheDocument()
+    const windows = await settled(fetchImpl)
+    expect(windows).toHaveLength(2)
+    // The second picks up at the oldest day the first returned — the whole of
+    // that day, since it may hold rows that did not fit in the page.
     expect(windows[1].before).toBe(midnightOn(dayAgo(49)))
   })
 
-  // Rows arrive as a page strictly older than everything held, so the merged
-  // order has to be stated rather than inherited from the response — otherwise
-  // the second page renders above the first and the list reads oldest-first.
-  it('keeps the list newest first across pages', async () => {
-    const { user } = await renderPaged()
+  // **The reported bug.** Tapping *12 months* used to fire one request that
+  // came back with the same rows already on screen, so the view did not change
+  // and the preset looked inert.
+  it('loads twelve months of activities when 12 months is picked', async () => {
+    const { user, fetchImpl } = await renderPaged()
+    await settled(fetchImpl)
+    expect(screen.queryByRole('button', { name: /^Day 200\D/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /12 months/ }))
+
+    // Day 200 is beyond the 90-day default and beyond any single page, so it
+    // can only arrive by the fill walking back through the wider range.
+    expect(await screen.findByRole('button', { name: /^Day 200\D/ }, FILL)).toBeInTheDocument()
+    expect(visibleDays()).toHaveLength(POOL_DAYS)
+  })
+
+  // The fill has to stop, and stop *without* one last empty request: a window
+  // Strava answered with less than a full page is a window it has nothing more
+  // for, and asking again is a round trip that can only return the same rows.
+  it('stops as soon as a page comes back short, and asks no more', async () => {
+    const { user, fetchImpl } = await renderPaged()
+    await settled(fetchImpl)
+
+    await user.click(screen.getByRole('button', { name: /12 months/ }))
+    await screen.findByRole('button', { name: /^Day 240\D/ }, FILL)
+
+    // 2 for the default range, then 12 months of a 240-activity history: pages
+    // of 50 from day 1, and the fifth is short and ends it.
+    const windows = await settled(fetchImpl)
+    expect(windows).toHaveLength(7)
+  })
+
+  // **The common case must stay one request.** An athlete with a handful of
+  // activities in the window gets all of them in the first response, and a fill
+  // that could not tell a short page from a full one would double every load on
+  // the phone connection this view exists for.
+  it('makes exactly one request when the first page already covers the range', async () => {
+    const fetchImpl = windowedStubApi(activityPool(5))
+    renderPage({ store: tokenStoreDouble(LIVE_TOKENS), fetchImpl })
+
+    await screen.findByRole('button', { name: /^Day 5\D/ })
+    expect(await settled(fetchImpl)).toHaveLength(1)
+  })
+
+  // Widening is the athlete's half of this: the fill only ever covers the range
+  // they set, so reaching further back has to move the floor. The ceiling moves
+  // with it so the request lands below everything already held rather than
+  // re-fetching the page they are looking at.
+  it('reaches past the range on Load earlier activities', async () => {
+    const { user, fetchImpl } = await renderPaged()
+    await settled(fetchImpl)
+    expect(screen.queryByRole('button', { name: /^Day 150\D/ })).not.toBeInTheDocument()
+    const covered = listWindows(fetchImpl).length
 
     await loadEarlier(user)
-    await screen.findByRole('button', { name: /^Day 60\D/ })
+
+    expect(await screen.findByRole('button', { name: /^Day 150\D/ }, FILL)).toBeInTheDocument()
+    const windows = listWindows(fetchImpl)
+    expect(windows[covered].after).toBeLessThan(windows[covered - 1].after)
+    // Resumed below the oldest row held — day 90, the range's floor — rather
+    // than from the range's end.
+    expect(windows[covered].before).toBe(midnightOn(dayAgo(89)))
+  })
+
+  // Rows arrive as pages strictly older than everything held, so the merged
+  // order has to be stated rather than inherited from the response — otherwise
+  // each new page renders above the last and the list reads oldest-first.
+  it('keeps the list newest first across pages', async () => {
+    const { fetchImpl } = await renderPaged()
+    await settled(fetchImpl)
 
     const days = visibleDays()
     expect(days).toEqual([...days].sort((a, b) => a - b))
@@ -486,20 +537,54 @@ describe('StravaPage — paging past the first window', () => {
   // with nothing in it.
   it('drops the ceiling back to the range end when the filter changes', async () => {
     const { user, fetchImpl } = await renderPaged()
-    await loadEarlier(user)
-    await screen.findByRole('button', { name: /^Day 60\D/ })
+    await settled(fetchImpl)
 
     await user.click(screen.getByRole('button', { name: /30 days/ }))
 
-    await waitFor(() => expect(listWindows(fetchImpl).length).toBe(3))
-    const windows = listWindows(fetchImpl)
-    expect(windows[2].before).toBe(midnightOn(dayAgo(-1)))
+    const windows = await settled(fetchImpl)
+    expect(windows.at(-1).before).toBe(midnightOn(dayAgo(-1)))
     // `after` is nudged one second earlier than local midnight, per
     // stravaBoundsFor — Strava reads it as strictly-after.
-    expect(windows[2].after).toBe(midnightOn(dayAgo(30)) - 1)
+    expect(windows.at(-1).after).toBe(midnightOn(dayAgo(30)) - 1)
     // And the list narrows to what the athlete asked for, keeping the rows it
     // already fetched behind the filter rather than dropping them.
     expect(screen.queryByRole('button', { name: /^Day 60\D/ })).not.toBeInTheDocument()
+    expect(visibleDays()).toHaveLength(30)
+  })
+
+  // The fill is the only thing here that issues requests nobody pressed, so it
+  // needs a stop of its own. Four activities a day over a 12-month range is
+  // ~1400 rows — past the budget, and a range that dense is reachable by hand.
+  // The point is not the exact number: it is that the walk ends and hands back
+  // to the button rather than running until the history does.
+  it('gives up after AUTO_FILL_MAX_REQUESTS rather than walking a huge range', async () => {
+    const dense = Array.from({ length: 300 }, (_, day) => day + 1).flatMap((day) =>
+      [0, 1, 2, 3].map((slot) => ({
+        id: 20000 + day * 10 + slot,
+        name: `Day ${day}`,
+        sport_type: 'Run',
+        start_date_local: localDaysAgo(day),
+        start_date: utcDaysAgo(day),
+        distance: 10000,
+        moving_time: 3000,
+      })),
+    )
+    const fetchImpl = windowedStubApi(dense)
+    const user = userEvent.setup()
+    renderPage({ store: tokenStoreDouble(LIVE_TOKENS), fetchImpl })
+    // All-variants: four rows share every day's name in this fixture.
+    await screen.findAllByRole('button', { name: /^Day 1\D/ })
+    await settled(fetchImpl)
+
+    await user.click(screen.getByRole('button', { name: /12 months/ }))
+
+    const windows = await settled(fetchImpl)
+    // The budget is 20 fill requests on top of the one that starts the browse,
+    // and the default range's own pages came before it.
+    expect(windows.length).toBeLessThanOrEqual(30)
+    // Stopped short of the range rather than covering it — which is exactly
+    // what the button is still there for.
+    expect(screen.queryAllByRole('button', { name: /^Day 300\D/ })).toHaveLength(0)
   })
 })
 
