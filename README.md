@@ -133,6 +133,12 @@ shipping, since `dev` mode hides bugs that only show up once the code is minifie
   npm run preview -- --port 4173
   ```
 
+  or
+
+  ```bash
+  npm run build && npx wrangler dev
+  ```
+
   Open the printed URL (`http://localhost:4173` above) and click through the app as you
   would the deployed site — file upload/parsing in particular is worth re-checking here,
   since minification/tree-shaking can occasionally break something `dev` mode wouldn't catch.
