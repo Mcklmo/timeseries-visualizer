@@ -29,9 +29,18 @@ import { createContext, createElement, useContext } from 'react'
  * different things in two files. Providers that hand back a file with real
  * timestamps in it (intervals.icu) neither send nor need it.
  *
+ * `sportType` is the third of these, and the last thing a picker row knows that
+ * an adapter cannot cheaply re-derive. A provider that returns *telemetry*
+ * rather than a recorded file has no sport field anywhere in that telemetry —
+ * Strava's stream set is seven parallel arrays of numbers — and the sport has
+ * to be known **before** the samples are assembled, because cadence for a foot
+ * sport is reported per-leg and must be doubled. Fetching the activity's detail
+ * just to learn its sport would be a second request per activity opened. Passed
+ * through uninterpreted; each provider's own module knows what its values mean.
+ *
  * @typedef {{ type: 'file', file: File }} FileActivityRef
  * @typedef {{ type: 'id', provider: ActivityProvider, id: string, name?: string,
- *             startedAtUtc?: string }} IdActivityRef
+ *             startedAtUtc?: string, sportType?: string }} IdActivityRef
  * @typedef {FileActivityRef | IdActivityRef} ActivityRef
  */
 

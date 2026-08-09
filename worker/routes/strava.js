@@ -90,6 +90,18 @@ function tokenFailure(result) {
   // Strava's own body is never returned: it can name the client, and on a
   // misconfiguration it describes the credential. Detail goes to the log.
   console.error(`strava oauth: ${result.detail}`)
+  // Standard Tier caps this app at 10 connected athletes, and athlete 11's
+  // exchange just fails. Reported as a generic auth failure it reads as "your
+  // Strava login is broken" — wrong, and not something the person seeing it
+  // can fix. See looksLikeAthleteCap for how confident this classification is.
+  if (result.athleteCap) {
+    return errorResponse(
+      403,
+      'athlete_cap',
+      'This app can connect a limited number of Strava accounts, and it is currently full. ' +
+        'This is a limit on the app, not on your account.',
+    )
+  }
   if (result.status === 400 || result.status === 401) {
     return errorResponse(400, 'invalid_grant', 'Strava rejected that authorization. Please connect again.')
   }

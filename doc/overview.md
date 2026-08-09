@@ -54,18 +54,24 @@ whole story at that moment in the run.
 - **No account, no upload to a server, no setup.** Drop a file and the charts
   render immediately in the browser — the file is parsed on your own machine
   and never uploaded anywhere.
-- **On a phone, connect Intervals.icu instead.** A watch file isn't something
-  you can browse to on a phone, so you can paste an Intervals.icu API key once
-  and pick an activity from your real history. Your browser fetches it from
-  Intervals.icu **directly** — nothing passes through this app's server, which
-  serves nothing but the page itself. It is off unless you turn it on, and one
-  "Disconnect" removes the key again.
+- **On a phone, connect Intervals.icu or Strava instead.** A watch file isn't
+  something you can browse to on a phone, so you can connect an account once
+  and pick an activity from your real history. Both are off unless you turn
+  them on, and either can be disconnected in one press.
+  - **Intervals.icu** — paste an API key. Your browser fetches from
+    Intervals.icu **directly**; nothing about it passes through this app's
+    server. It downloads the *original* file your watch uploaded.
+  - **Strava** — approve read access on Strava's own page. This one **does**
+    go through this app's server, because Strava requires a secret that cannot
+    live in a web page. The server passes requests through and stores nothing.
+    Disconnect revokes the access at Strava, not just locally.
 
 ## How it works, in brief
 
 1. **Load an activity** — drag and drop a `.tcx`, `.fit` or `.gpx` file
-   exported from a Garmin device (or pick one from a connected Intervals.icu
-   account, which downloads the *original* file your watch uploaded).
+   exported from a Garmin device, or pick one from a connected Intervals.icu
+   account (which downloads the *original* file your watch uploaded) or a
+   connected Strava account (which reads Strava's recorded data streams).
 2. **The app parses and normalizes it** — extracting time, distance, pace,
    heart rate, cadence, power, and elevation into one consistent internal
    format, deriving values (like pace) that aren't stored directly, and

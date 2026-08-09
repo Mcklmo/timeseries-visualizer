@@ -38,30 +38,40 @@ import { FitActivitySource } from './fit/FitActivitySource.js'
 import { GpxActivitySource } from './gpx/GpxActivitySource.js'
 import { credentialStore } from './intervals/credentialStore.js'
 import { IntervalsActivitySource } from './intervals/IntervalsActivitySource.js'
+import { readFreshAccessToken } from './strava/stravaApi.js'
+import { StravaActivitySource } from './strava/StravaActivitySource.js'
 import { TcxActivitySource } from './tcx/TcxActivitySource.js'
 
 /** @typedef {import('./ActivitySource.js').ActivityRef} ActivityRef */
 /** @typedef {import('./ActivitySource.js').ActivitySource} ActivitySource */
 
 /**
+ * `getStravaAccessToken` is **async** where `getIntervalsApiKey` is not, and
+ * that asymmetry is real rather than an inconsistency: an intervals.icu key is
+ * a password that never expires, while a Strava access token lives six hours
+ * and reading it may have to refresh it first.
+ *
  * @param {{
  *   getIntervalsApiKey?: () => string|null,
+ *   getStravaAccessToken?: () => Promise<string>,
  *   fetchImpl?: typeof fetch,
  * }} [options]
  * @returns {ActivitySource}
  */
 export function createDefaultSource({
   getIntervalsApiKey = () => credentialStore.readApiKey(),
+  getStravaAccessToken = () => readFreshAccessToken({ fetchImpl }),
   fetchImpl,
 } = {}) {
   const tcxSource = new TcxActivitySource()
   const fitSource = new FitActivitySource()
   const gpxSource = new GpxActivitySource()
   const intervalsSource = new IntervalsActivitySource({ getApiKey: getIntervalsApiKey, fetchImpl })
+  const stravaSource = new StravaActivitySource({ getAccessToken: getStravaAccessToken, fetchImpl })
 
   const SOURCE_BY_EXTENSION = { '.fit': fitSource, '.gpx': gpxSource, '.tcx': tcxSource }
   /** @type {Record<import('./ActivitySource.js').ActivityProvider, ActivitySource>} */
-  const SOURCE_BY_PROVIDER = { intervals: intervalsSource }
+  const SOURCE_BY_PROVIDER = { intervals: intervalsSource, strava: stravaSource }
 
   /** @param {ActivityRef} ref */
   function sourceFor(ref) {

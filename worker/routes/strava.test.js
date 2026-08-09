@@ -48,7 +48,12 @@ const authed = (extra = {}) => ({ authorization: `Bearer ${ACCESS_TOKEN}`, ...ex
  * Stubs global fetch, routing by URL. `upstream` overrides the response for
  * the API endpoints so status pass-through can be driven per test.
  */
-function stubFetch({ tokenStatus = 200, upstream, deauthorizeStatus = 200 } = {}) {
+function stubFetch({
+  tokenStatus = 200,
+  tokenErrors = [{ resource: 'AuthorizationCode', field: 'code', code: 'invalid' }],
+  upstream,
+  deauthorizeStatus = 200,
+} = {}) {
   const calls = []
   const impl = vi.fn(async (input, options) => {
     // The proxy passes a Request object; the oauth lib passes a url + init.
@@ -57,7 +62,9 @@ function stubFetch({ tokenStatus = 200, upstream, deauthorizeStatus = 200 } = {}
 
     if (request.url === TOKEN_URL) {
       if (tokenStatus !== 200) {
-        return new Response(JSON.stringify({ message: `Bad Request: ${CLIENT_SECRET}` }), { status: tokenStatus })
+        return new Response(JSON.stringify({ message: `Bad Request: ${CLIENT_SECRET}`, errors: tokenErrors }), {
+          status: tokenStatus,
+        })
       }
       return new Response(JSON.stringify(stravaTokenPayload), { status: 200 })
     }
@@ -149,6 +156,25 @@ describe('POST /api/strava/token', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ ok: false, error: 'invalid_grant' })
+  })
+
+  // Standard Tier allows 10 connected athletes; athlete 11's exchange fails.
+  // "Your Strava login is broken" is the wrong story to tell them.
+  it('names the athlete cap instead of a generic auth failure', async () => {
+    stubFetch({
+      tokenStatus: 400,
+      tokenErrors: [{ resource: 'Application', field: 'client_id', code: 'exceeded' }],
+    })
+
+    const response = await handleStravaRequest(
+      makeRequest('token', { method: 'POST', body: { code: 'c' } }),
+      makeEnv(),
+    )
+
+    const body = await response.json()
+    expect(body.error).toBe('athlete_cap')
+    expect(body.message).toMatch(/limited number of strava accounts/i)
+    expect(body.message).not.toMatch(/reconnect|connect again/i)
   })
 })
 

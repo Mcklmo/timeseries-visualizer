@@ -29,8 +29,36 @@ const DEAUTHORIZE_URL = `${STRAVA_OAUTH_ORIGIN}/oauth/deauthorize`
  */
 
 /**
- * @typedef {{ok: true, tokens: StravaTokens} | {ok: false, status: number|null, detail: string}} TokenResult
+ * @typedef {{ok: true, tokens: StravaTokens}
+ *   | {ok: false, status: number|null, detail: string, athleteCap?: boolean}} TokenResult
  */
+
+/**
+ * Does this rejection look like the Standard Tier athlete cap rather than a
+ * bad code?
+ *
+ * **Why it matters:** Standard Tier allows an app 10 connected athletes, and
+ * athlete 11's exchange simply fails. Reported as a generic auth failure it
+ * reads as "your Strava login is broken", which is both wrong and unfixable by
+ * the person seeing it. Named honestly it reads as "this app is full", which
+ * is true and is not their problem to solve.
+ *
+ * **The signature is inferred, not documented.** Strava's token endpoint
+ * answers app-level refusals with an `errors` entry whose `resource` is
+ * `Application`, where a spent or wrong code names `AuthorizationCode` or
+ * `Athlete`. That is the narrowest reliable-looking discriminator available;
+ * Strava documents none. It is used only to *pick better copy* — a false
+ * negative falls back to `invalid_grant`, which is the previous behaviour, and
+ * a false positive shows the cap message for some other app-level refusal,
+ * which is still closer to true than "reconnect" would be. Nothing about
+ * control flow, storage or security depends on it.
+ *
+ * Strava's body is read here and **never returned** — it can name the client.
+ */
+function looksLikeAthleteCap(body) {
+  const errors = body?.errors
+  return Array.isArray(errors) && errors.some((e) => e?.resource === 'Application')
+}
 
 /**
  * Strava's token payload -> ours.
@@ -76,7 +104,15 @@ async function postToken(body, fetchImpl) {
   }
 
   if (!response.ok) {
-    return { ok: false, status: response.status, detail: `strava responded ${response.status}` }
+    // Read for classification only. Nothing from it is returned or logged
+    // verbatim; see looksLikeAthleteCap.
+    const errorBody = await response.json().catch(() => null)
+    return {
+      ok: false,
+      status: response.status,
+      detail: `strava responded ${response.status}`,
+      athleteCap: looksLikeAthleteCap(errorBody),
+    }
   }
 
   let payload
