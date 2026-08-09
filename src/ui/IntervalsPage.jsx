@@ -12,7 +12,7 @@ import { formatRangeLabel, isRangeActive } from '../data/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
 import { ActivityRowList } from './ActivityRowList.jsx'
 import { IntervalsConnectForm } from './IntervalsConnectForm.jsx'
-import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
+import { ActivityDateFilter } from './ActivityDateFilter.jsx'
 import { useIntervalsActivities } from './useIntervalsActivities.js'
 
 // intervals.icu's API Terms §1.1: information derived from Garmin-sourced
@@ -119,7 +119,7 @@ export function IntervalsPage({ onBack, onSelectActivity, store = credentialStor
             )}
           </form>
 
-          <IntervalsDateFilter range={range} onChange={setRange} />
+          <ActivityDateFilter range={range} onChange={setRange} />
 
           {isAwaitingFirstWindow && (
             <p className="loading-indicator" role="status">

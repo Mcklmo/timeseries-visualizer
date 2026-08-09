@@ -111,18 +111,23 @@ flowchart TB
     Tip[SyncedTooltip]
     Hdr[ActivityHeader]
     IPage[IntervalsPage<br/>copy + layout only]
-    IHook[useIntervalsActivities<br/>read orchestration]
+    IHook[useIntervalsActivities<br/>read orchestration + search]
+    SPage[StravaPage<br/>copy + layout only]
+    SHook[useStravaActivities<br/>read orchestration, NO search]
+    SCb[useStravaOAuthCallback<br/>mounted once, in AppShell]
     IList[ActivityRowList<br/>provider-neutral]
     IConn[IntervalsConnectForm]
-    IDate[IntervalsDateFilter]
+    SConn[StravaConnectButton]
+    IDate[ActivityDateFilter<br/>provider-neutral]
     Fb[FeedbackWidget → Dialog → Form]
     Geo[chartGeometry<br/>pixels]
     Pinch[usePinchZoom<br/>events]
-    Shell --> Ctl & Stack & IPage & Fb & Hdr
+    Shell --> Ctl & Stack & IPage & SPage & SCb & Fb & Hdr
     Stack --> Panel --> Tip
     Stack --> Pinch --> Geo
     Panel --> Geo
     IPage --> IHook & IList & IConn & IDate
+    SPage --> SHook & IList & SConn & IDate
   end
 
   subgraph STATE["State & derivation"]
@@ -207,6 +212,9 @@ flowchart TB
   DERIV --> UDS --> Panel
   UNITS --> REG & Tip & Hdr & Panel & IList
   IHook --> API & MAP
+  SHook --> SAPI & MAP
+  SCb --> SAPI
+  SConn --> SAPI
   ROW --> IList
   REG --> Panel & Ctl & Stack & UMS & UDS
   SBF --> AGG
@@ -231,6 +239,18 @@ edges:
   panel is deliberately a pure-ish presentational component; keep it that way.
 - `SBF --> AGG`: `statsBasis.js` does not import `aggregate.js`. The basis flows in as *arguments*.
   That is the point of the seam described in §6.
+- `Shell --> SCb`: `useStravaOAuthCallback` hangs off the shell rather than off `StravaPage`, and
+  that placement is load-bearing. An OAuth return is a property of the **page load**, not of a
+  view: the athlete leaves from the Strava page, but Strava sends them back to `/`, which on a
+  cold load renders the activity view. Mounted inside the page they cannot see, the code would
+  never be exchanged.
+
+**What the two picker columns share, and what they deliberately do not.** `ActivityRowList`,
+`ActivityDateFilter`, `activityDateRange` and `toActivityRow`'s *position* are shared; the two
+hooks are not. `useStravaActivities` is `useIntervalsActivities` **minus the entire search half**
+— Strava has no search endpoint, so there is no debounce, no second list, no `searchStatus`, and
+one effect rather than two. Merging them into one hook with an optional search would produce a
+shape decided by a flag; the parts worth sharing are already shared as modules.
 
 **Four ways this differs from `ARCHITECTURE.md` §3 (its layer diagram).** If you have read that
 document, these are the deltas:
@@ -472,13 +492,26 @@ Recorded so nobody spends a weekend on them:
 | 0c `data/sourceRegistry.js`, `provider` on the id ref | invisible | `51bdc55` |
 | 1 `worker/routes/strava.js` + `lib/stravaOAuth` + `lib/stravaProxy` | routes exist, nothing calls them | `9964c40` |
 | 2 all of `src/data/strava/` | no UI mounts it | `a57cd65` |
+| 4 copy — README, `/about`, launch, this document | ✅ | `c7150aa` |
+| 3 UI — the OAuth callback, the picker, the third view | first user-visible change | — |
 
-**Two things are outstanding and neither is code**: the two Strava apps are not registered (the
-client ids in `wrangler.jsonc` and `.env` are marked placeholders), and **nothing has been
-exercised end to end against real Strava.** Stage 1 was verified against `wrangler dev` + curl;
-everything else is unit-tested only. The recorded-response and cross-check fixture tiers (§8 of the
-implementation brief) need a real account and are not in the repo — check **API Policy §5.3**,
-which prohibits using Strava Data in connection with AI development, before committing one here.
+**Three things are outstanding.**
+
+1. **The two Strava apps are not registered**, so the client ids in `wrangler.jsonc` and `.env`
+   are still placeholders and `StravaConnectButton` renders a developer notice rather than a
+   button. **Nothing has been exercised end to end against real Strava.** Stage 1 was verified
+   against `wrangler dev` + curl; everything else is unit-tested only. README step 14 is the
+   walkthrough to run once the apps exist, and its two ⚠ items are the failures that are silent.
+2. **Strava's official "Connect with Strava" button artwork is not in the repo.** Their API
+   Agreement requires *their* asset, not a recreation, so `StravaConnectButton` ships an
+   explicitly unbranded stand-in in Strava orange with the swap documented in its header —
+   drawing a lookalike would turn an unfinished button into a trademark problem. The **"Powered
+   by Strava" attribution**, which is a separate and always-required obligation, is in place and
+   tested.
+3. **Fixture tiers 2 and 3** (a recorded real response, and the tolerant cross-check against
+   `fixtures/23870166877_ACTIVITY.fit`) need a real account and an upload. Check **API Policy
+   §5.3**, which prohibits using Strava Data in connection with AI development, before committing
+   a real fixture into this repo.
 
 ### What genuinely already works
 

@@ -68,3 +68,17 @@ export function createStreamCache(maxEntries = STREAM_CACHE_MAX_ENTRIES) {
     },
   }
 }
+
+/**
+ * The app-wide instance — same "one instance, tests inject their own" pattern
+ * as credentialStore and stravaTokenStore, and it exists for one concrete
+ * reason: **Disconnect has to be able to clear it.**
+ *
+ * StravaActivitySource takes the cache as a constructor argument and would
+ * otherwise default to a private one, which is unreachable from the UI. The
+ * §7.4 obligation is the one thing evaporation cannot satisfy on its own: a tab
+ * that stays open after the athlete revokes the grant would still be holding
+ * their telemetry in memory. So the instance is named here, `sourceRegistry`
+ * passes it to the adapter, and StravaPage's disconnect clears it.
+ */
+export const stravaStreamCache = createStreamCache()

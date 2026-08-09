@@ -1,7 +1,19 @@
-// The date-range control above the intervals.icu activity list: three preset
-// chips and two day fields. Presentational and fully controlled —
-// useIntervalsActivities owns the range and does all the fetching, exactly as
-// ActivityRowList is a pure renderer of rows it never asked for.
+// The date-range control above a picker's activity list: three preset chips
+// and two day fields. Presentational and fully controlled — the picker's hook
+// owns the range and does all the fetching, exactly as ActivityRowList is a
+// pure renderer of rows it never asked for.
+//
+// **Provider-neutral, and it always was** — it names no intervals.icu field
+// and reads all its rules from activityDateRange.js. It was called
+// IntervalsDateFilter only because there was one picker; the rename came with
+// the second, and nothing else about it changed. Each picker keeps its own
+// remembered range (see data/dateRangeStore.js), but they render the same
+// control.
+//
+// Class names stay `intervals-date-filter__*`. They are CSS, the styles are
+// identical for both pickers, and renaming them would be a large diff across
+// global.css whose only effect is to make one screenful of selectors match one
+// component's name.
 //
 // **Native `<input type="date">`, not a dependency and not a hand-rolled
 // calendar.** It brings a real calendar on desktop, the OS wheel on iOS and
@@ -27,7 +39,7 @@ import {
 /**
  * @param {{range: {from: string | null, to: string | null}, onChange: (range: object) => void}} props
  */
-export function IntervalsDateFilter({ range, onChange }) {
+export function ActivityDateFilter({ range, onChange }) {
   // useId, not hardcoded ids: this component is mounted once today, but the
   // hardcoded pair in FileDropZone had to be undone for exactly this reason
   // once a second instance appeared. Cheaper to get right now.

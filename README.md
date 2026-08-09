@@ -442,11 +442,14 @@ path, though (see step 9 below).
 1. **Start the dev server** — `npm run dev`, then open the printed URL.
 2. **Empty state** — page loads to a dark-themed "Load an activity" hero filling the page
    body: a large dashed drop target ("Drop a TCX, FIT or GPX file here / or click to
-   browse") with the "never leaves your device" hint under it, then a quieter outlined
-   "Load from intervals.icu" button below. The header holds the title on the left and, on
-   the right, an *intervals.icu* button and an **About link** (a real `<a href="/about">`,
-   not a view swap — it navigates to a static page, so `npm run dev` alone will 404 on it;
-   use `wrangler dev` to click it) — no second **drop zone** anywhere while the hero is up.
+   browse") with the "never leaves your device" hint under it, then two quieter outlined
+   buttons side by side — "Load from intervals.icu" and "Load from Strava" — under **one**
+   shared disclosure paragraph. Check that paragraph reads as one honest statement covering
+   both routes and not two competing claims: intervals.icu direct, Strava through the
+   server, said in the same breath. The header holds the title on the left and, on the
+   right, *intervals.icu*, *Strava* and an **About link** (a real `<a href="/about">`, not a
+   view swap — it navigates to a static page, so `npm run dev` alone will 404 on it; use
+   `wrangler dev` to click it) — no second **drop zone** anywhere while the hero is up.
 3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
    one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
    The hero should be replaced by a control panel (Time/Distance switch + one row per metric
@@ -558,7 +561,48 @@ path, though (see step 9 below).
       nothing persisted.
     - DevTools → Network: requests go to `intervals.icu` **only**, and dropping a local file
       issues **zero** network requests.
-14. **Responsive layout** — narrow the window below ~720px → the hero and header should both
+14. **Strava, with a real account** — **needs `npx wrangler dev`**, not `npm run dev`:
+    `/api/strava/*` does not exist on the Vite dev server, so nothing here works without the
+    Worker. It also needs the localhost Strava app's id in `.env.local` and its secret in
+    `.dev.vars` (see "Connecting Strava"). This is the walkthrough that cannot be replaced by
+    the automated suite, because **the two worst failures here are silent** — steps marked
+    ⚠ below are those.
+    - Open the *Strava* view → a branded **Connect with Strava** button, the scope
+      disclosure, the connected-account cap note, and "Powered by Strava". If the client id
+      is unset or still the placeholder you get a dashed developer notice instead of the
+      button — that is correct, and it is what to expect on a fresh clone.
+    - Press it → Strava's own consent page, showing **View data about your private
+      activities**. Approve → back on `/` with **the query string stripped** (check the
+      address bar: no `code`, no `state`), landed on the Strava view, listing activities.
+    - **Press the browser's back button, then reload.** Neither may re-run an exchange or
+      show an error — the code is single-use, and both guards exist for this.
+    - Now do it again and press **Cancel** on Strava's page instead → you land on the Strava
+      connect view with "access was not granted", *not* on an error state and not on a blank
+      empty state. Then approve but **untick** the private-activities permission → the
+      specific "connect again and leave the activity permissions ticked" message, not a
+      mysteriously short list.
+    - Open a Garmin-recorded run → charts render, and **⚠ check a run's cadence reads ~170
+      spm, not ~85.** Strava reports one leg for foot sports and nothing throws if the
+      doubling is missed. Cross-check heart rate and power against the Strava activity page.
+    - **⚠ Check the row's date matches what Strava shows**, especially if you are west of
+      Greenwich: `start_date_local` carries a bogus trailing `Z`, and leaving it on puts rows
+      on the wrong calendar day where the 90-day filter silently drops them.
+    - Note the pace **will not** exactly match the same activity's `.fit` file — Strava
+      resamples and ships its own smoothed speed. That is expected and documented; a *large*
+      divergence is not.
+    - Back, then reopen the same activity → **no second network request** (DevTools →
+      Network). Then reload the tab and reopen the Strava view within 15 minutes → the list
+      paints immediately from `sessionStorage` and refreshes behind it.
+    - There is **no search box**, deliberately — Strava has no search endpoint. Date filter
+      and "Load earlier activities" behave exactly as they do on the intervals.icu view.
+    - **Disconnect** → the list goes, `localStorage` loses the token entry and
+      `sessionStorage` the cached list (DevTools → Application), **and the app disappears
+      from strava.com/settings/apps**. That last one is the actual obligation; the local
+      clearing is the easy half.
+    - DevTools → Network throughout: every Strava request goes to **your own origin**
+      (`/api/strava/*`), never to `strava.com` — and the response headers carry
+      `X-ReadRateLimit-Usage`, which is how the shared daily budget is observed.
+15. **Responsive layout** — narrow the window below ~720px → the hero and header should both
     stay readable with no horizontal overflow, each metric's toggle + stat-checkboxes row
     should stack instead of staying side-by-side, **"Chart settings" should be collapsed**
     (tap it to open; it stays open), and panel heights should drop ~25%. In the intervals.icu
@@ -566,7 +610,7 @@ path, though (see step 9 below).
     fields should **wrap** onto their own rows rather than overflow (there is no second media
     query for them), and focusing the API-key field, **the search box or either date field**
     must **not** zoom the page on an iPhone.
-15. **On a real phone — the acceptance test for the mobile work, and it cannot be done in the
+16. **On a real phone — the acceptance test for the mobile work, and it cannot be done in the
     simulator alone.** Run `npm run dev -- --host` and open the printed LAN URL on an iPhone.
     - **Gestures:** two-finger pinch zooms; moving both fingers together pans; a one-finger
       vertical drag still scrolls the page; and the browser never page-zooms while the
@@ -580,7 +624,7 @@ path, though (see step 9 below).
       half-collapsed chrome, no horizontal overflow, and a **dark** Safari address bar.
       Repeat at the top of the page and while zoomed in (where the duration should read the
       window's span, not the activity's) — **all three should be sharable as-is**.
-16. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
+17. **Feedback dialog** — needs `wrangler dev`, not `npm run dev`, since the API route only
     exists in the Worker. Click **Feedback** in the footer → a modal opens with subject /
     message / optional email, a "this opens a public issue on GitHub" notice, a Turnstile
     widget, and a **Send feedback** button that stays disabled until the challenge is
@@ -589,11 +633,11 @@ path, though (see step 9 below).
     page URL / timestamp / user agent. Then check the failure paths: submit with the fields
     empty (expect inline per-field errors, not a banner), and submit ~6 times in a minute
     (expect the "too many submissions" banner).
-17. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
+18. **Escape closes the dialog** — press `Esc` with the feedback dialog open. This is native
     `<dialog>` behaviour that jsdom does not simulate, so it is *only* covered here, never
     by the automated suite. Re-opening afterwards should show empty fields, not the previous
     attempt.
-18. **Static pages** — needs `wrangler dev`, since these are files in `dist/` rather than
+19. **Static pages** — needs `wrangler dev`, since these are files in `dist/` rather than
     app views. Click **About** in the header: it should *navigate* to `/about`, arriving on
     a dark prose page that looks like it belongs to the app (it links the same CSS bundle),
     with the bolt lockup top-left linking back to `/` and an "Open a file →" control

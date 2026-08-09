@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { EMPTY_RANGE, PRESETS, defaultRange, toApiDate } from '../data/activityDateRange.js'
-import { IntervalsDateFilter } from './IntervalsDateFilter.jsx'
+import { ActivityDateFilter } from './ActivityDateFilter.jsx'
 
 // userEvent.type is unreliable against type="date" in jsdom (it drives the
 // segmented editor, which jsdom does not implement); a change event is what
@@ -10,14 +10,14 @@ const setDay = (input, value) => fireEvent.change(input, { target: { value } })
 
 function renderFilter(range = EMPTY_RANGE) {
   const onChange = vi.fn()
-  render(<IntervalsDateFilter range={range} onChange={onChange} />)
+  render(<ActivityDateFilter range={range} onChange={onChange} />)
   return onChange
 }
 
 const fromField = () => screen.getByLabelText('From')
 const toField = () => screen.getByLabelText('To')
 
-describe('IntervalsDateFilter', () => {
+describe('ActivityDateFilter', () => {
   it('renders two real date inputs, labelled', () => {
     renderFilter()
     expect(fromField()).toHaveAttribute('type', 'date')
@@ -52,7 +52,7 @@ describe('IntervalsDateFilter', () => {
 
     // pressed follows the range, not the click: re-rendered with that range,
     // the chip reads as active without the component holding any state
-    render(<IntervalsDateFilter range={expected} onChange={() => {}} />)
+    render(<ActivityDateFilter range={expected} onChange={() => {}} />)
     const chips = screen.getAllByRole('button', { name: '3 months' })
     expect(chips[chips.length - 1]).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getAllByRole('button', { name: '30 days' }).pop()).toHaveAttribute(

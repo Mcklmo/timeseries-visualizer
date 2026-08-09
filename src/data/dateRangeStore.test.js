@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { DATE_RANGE_STORAGE_KEY, createDateRangeStore } from './dateRangeStore.js'
+import {
+  DATE_RANGE_STORAGE_KEY,
+  STRAVA_DATE_RANGE_STORAGE_KEY,
+  createDateRangeStore,
+} from './dateRangeStore.js'
 
 // The same Map-backed double every test drives, so what actually lands in
 // storage can be asserted as a string, not just round-tripped.
@@ -102,5 +106,35 @@ describe('dateRangeStore', () => {
     const storage = fakeStorage()
     createDateRangeStore(storage).save(null)
     expect(storage.entries.size).toBe(0)
+  })
+
+  // The two pickers browse two different accounts' histories. Narrowing Strava
+  // to last March says nothing about what to show on intervals.icu, so the
+  // ranges must not be one setting wearing two names — and sharing one key is
+  // the silent version of that, where each picker overwrites the other's on
+  // every keystroke.
+  describe('one key per provider', () => {
+    it('keeps two stores on the same storage from seeing each other', () => {
+      const storage = fakeStorage()
+      const intervals = createDateRangeStore(storage, DATE_RANGE_STORAGE_KEY)
+      const strava = createDateRangeStore(storage, STRAVA_DATE_RANGE_STORAGE_KEY)
+
+      intervals.save({ from: '2026-03-01', to: '2026-03-31' })
+      strava.save({ from: '2025-01-01', to: '2025-12-31' })
+
+      expect(intervals.read()).toEqual({ from: '2026-03-01', to: '2026-03-31' })
+      expect(strava.read()).toEqual({ from: '2025-01-01', to: '2025-12-31' })
+      expect([...storage.entries.keys()].sort()).toEqual(
+        [DATE_RANGE_STORAGE_KEY, STRAVA_DATE_RANGE_STORAGE_KEY].sort(),
+      )
+    })
+
+    // Pinned as a value, not just as "they differ": the intervals.icu key
+    // predates this file's move up out of data/intervals/, and changing it
+    // would silently discard every range remembered in a live tab.
+    it('pins both key strings', () => {
+      expect(DATE_RANGE_STORAGE_KEY).toBe('timeseries-visualizer.intervals-icu.dateRange')
+      expect(STRAVA_DATE_RANGE_STORAGE_KEY).toBe('timeseries-visualizer.strava.dateRange')
+    })
   })
 })

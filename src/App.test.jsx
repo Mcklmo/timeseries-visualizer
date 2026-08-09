@@ -170,6 +170,7 @@ describe('App (wired against the real TCX/FIT sources)', () => {
 
     const actions = container.querySelector('header .app-header__actions')
     expect(actions).toContainElement(screen.getByRole('button', { name: /^intervals\.icu$/i }))
+    expect(actions).toContainElement(screen.getByRole('button', { name: /^strava$/i }))
     expect(actions).toContainElement(screen.getByRole('link', { name: /^about$/i }))
     expect(actions.querySelector('.load-activity-bar')).not.toBeNull()
     // and the identity is in the header only — <main> scrolls away, which is
@@ -231,11 +232,36 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     expect(screen.getByLabelText(/intervals\.icu api key/i)).toBeInTheDocument()
   })
 
+  it('shows the Strava page from the header link and returns via Back', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /^strava$/i }))
+    expect(screen.getByRole('heading', { name: /^strava$/i })).toBeInTheDocument()
+    // same invariant as the other two views: <main> is replaced, so the header
+    // takes the load control back
+    expect(screen.queryByRole('heading', { name: /load an activity/i })).not.toBeInTheDocument()
+    expect(container.querySelector('header .load-activity-bar')).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
+    expect(screen.queryByRole('heading', { name: /^strava$/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /load an activity/i })).toBeInTheDocument()
+  })
+
+  it('reaches the Strava page from the empty state CTA too', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /load from strava/i }))
+
+    expect(screen.getByRole('heading', { name: /^strava$/i })).toBeInTheDocument()
+  })
+
   // The one-FileDropZone invariant (AppShell's showEmptyState comment) has to
   // hold in every view: a DOM id collision, three getByLabelText queries that
   // throw on two matches, and two competing CTAs on the idle page all ride
   // on it.
-  it('keeps exactly one FileDropZone mounted in both views', async () => {
+  it('keeps exactly one FileDropZone mounted in all three views', async () => {
     const user = userEvent.setup()
     const { container } = render(<App />)
     const zoneCount = () => container.querySelectorAll('input[type="file"]').length
@@ -244,6 +270,12 @@ describe('App (wired against the real TCX/FIT sources)', () => {
 
     await user.click(screen.getByRole('button', { name: /^intervals\.icu$/i }))
     expect(zoneCount()).toBe(1) // intervals (header control)
+
+    await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
+    expect(zoneCount()).toBe(1) // back to the hero
+
+    await user.click(screen.getByRole('button', { name: /^strava$/i }))
+    expect(zoneCount()).toBe(1) // strava (header control)
 
     await user.click(screen.getByRole('button', { name: /^←\s*back$/i }))
     expect(zoneCount()).toBe(1) // back to the hero

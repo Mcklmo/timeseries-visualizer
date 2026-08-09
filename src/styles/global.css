@@ -1202,6 +1202,90 @@ main {
   border-color: var(--metric-pace);
 }
 
+/* Two routes now, side by side and equal — neither is the recommended one, and
+   sizing one larger would be a recommendation. Wraps rather than adding a
+   second media query (§13: one breakpoint, one place). */
+.empty-state__secondaries {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* -------------------------------------------------------------------------
+   Strava connect
+   ------------------------------------------------------------------------- */
+
+.strava-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 16px 0 24px;
+}
+
+/* Strava's brand orange. NOT a token in tokens.css, deliberately: the tokens
+   file is this app's palette, and a third party's trademark colour sitting in
+   it invites reuse somewhere it would mean nothing. It appears here and only
+   here. See StravaConnectButton.jsx — the official button artwork replaces
+   this, and this rule goes with it. */
+.strava-connect__button {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  background: #fc4c02;
+  border: 1px solid #fc4c02;
+  border-radius: var(--radius);
+  /* The same ≥44px floor every tappable control in this app holds to
+     (ARCHITECTURE.md, Route E) — this view exists for the phone. */
+  min-height: 44px;
+  padding: 10px 20px;
+  cursor: pointer;
+}
+
+.strava-connect__button:hover {
+  background: #e34402;
+  border-color: #e34402;
+}
+
+.strava-connect__wordmark {
+  letter-spacing: 0.01em;
+}
+
+.strava-connect__disclosure {
+  max-width: 62ch;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* Attribution, not decoration: required whenever Strava data or a Strava
+   connect control is displayed. Quiet, but never hidden. */
+.strava-connect__attribution {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* A developer-facing failure — an unset or placeholder VITE_STRAVA_CLIENT_ID —
+   shown in the UI rather than the console, which is where it would be missed.
+   Styled as a notice rather than an alert: the visitor cannot act on it. */
+.strava-connect__unconfigured {
+  max-width: 62ch;
+  margin: 16px 0;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px dashed var(--grid);
+  border-radius: var(--radius);
+}
+
 @media (max-width: 720px) {
   .app-header {
     padding: 12px 16px;

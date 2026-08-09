@@ -1,10 +1,23 @@
-// Where the intervals.icu date filter's range lives between loads.
+// Where a picker's date filter range lives between loads.
 //
 // WHY THIS EXISTS: IntervalsPage seeded the range fresh on every mount, so
 // narrowing the list to last March survived exactly until the tab was
 // reloaded — and now that the filter is *on* by default (the last 90 days,
 // see activityDateRange.js's `defaultRange`), a reload silently threw away a
 // range the athlete had deliberately set and refetched a different window.
+//
+// **One store shape, one key per provider.** It moved up out of
+// `data/intervals/` when a second picker appeared, alongside
+// `activityDateRange.js` which it already depended on and which had made the
+// same move for the same reason: nothing in here names an intervals.icu field.
+// The two keys live side by side in this file *deliberately* — two modules each
+// inventing their own key is exactly how two providers end up sharing one, and
+// then quietly overwriting each other's remembered range.
+//
+// **The ranges are kept apart, not shared**, which is the less obvious half.
+// They look like the same setting and they are not: the two accounts hold
+// different histories, and an athlete who narrows Strava to last March has said
+// nothing at all about what they want to see on intervals.icu.
 //
 // sessionStorage, NOT localStorage — the opposite of the choice
 // data/intervals/credentialStore.js makes next door, and the same one
@@ -25,10 +38,14 @@
 // private mode throws on setItem, and some hardened configurations throw on
 // touching Storage at all. Losing a remembered range is a shrug; taking the app
 // down with it is not.
-import { createSafeStorage, sessionStorageOrNull } from '../../lib/safeStorage.js'
-import { isValidRange } from '../activityDateRange.js'
+import { createSafeStorage, sessionStorageOrNull } from '../lib/safeStorage.js'
+import { isValidRange } from './activityDateRange.js'
 
+/** Unchanged from when this module lived in `data/intervals/` — changing it
+ *  would silently throw away every range currently remembered in a live tab. */
 export const DATE_RANGE_STORAGE_KEY = 'timeseries-visualizer.intervals-icu.dateRange'
+
+export const STRAVA_DATE_RANGE_STORAGE_KEY = 'timeseries-visualizer.strava.dateRange'
 
 // Bumped only if the payload shape changes incompatibly. An entry that doesn't
 // match is dropped, not migrated — this is cheap to recreate.
@@ -68,26 +85,28 @@ function normalizeRange(raw) {
 
 /**
  * **sessionStorage, deliberately** — see the header. The storage stays a
- * factory argument so tests inject their own.
+ * factory argument so tests inject their own; the key is the second argument
+ * so a provider gets its own slot without a second copy of this file.
  *
  * @param {Pick<Storage, 'getItem'|'setItem'>|null} [storage]
+ * @param {string} [key]
  * @returns {{read: () => DateRange|null, save: (range: DateRange) => void}}
  */
-export function createDateRangeStore(storage = sessionStorageOrNull()) {
+export function createDateRangeStore(storage = sessionStorageOrNull(), key = DATE_RANGE_STORAGE_KEY) {
   const safe = createSafeStorage(storage)
   return {
     /** @returns {DateRange|null} null means "nothing usable remembered" —
      *  unreachable storage, unparseable JSON and a payload that fails
      *  validation are all the same answer to the caller. */
     read() {
-      return normalizeRange(safe.getJson(DATE_RANGE_STORAGE_KEY))
+      return normalizeRange(safe.getJson(key))
     },
 
     save(range) {
       if (!range) return
       // Quota exhausted or storage refused: the range simply isn't remembered,
       // which is why the boolean is dropped here and kept in credentialStore.
-      safe.setJson(DATE_RANGE_STORAGE_KEY, {
+      safe.setJson(key, {
         v: SCHEMA_VERSION,
         from: range.from ?? null,
         to: range.to ?? null,
@@ -96,5 +115,9 @@ export function createDateRangeStore(storage = sessionStorageOrNull()) {
   }
 }
 
-/** The app-wide instance. Tests inject their own storage instead. */
+/** The app-wide instances, one per picker. Tests inject their own storage. */
 export const dateRangeStore = createDateRangeStore()
+export const stravaDateRangeStore = createDateRangeStore(
+  sessionStorageOrNull(),
+  STRAVA_DATE_RANGE_STORAGE_KEY,
+)

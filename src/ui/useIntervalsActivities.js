@@ -35,7 +35,7 @@ import {
   widenedStart,
 } from '../data/activityDateRange.js'
 import { credentialStore } from '../data/intervals/credentialStore.js'
-import { dateRangeStore } from '../data/intervals/dateRangeStore.js'
+import { dateRangeStore } from '../data/dateRangeStore.js'
 import { IntervalsApiError, listActivities, searchActivities } from '../data/intervals/intervalsApi.js'
 import { toActivityRow } from '../data/intervals/toActivityRow.js'
 import { useDebouncedValue } from './useDebouncedValue.js'

@@ -34,13 +34,43 @@ describe('EmptyState', () => {
     expect(onOpenIntervals).toHaveBeenCalled()
   })
 
-  // The file claim must stay literally true of the file path, so the network
-  // disclosure hangs off the new CTA as its own line rather than watering the
-  // hero's hint down.
-  it('keeps the file-never-leaves claim on the drop zone and the network disclosure on the CTA', () => {
-    render(<EmptyState onFileSelected={() => {}} onOpenIntervals={() => {}} />)
+  it('offers the Strava route beside it', () => {
+    const onOpenStrava = vi.fn()
+    render(<EmptyState onFileSelected={() => {}} onOpenStrava={onOpenStrava} />)
 
-    expect(screen.getByText(/your file never leaves your device/i)).toBeInTheDocument()
-    expect(screen.getByText(/off unless you turn it on/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /load from strava/i }))
+
+    expect(onOpenStrava).toHaveBeenCalled()
+  })
+
+  // The file claim must stay literally true of the file path, so it stays on
+  // the drop zone and says nothing about the account routes.
+  it('keeps the file-never-leaves claim attached to the drop zone alone', () => {
+    render(<EmptyState onFileSelected={() => {}} />)
+
+    const hint = screen.getByText(/your file never leaves your device/i)
+    expect(hint).toBeInTheDocument()
+    expect(hint).not.toHaveTextContent(/intervals\.icu|strava/i)
+  })
+
+  // **The reason the two CTAs share one paragraph.** They used to be one CTA
+  // with its own "nothing goes through this app's server" line — true of
+  // intervals.icu and false of Strava. Two adjacent buttons with opposite
+  // privacy claims read as a bug in the copy rather than as precision, and the
+  // reader who spots the contradiction is exactly the reader it was written
+  // for. If a future edit splits this back into two lines, this test is what
+  // should stop it.
+  it('covers both account routes in ONE disclosure that names the difference', () => {
+    render(<EmptyState onFileSelected={() => {}} />)
+
+    const disclosure = screen.getByText(/both are off unless you turn them on/i)
+    expect(disclosure).toHaveTextContent(/talks to\s+intervals\.icu\s+directly/i)
+    expect(disclosure).toHaveTextContent(/nothing about it reaches this app's server/i)
+    expect(disclosure).toHaveTextContent(/is the exception and does go through it/i)
+    expect(disclosure).toHaveTextContent(/stores nothing/i)
+    expect(disclosure).toHaveTextContent(/revokes the access at Strava/i)
+
+    // And there is exactly one of them — not one claim per button.
+    expect(screen.queryByText(/nothing goes through this app's server/i)).not.toBeInTheDocument()
   })
 })

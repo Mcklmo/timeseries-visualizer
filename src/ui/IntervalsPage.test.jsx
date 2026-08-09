@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultRange, formatRangeLabel, toApiDate } from '../data/activityDateRange.js'
-import { DATE_RANGE_STORAGE_KEY } from '../data/intervals/dateRangeStore.js'
+import { DATE_RANGE_STORAGE_KEY } from '../data/dateRangeStore.js'
 import { IntervalsPage } from './IntervalsPage.jsx'
 
 // The list filters to the last 90 days by default, so every fixture — and

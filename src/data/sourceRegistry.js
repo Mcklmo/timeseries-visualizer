@@ -40,6 +40,7 @@ import { credentialStore } from './intervals/credentialStore.js'
 import { IntervalsActivitySource } from './intervals/IntervalsActivitySource.js'
 import { readFreshAccessToken } from './strava/stravaApi.js'
 import { StravaActivitySource } from './strava/StravaActivitySource.js'
+import { stravaStreamCache } from './strava/streamCache.js'
 import { TcxActivitySource } from './tcx/TcxActivitySource.js'
 
 /** @typedef {import('./ActivitySource.js').ActivityRef} ActivityRef */
@@ -51,9 +52,16 @@ import { TcxActivitySource } from './tcx/TcxActivitySource.js'
  * a password that never expires, while a Strava access token lives six hours
  * and reading it may have to refresh it first.
  *
+ * `stravaCache` is passed in rather than left to the adapter's own default for
+ * one reason: **Disconnect has to be able to clear it.** A private cache inside
+ * the adapter is unreachable from the UI, and a tab left open after the athlete
+ * revokes their grant would go on holding their telemetry in memory — the one
+ * part of API Policy §7.4 that cache evaporation cannot satisfy by itself.
+ *
  * @param {{
  *   getIntervalsApiKey?: () => string|null,
  *   getStravaAccessToken?: () => Promise<string>,
+ *   stravaCache?: import('./strava/streamCache.js').createStreamCache,
  *   fetchImpl?: typeof fetch,
  * }} [options]
  * @returns {ActivitySource}
@@ -61,13 +69,18 @@ import { TcxActivitySource } from './tcx/TcxActivitySource.js'
 export function createDefaultSource({
   getIntervalsApiKey = () => credentialStore.readApiKey(),
   getStravaAccessToken = () => readFreshAccessToken({ fetchImpl }),
+  stravaCache = stravaStreamCache,
   fetchImpl,
 } = {}) {
   const tcxSource = new TcxActivitySource()
   const fitSource = new FitActivitySource()
   const gpxSource = new GpxActivitySource()
   const intervalsSource = new IntervalsActivitySource({ getApiKey: getIntervalsApiKey, fetchImpl })
-  const stravaSource = new StravaActivitySource({ getAccessToken: getStravaAccessToken, fetchImpl })
+  const stravaSource = new StravaActivitySource({
+    getAccessToken: getStravaAccessToken,
+    cache: stravaCache,
+    fetchImpl,
+  })
 
   const SOURCE_BY_EXTENSION = { '.fit': fitSource, '.gpx': gpxSource, '.tcx': tcxSource }
   /** @type {Record<import('./ActivitySource.js').ActivityProvider, ActivitySource>} */
