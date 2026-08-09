@@ -5,7 +5,7 @@
 // There is no separate settings window any more. Zooming is a two-finger pinch (or ctrl/⌘+scroll) anywhere on the stack,
 // handled by usePinchZoom, which writes the one zoomDomain every panel's XAxis
 // reads — so all panels zoom and pan together by construction.
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { fullDomain, isFullDomain } from '../domain/zoomDomain.js'
 import { derivativeKindFor, isMetricForSport, metricOrder, metricRegistry } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
@@ -25,16 +25,18 @@ const OTHER_PANEL_HEIGHT = 140
 const NARROW_FIRST_PANEL_HEIGHT = 150
 const NARROW_OTHER_PANEL_HEIGHT = 105
 
-export function ChartStack() {
+/**
+ * @param {object} props
+ * @param {Element|null} [props.positionSlot] - the app header's shared
+ *   `12:05 · 2.34 km` slot node, owned by AppShell (the two ends of that portal
+ *   are in different subtrees now, so this arrives as a prop). Defaults to null
+ *   for the same reason MetricPanel's does: plenty of tests render the stack
+ *   bare, and a stack with no slot is still a perfectly good stack.
+ */
+export function ChartStack({ positionSlot = null }) {
   const { activity } = useActivity()
   const { xMode, zoomDomain, enabledMetrics, enabledStats, setZoomDomain, toggleStat } = useChartView()
   const isNarrow = useIsNarrow()
-
-  // The toolbar's shared `12:05 · 2.34 km` slot, held as state rather than a
-  // ref so the panel that fills it re-renders once the node exists. Owned here
-  // because ChartStack renders both ends: the toolbar that provides the node
-  // and the panel whose Tooltip portals into it — no new context needed.
-  const [positionSlot, setPositionSlot] = useState(null)
 
   // Both the extent the gesture solves against and the window the chips report
   // come from StatsBasisContext, above this component — the header reports the
@@ -100,12 +102,13 @@ export function ChartStack() {
       title="Pinch, or Ctrl + scroll, to zoom. While zoomed, scroll sideways to pan"
       aria-label="Activity charts. Pinch, or Ctrl and scroll, to zoom the time axis. While zoomed, scroll sideways to pan."
     >
-      {/* Inside the stack, not in App.jsx: the position slot has to be reachable
-          by a panel's readout bridge, and this component already owns both ends.
-          Side benefit worth knowing — `touch-action: pan-y` below now covers
-          this row too, which closes the limit ARCHITECTURE.md §13 recorded ("a
-          pinch begun on the ControlPanel still page-zooms"). */}
-      <ChartToolbar positionRef={setPositionSlot} />
+      {/* Inside the stack, not in App.jsx, so `touch-action: pan-y` below covers
+          this row too — which is what closed the limit ARCHITECTURE.md §13
+          recorded ("a pinch begun on the ControlPanel still page-zooms"). That
+          is now the only reason: the position slot it used to hold moved to the
+          app header, so reachability from a panel's readout bridge no longer
+          keeps it here. */}
+      <ChartToolbar />
       {visibleMetrics.map((metricId, i) => {
         const isBottom = i === visibleMetrics.length - 1
         const height =

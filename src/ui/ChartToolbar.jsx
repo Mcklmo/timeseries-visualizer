@@ -1,5 +1,7 @@
 // The two controls that were never per-graph, in one slim always-visible row
-// above the stack — plus the slot the shared position readout portals into.
+// above the stack. It used to hold the shared position readout's slot as well;
+// that moved to ActivityHeader, since this row scrolls away with <main> and the
+// app header does not.
 //
 // This is what survived `ControlPanel`, the single settings window that used to
 // hold every chart control at once. The per-metric stat checkboxes moved into
@@ -17,13 +19,7 @@ import { useActivity } from '../state/ActivityContext.jsx'
 import { MetricToggle } from './MetricToggle.jsx'
 import { XAxisModeSwitch } from './XAxisModeSwitch.jsx'
 
-/**
- * @param {object} props
- * @param {(node: Element|null) => void} [props.positionRef] - callback ref for
- *   the shared `12:05 · 2.34 km` slot, owned by ChartStack and filled by the
- *   first visible panel's CrosshairReadout.
- */
-export function ChartToolbar({ positionRef }) {
+export function ChartToolbar() {
   const { activity } = useActivity()
 
   if (!activity) return null
@@ -45,10 +41,6 @@ export function ChartToolbar({ positionRef }) {
           </li>
         ))}
       </ul>
-      {/* Portal target, never given React children — see MetricPanel's slot for
-          the same rule and why. Empty at rest on purpose: transient chrome stays
-          out of an idle screenshot (§9). */}
-      <span className="crosshair-position" ref={positionRef} />
     </div>
   )
 }

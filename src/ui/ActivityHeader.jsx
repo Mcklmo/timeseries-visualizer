@@ -18,13 +18,27 @@
 // The start time deliberately does not follow the zoom: it is what identifies
 // the activity, and a clock that slid to the window's start would make two
 // different claims in one cluster.
+//
+// The cluster carries one LIVE reading as well as that identity: the shared
+// crosshair position, portaled in from the first visible panel. It is here
+// rather than in the chart toolbar — where it started — because .app-header is
+// sticky and .app-header__title is exempt from the scrolled fade, while the
+// toolbar scrolls off the top with the rest of <main>. With four or five
+// stacked panels, the label saying *where in the activity* the crosshair is had
+// left the screen by the time you scrolled down to hover the bottom graph.
 import { formatDuration, formatStartDateTime } from '../domain/units.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
 
 const SPORT_CHIP_LABEL = { running: 'Running', cycling: 'Cycling', track: 'Track' }
 
-export function ActivityHeader() {
+/**
+ * @param {object} props
+ * @param {(node: Element|null) => void} [props.positionRef] - callback ref for the shared
+ *   `12:05 · 2.34 km` slot, owned by AppShell and filled by the first visible panel's
+ *   CrosshairReadout.
+ */
+export function ActivityHeader({ positionRef }) {
   const { activity } = useActivity()
   const { elapsedTime } = useStatsBasis() // above the guard — rules of hooks
   if (!activity) return null
@@ -39,6 +53,13 @@ export function ActivityHeader() {
       {/* No aria-live: the stat chips don't announce on zoom either, and a
           polite region firing on every settle would be noise. */}
       <span className="activity-duration">{formatDuration(elapsedTime)}</span>
+      {/* Last on purpose: the CSS separator in front of it is an adjacent-
+          sibling rule on .activity-duration. Portal target, never given React
+          children — same rule as MetricPanel's .crosshair-slot, and it is what
+          makes the `:empty { display: none }` collapse reliable. Empty at rest
+          on purpose: transient chrome stays out of an idle screenshot (§9), and
+          this header is in every screenshot. */}
+      <span className="crosshair-position" ref={positionRef} />
     </div>
   )
 }

@@ -131,6 +131,29 @@ describe('ActivityHeader', () => {
     expect(screen.getByText('1:02:05')).toBeInTheDocument()
   })
 
+  // The cluster's one live reading. What this file owes it is the shape of the
+  // slot — a panel actually filling it is ChartStack.test.jsx's job, since it
+  // takes a real hover over a real chart to do so.
+  it('holds an empty position slot, last in the cluster, when given a positionRef', async () => {
+    const { container } = render(
+      <AppProviders source={makeSource(fixtureActivity)}>
+        <Loader />
+        <ActivityHeader positionRef={() => {}} />
+      </AppProviders>,
+    )
+    expect(await screen.findByText('Morning Run')).toBeInTheDocument()
+
+    const header = container.querySelector('.activity-header')
+    expect(header.querySelectorAll('.crosshair-position')).toHaveLength(1)
+    // Empty at rest, which is what `:empty { display: none }` collapses on.
+    expect(header.querySelector('.crosshair-position').textContent).toBe('')
+    // LAST, and asserted rather than merely commented: the `.activity-duration +
+    // .crosshair-position::before` separator is an adjacent-sibling rule, so the
+    // `·` in front of the reading disappears the moment the order changes.
+    expect(header.lastElementChild).toBe(header.querySelector('.crosshair-position'))
+    expect(header.lastElementChild.previousElementSibling).toHaveClass('activity-duration')
+  })
+
   // The point of putting the duration here: a screenshot of a zoomed interval
   // has to say how long *that* interval is, and the number comes from the same
   // FUNCTION the stat chips do — so it windows silently, with no "zoomed"

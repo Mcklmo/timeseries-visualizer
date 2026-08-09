@@ -31,6 +31,20 @@ export function AppShell() {
   // home and one crawlable address rather than existing twice and drifting.
   const [view, setView] = useState(/** @type {'activity'|'intervals'|'strava'} */ ('activity'))
 
+  // The shared `12:05 · 2.34 km` slot, held as state rather than a ref so the
+  // panel that fills it re-renders once the node exists. It lives up here, and
+  // not in ChartStack where it used to, because the two ends of that portal now
+  // sit in different subtrees — the header's span provides the node, a panel's
+  // Tooltip bridge portals into it — and AppShell is the closest component that
+  // renders both. So no new context, still.
+  //
+  // Written once when the header's span mounts and once when it unmounts, never
+  // per hover frame: `setPositionSlot` is a stable setter, so React never
+  // re-invokes the callback ref on a re-render. The per-frame path is still the
+  // portal alone, which is what keeps the rejected `hoverIndex`-in-context
+  // design rejected (see CrosshairReadout.jsx).
+  const [positionSlot, setPositionSlot] = useState(null)
+
   // Exactly one FileDropZone is mounted at any time: the hero in <main> while
   // idle, the compact header control otherwise. Not simply `status === 'idle'`
   // — a picker replaces the whole of <main>, so without the view term a
@@ -97,7 +111,7 @@ export function AppShell() {
               intervals.icu page filling <main>, a name up here would describe
               an activity that is nowhere on screen. ActivityHeader itself
               returns null without one, which covers idle/loading/error. */}
-          {view === 'activity' && <ActivityHeader />}
+          {view === 'activity' && <ActivityHeader positionRef={setPositionSlot} />}
         </div>
         <div className="app-header__actions">
           {/* Quiet text controls, deliberately not drop zones — the file path
@@ -154,7 +168,7 @@ export function AppShell() {
                 settings window that used to sit above the stack is gone too:
                 ChartStack carries its own chrome, a toolbar row plus one
                 foldable head per graph. */}
-            {status === 'ready' && activity && <ChartStack />}
+            {status === 'ready' && activity && <ChartStack positionSlot={positionSlot} />}
           </>
         )}
       </main>

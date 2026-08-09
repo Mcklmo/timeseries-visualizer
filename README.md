@@ -23,7 +23,9 @@ This project is **functional end-to-end, including real Garmin file upload** —
 - `ChartStack` / `MetricPanel` / `CrosshairReadout` render synced, aligned charts, verified
   against real rendered Recharts SVG output. The crosshair's readout is **fixed at each
   graph's upper left** rather than following the cursor: one shared crosshair updates every
-  graph's label in place, and the elapsed time and distance are reported once, at the top.
+  graph's label in place, and the elapsed time and distance are reported once, in the sticky
+  app header beside the activity's name and duration — so the reading stays in view however
+  far down the stack you have scrolled.
 - The chart's controls live where what they act on is: `ChartToolbar` holds the two that
   belong to no single graph (`XAxisModeSwitch`, `MetricToggle`), while each graph's
   `max/min/avg/median` and derivative boxes (`StatCheckboxes`) fold out of that graph's own
@@ -471,16 +473,20 @@ path, though (see step 9 below).
    now appear in the header, so a *different* activity can be loaded without leaving this
    view. The header's left-hand cluster should now read
    `⚡ ActivityMaxxer  <name> [Running] 1 Jan 2026, 09:00 · 30:00` — the activity's identity,
-   pinned there rather than in the page body. Scroll down: the drop control and the two
+   pinned there rather than in the page body. While hovering a chart it gains a trailing
+   ` · 12:05 · 2.34 km`; at rest that part must be absent entirely, not a placeholder.
+   Scroll down: the drop control and the two
    links fade away, that cluster stays, legible over chart ink inside one translucent chip.
    Hover the header — everything comes back, and the chip must not double-darken.
 4. **Synced crosshair and fixed labels** — hover anywhere over any chart. Expect a vertical
    crosshair at the same x-position on *all* panels, and **every** panel's head to fill with
    that sample's own value in its own unit — including the panels you are not hovering.
    Nothing should follow the cursor, and no label should shift sideways as you move: they
-   update in place. The elapsed time and distance appear **once**, at the right-hand end of
-   the toolbar, regardless of x-axis mode. Move off the charts and each head goes back to
-   reading `Heart rate —`.
+   update in place. The elapsed time and distance appear **once**, in the header after the
+   duration, regardless of x-axis mode. **The check this placement exists for:** scroll until
+   the toolbar is off screen, then hover the bottom panel — the reading must still be there,
+   in the faded header's chip. Move off the charts and each head goes back to
+   reading `Heart rate —`, while the header reading and its `·` separator both vanish.
 5. **Metric toggles** — uncheck "Cadence" in the toolbar → its panel *and its head* disappear,
    others stay aligned. Re-check it → both come back.
 6. **Per-graph settings** — click the arrow beside a metric's name → its
@@ -646,8 +652,9 @@ path, though (see step 9 below).
     - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take
       one. It must show, in one translucent chip in the upper left, the bolt +
       "ActivityMaxxer" on the first row and the activity name, sport chip, start date/time
-      and duration wrapped onto a second — the wordmark **not** dropped, the name **not**
-      truncated, all of it legible against chart ink — then charts filling the rest, no
+      and duration wrapped onto a second — and, with a finger down on a chart, the crosshair's
+      `12:05 · 2.34 km` joining them inside that same chip — the wordmark **not** dropped, the
+      name **not** truncated, all of it legible against chart ink — then charts filling the rest, no
       half-collapsed chrome, no horizontal overflow, and a **dark** Safari address bar.
       Repeat at the top of the page and while zoomed in (where the duration should read the
       window's span, not the activity's) — **all three should be sharable as-is**.

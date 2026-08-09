@@ -179,6 +179,23 @@ describe('App (wired against the real TCX/FIT sources)', () => {
     expect(container.querySelectorAll('.activity-header')).toHaveLength(1)
   })
 
+  // The whole point of the readout's move, stated structurally: it is in the
+  // sticky cluster, not in the body that scrolls away. The toolbar held it
+  // once, and with four or five stacked panels it had left the screen by the
+  // time you scrolled down to hover the bottom graph. No hover needed here —
+  // ChartStack.test.jsx drives the filling; this pins where the node lives.
+  it('puts the shared crosshair readout in the sticky header, not in the scrolling toolbar', async () => {
+    const { container } = render(<App />)
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [makeFile()] },
+    })
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+
+    expect(container.querySelectorAll('.crosshair-position')).toHaveLength(1)
+    expect(container.querySelector('header .app-header__title .crosshair-position')).not.toBeNull()
+    expect(container.querySelector('.chart-toolbar .crosshair-position')).toBeNull()
+  })
+
   // The lockup is what makes a mid-scroll screenshot attributable: once
   // faded, the header's bar is gone and the h1 plus its mark is all that's
   // left identifying the app. The mark lives *inside* the heading so it

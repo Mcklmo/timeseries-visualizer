@@ -411,6 +411,42 @@ main {
   color: color-mix(in srgb, var(--text-dim) 60%, transparent);
 }
 
+/* The shared crosshair position, portaled in by the first visible panel — the
+   one part of this cluster that is live rather than identity. It is here, not in
+   the chart toolbar, because .app-header is sticky and .app-header__title is
+   exempt from the scrolled fade: the reading has to survive scrolling down to
+   the bottom panel, which is exactly what the toolbar could not do.
+   --text, not --text-dim, and for the same reason .crosshair-value is: among
+   four static dim numbers, this is the one that moves. */
+.crosshair-position {
+  font-family: var(--font-data);
+  /* 13px explicitly, matching the pair it now sits beside. In the toolbar this
+     came free from `.chart-toolbar { font-size: 13px }`; the header cluster sets
+     no size, so without this the live reading would render at the 16px default
+     and tower over the numbers it qualifies. */
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Same separator idiom as the datetime/duration pair above, so two monospace
+   readings don't run together as one string. It disappears with its element,
+   since a display:none element renders no ::before. */
+.activity-duration + .crosshair-position::before {
+  content: '·';
+  margin-right: 10px;
+  color: color-mix(in srgb, var(--text-dim) 60%, transparent);
+}
+
+/* Collapsed rather than merely empty: .activity-header is a flex row, so an
+   empty span would still claim its 10px gap — and once the header fades, that
+   gap widens the translucent chip in every idle screenshot. Reliable for the
+   same reason `.crosshair-slot:empty::after` is: React never gives this node
+   children of its own, so `:empty` means "no crosshair anywhere". */
+.crosshair-position:empty {
+  display: none;
+}
+
 .sport-chip {
   font-family: var(--font-data);
   font-size: 12px;
@@ -444,16 +480,6 @@ main {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
-}
-
-/* The shared crosshair position, portaled in by the first visible panel. Pushed
-   to the far end so the row reads controls-then-readout, and empty at rest —
-   `margin-left: auto` on an empty span costs nothing in an idle screenshot. */
-.crosshair-position {
-  margin-left: auto;
-  font-family: var(--font-data);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
 }
 
 .metric-toggle {

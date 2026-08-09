@@ -43,7 +43,7 @@ import { metricUnit } from '../metrics/metricRegistry.js'
  * @param {{key: string, spec: {label: string, unit: string, format: (v: number) => string}}|null} [props.derivative]
  *   - the overlay's row key and display spec while one is switched on
  * @param {Element|null} [props.valueSlot] - this panel's own head slot
- * @param {Element|null} [props.positionSlot] - the toolbar's shared time/distance
+ * @param {Element|null} [props.positionSlot] - the app header's shared time/distance
  *   slot. Passed to the FIRST visible panel only: every panel is synced to the
  *   same sample, so one of them reports the position and the rest pass null.
  */

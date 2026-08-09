@@ -168,13 +168,4 @@ describe('ChartToolbar', () => {
     expect(screen.getByRole('button', { name: 'Distance' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Time' })).toHaveAttribute('aria-pressed', 'false')
   })
-
-  it('holds the shared position readout, exactly once, however many panels there are', async () => {
-    // Every panel is synced to the same sample, so the time/distance is read
-    // once for the stack rather than once per graph — and it lives up here
-    // because it belongs to no single graph.
-    const { container } = await renderApp()
-    expect(container.querySelectorAll('.crosshair-position')).toHaveLength(1)
-    expect(container.querySelector('.chart-toolbar .crosshair-position')).not.toBeNull()
-  })
 })

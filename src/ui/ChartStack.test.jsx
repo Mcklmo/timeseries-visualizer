@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ActivityHeader } from './ActivityHeader.jsx'
 import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
@@ -141,12 +141,26 @@ function panelFor(container, metricId) {
   )
 }
 
+// Mirrors AppShell: it owns the one position-slot node, hands the ref to the
+// header and the node to the stack. In the app those two ends live in
+// different subtrees, so a test that renders the stack alone cannot fill the
+// shared readout at all.
+function StackWithHeader({ extra }) {
+  const [positionSlot, setPositionSlot] = useState(null)
+  return (
+    <>
+      <ActivityHeader positionRef={setPositionSlot} />
+      {extra}
+      <ChartStack positionSlot={positionSlot} />
+    </>
+  )
+}
+
 async function renderStack({ activity = fixtureActivity, extra = null } = {}) {
   const utils = render(
     <AppProviders source={makeSource(activity)}>
       <Loader />
-      {extra}
-      <ChartStack />
+      <StackWithHeader extra={extra} />
     </AppProviders>,
   )
   // Wait past the point where `.metric-panel` wrapper divs exist: Recharts'
@@ -354,10 +368,14 @@ describe('ChartStack', () => {
     expect(panels[2].querySelector('.crosshair-slot').textContent).toContain('172 spm')
   })
 
-  it('reports the hovered position once, in the toolbar, rather than once per panel', async () => {
+  it('reports the hovered position once, in the header, rather than once per panel', async () => {
     const { container } = await renderStack()
-    const position = () => container.querySelector('.chart-toolbar .crosshair-position')
+    // No .app-header wrapper in this harness, so the identity cluster itself is
+    // the structural anchor.
+    const position = () => container.querySelector('.activity-header .crosshair-position')
     expect(container.querySelectorAll('.crosshair-position')).toHaveLength(1)
+    // The regression guard for the whole move: it is not in the scrolling row.
+    expect(container.querySelector('.chart-toolbar .crosshair-position')).toBeNull()
     expect(position().textContent).toBe('')
 
     fireEvent.mouseOver(container.querySelectorAll('.recharts-wrapper')[2])
@@ -643,12 +661,9 @@ describe('ChartStack', () => {
     const withTotalTime = { ...fixtureActivity, totalTime: 40, name: 'Test run' }
     const { container } = await renderStack({
       activity: withTotalTime,
-      extra: (
-        <>
-          <ActivityHeader />
-          <ToggleStat metricId="heartRate" statKind="avg" />
-        </>
-      ),
+      // No <ActivityHeader /> of its own — renderStack's harness already renders
+      // one, and a second would give `.activity-duration` two matches.
+      extra: <ToggleStat metricId="heartRate" statKind="avg" />,
     })
     fireEvent.click(screen.getByText('toggle-heartRate-avg'))
     const duration = () => container.querySelector('.activity-duration').textContent
