@@ -11,7 +11,12 @@
   // convenience. `custom_domain` makes Cloudflare provision the DNS record and
   // certificate itself; it requires the zone's nameservers to be delegated to
   // Cloudflare (a registrar CNAME at the apex will not do).
-  "routes": [{ "pattern": "activitymaxxer.com", "custom_domain": true }],
+  "routes": [
+    {
+      "pattern": "activitymaxxer.com",
+      "custom_domain": true
+    }
+  ],
   // Retires *.workers.dev. Without this the app stays reachable on two
   // indexable hostnames serving byte-identical content. It has to live here
   // rather than in the dashboard: toggling it in the UI alone is undone by the
@@ -35,7 +40,7 @@
     // needs to build that URL — keep the two in step; both files say so.
     // A Strava app has exactly ONE Authorization Callback Domain, so this is
     // the *production* app's id and local dev overrides it (see .env).
-    "STRAVA_CLIENT_ID": "REPLACE_WITH_PRODUCTION_STRAVA_CLIENT_ID"
+    "STRAVA_CLIENT_ID": "270832"
   },
   // Native rate limiting, keyed by CF-Connecting-IP in the routes.
   // namespace_id only has to be unique within this Cloudflare account; there is
@@ -44,7 +49,10 @@
     {
       "name": "FEEDBACK_RATE_LIMITER",
       "namespace_id": "1001",
-      "simple": { "limit": 5, "period": 60 }
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
     },
     {
       // A per-IP BURST CAP and nothing more. `period` accepts only 10 or 60
@@ -59,7 +67,10 @@
       // window. See worker/lib/rateLimit.js.
       "name": "STRAVA_RATE_LIMITER",
       "namespace_id": "1002",
-      "simple": { "limit": 30, "period": 60 }
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
     }
   ]
 }

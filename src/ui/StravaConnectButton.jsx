@@ -5,23 +5,22 @@
 // navigation stub, and it is why `onNavigate` is a prop with a real default.
 //
 // ---
-// **⚠ BRAND ASSET OUTSTANDING — this must be resolved before launch.**
+// **The artwork is Strava's own file, unmodified.** Their API Agreement
+// requires *their* asset, downloaded from the brand guidelines
+// (https://developers.strava.com/guidelines/) — a recreation, however close,
+// would be a trademark problem. `public/strava/btn_strava_connect_with_orange.svg`
+// is the "1.1 Connect with Strava Buttons" orange SVG byte-for-byte, served as
+// a static file rather than inlined so it stays visibly *theirs* and a future
+// re-download is a file copy, not a diff to read.
 //
-// Strava's API Agreement requires their **own** "Connect with Strava" button
-// artwork, downloaded from their brand guidelines
-// (https://developers.strava.com/guidelines/), not a recreation of it. That
-// file is not in this repo yet, and drawing a lookalike would be worse than
-// this: a near-copy of a trademark is a trademark problem, where a plainly
-// unbranded stand-in is only an unfinished one.
+// It is an <img>, not an inline <svg>, for the same reason: nothing in this
+// app's CSS can reach inside it and recolour it. The wrapping <button> carries
+// no background, border or padding — the artwork already contains all three,
+// and the sizing lives in one `.strava-connect__artwork` rule that only ever
+// scales it proportionally. Do not restyle it.
 //
-// So this renders an explicitly *unbranded* button in Strava's orange, and the
-// swap is deliberately one line: drop the official SVG into
-// `public/strava/btn_strava_connect_with_orange.svg` and replace the <span>
-// below with an <img>. `StravaConnectButton.test.jsx` pins the attribution and
-// the scope disclosure, which are separate obligations that stay either way.
-//
-// The **"Powered by Strava" attribution** below the button is a second, always
-// required obligation and is already correct.
+// The **"Powered by Strava" attribution** below the button is a second,
+// separate and always-required obligation, and it stays regardless.
 // ---
 //
 // **The scope is disclosed on the button, not buried.** `activity:read_all`
@@ -84,8 +83,15 @@ export function StravaConnectButton({
         className="strava-connect__button"
         onClick={() => onNavigate(beginAuthorizationImpl({ clientId }))}
       >
-        {/* Replace with Strava's official artwork — see the header. */}
-        <span className="strava-connect__wordmark">Connect with Strava</span>
+        {/* Strava's file, unaltered. The alt text is what gives the button its
+            accessible name — the artwork's wordmark is paths, not text. */}
+        <img
+          className="strava-connect__artwork"
+          src="/strava/btn_strava_connect_with_orange.svg"
+          alt="Connect with Strava"
+          width="237"
+          height="48"
+        />
       </button>
 
       <p className="strava-connect__disclosure">

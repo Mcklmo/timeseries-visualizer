@@ -1224,33 +1224,33 @@ main {
   margin: 16px 0 24px;
 }
 
-/* Strava's brand orange. NOT a token in tokens.css, deliberately: the tokens
-   file is this app's palette, and a third party's trademark colour sitting in
-   it invites reuse somewhere it would mean nothing. It appears here and only
-   here. See StravaConnectButton.jsx — the official button artwork replaces
-   this, and this rule goes with it. */
+/* A frame around Strava's artwork and nothing else. No background, border or
+   padding: the SVG already carries all three, and anything here would render as
+   a second button behind theirs. `border-radius` only matches the artwork's own
+   `rx="6"` so the focus ring hugs the shape instead of boxing it.
+
+   There is deliberately **no hover state**. Strava's brand guidelines forbid
+   altering the button — recolouring, dimming or filtering it are all
+   alterations — so the cursor is the whole affordance. */
 .strava-connect__button {
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  color: #fff;
-  background: #fc4c02;
-  border: 1px solid #fc4c02;
-  border-radius: var(--radius);
-  /* The same ≥44px floor every tappable control in this app holds to
-     (ARCHITECTURE.md, Route E) — this view exists for the phone. */
-  min-height: 44px;
-  padding: 10px 20px;
+  display: inline-block;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
 }
 
-.strava-connect__button:hover {
-  background: #e34402;
-  border-color: #e34402;
-}
-
-.strava-connect__wordmark {
-  letter-spacing: 0.01em;
+/* The only sizing rule, and it scales proportionally or not at all. 237×48 is
+   the file's intrinsic size, comfortably over the ≥44px tap-target floor every
+   control in this app holds to (ARCHITECTURE.md, Route E). `height: auto`
+   guards the aspect ratio if `max-width` ever engages on a very narrow phone —
+   a squashed trademark is the failure this prevents. */
+.strava-connect__artwork {
+  display: block;
+  width: 237px;
+  max-width: 100%;
+  height: auto;
 }
 
 .strava-connect__disclosure {

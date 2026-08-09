@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { REQUIRED_SCOPE, STRAVA_STATE_STORAGE_KEY } from '../data/strava/stravaAuth.js'
-import { StravaConnectButton, isClientIdConfigured } from './StravaConnectButton.jsx'
+import { StravaConnectButton, isClientIdConfigured, STRAVA_CLIENT_ID } from './StravaConnectButton.jsx'
 
 beforeEach(() => {
   globalThis.sessionStorage.clear()
@@ -75,8 +75,17 @@ describe('StravaConnectButton', () => {
     it('recognises exactly the placeholder and nothing else', () => {
       expect(isClientIdConfigured('REPLACE_WITH_PRODUCTION_STRAVA_CLIENT_ID')).toBe(false)
       expect(isClientIdConfigured('')).toBe(false)
-      expect(isClientIdConfigured(undefined)).toBe(false)
       expect(isClientIdConfigured('123456')).toBe(true)
+    })
+
+    // Not `.toBe(false)`: omitting the argument reads *this build's*
+    // VITE_STRAVA_CLIENT_ID through the default parameter, so pinning a literal
+    // here asserts what is in `.env` rather than what the function does — it
+    // passed only while that file held the placeholder, and flipped to failing
+    // the moment a real id was filled in. An unset id is already covered by the
+    // `''` case above, because STRAVA_CLIENT_ID falls back to `''`.
+    it('defers to the build-time id when called with no argument', () => {
+      expect(isClientIdConfigured(undefined)).toBe(isClientIdConfigured(STRAVA_CLIENT_ID))
     })
   })
 })

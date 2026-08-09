@@ -503,23 +503,26 @@ Recorded so nobody spends a weekend on them:
 | 4 copy — README, `/about`, launch, this document | ✅ | `c7150aa` |
 | 3 UI — the OAuth callback, the picker, the third view | first user-visible change | — |
 
-**Three things are outstanding.**
+**Two things are outstanding.**
 
 1. **The two Strava apps are not registered**, so the client ids in `wrangler.jsonc` and `.env`
    are still placeholders and `StravaConnectButton` renders a developer notice rather than a
    button. **Nothing has been exercised end to end against real Strava.** Stage 1 was verified
    against `wrangler dev` + curl; everything else is unit-tested only. README step 14 is the
    walkthrough to run once the apps exist, and its two ⚠ items are the failures that are silent.
-2. **Strava's official "Connect with Strava" button artwork is not in the repo.** Their API
-   Agreement requires *their* asset, not a recreation, so `StravaConnectButton` ships an
-   explicitly unbranded stand-in in Strava orange with the swap documented in its header —
-   drawing a lookalike would turn an unfinished button into a trademark problem. The **"Powered
-   by Strava" attribution**, which is a separate and always-required obligation, is in place and
-   tested.
-3. **Fixture tiers 2 and 3** (a recorded real response, and the tolerant cross-check against
+2. **Fixture tiers 2 and 3** (a recorded real response, and the tolerant cross-check against
    `fixtures/23870166877_ACTIVITY.fit`) need a real account and an upload. Check **API Policy
    §5.3**, which prohibits using Strava Data in connection with AI development, before committing
    a real fixture into this repo.
+
+**The brand obligations are both settled**, and they were two separate ones. The button is now
+Strava's own "1.1 Connect with Strava Buttons" orange SVG, byte-for-byte, at
+`public/strava/btn_strava_connect_with_orange.svg` — served as a static file and rendered as an
+`<img>` so no CSS in this app can reach inside and alter it, which their guidelines forbid. The
+`.strava-connect__button` rule is a bare frame with no hover state for that same reason. The
+**"Powered by Strava" attribution** is the other obligation, applies whenever Strava data is
+displayed rather than only to the button, and remains in place and tested on both halves of the
+view.
 
 ### What genuinely already works
 
