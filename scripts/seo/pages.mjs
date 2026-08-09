@@ -52,14 +52,15 @@ export const pages = [
       'ActivityMaxxer parses .fit, .tcx and .gpx files in your own browser. No upload, no account, no analytics. Here is exactly what reaches the network, and when.',
     heading: 'About ActivityMaxxer',
     intro:
-      'ActivityMaxxer runs entirely in your browser. Your files are never sent to a server — they stay on your machine, so your data never leaves your device. There are no cookies, no tracking, and no analytics. This is a non-profit project: nothing is recorded, collected, or sold.',
+      'ActivityMaxxer runs entirely in your browser. Your files are never sent to a server — they stay on your machine, so a file you open here never leaves your device. There are no cookies, no tracking, and no analytics. This is a non-profit project: nothing is recorded, collected, or sold.',
     body: `
       <h2>What happens when you open a file</h2>
       <p>
         Dropping a file on this site does not upload it. The browser hands the page a reference
         to the file you picked, JavaScript running in your own tab reads its bytes, parses them,
         and builds the charts from what it finds. Nothing in that sequence involves a request to
-        this site's server, which holds nothing but the page itself.
+        this site's server. That is a statement about the file path, and it holds without
+        qualification: opening a file is not a thing this site's server ever learns about.
       </p>
       <p>
         The practical consequences are worth spelling out, because "we don't store your data" is
@@ -72,9 +73,11 @@ export const pages = [
 
       <h2>What does reach the network, and when</h2>
       <p>
-        Two things do, and only when you ask them to. Being precise about them is the point: a
+        Three things do, and only when you ask them to. Being precise about them is the point: a
         reader who uses one of these features should not feel that the paragraph above misled
-        them.
+        them. Two of the three are opt-in ways to reach your own training history, and they do
+        not work the same way as each other — so they are described separately rather than
+        summarised together.
       </p>
       <ul>
         <li>
@@ -90,6 +93,19 @@ export const pages = [
           browser's local storage so you do not have to paste it again; one "Disconnect" removes
           it. This exists mainly for phones, where a watch file is not something you can browse
           to in a file picker.
+        </li>
+        <li>
+          <strong>Connecting a Strava account</strong> is the one route that
+          <strong>does</strong> go through this site's server, and pretending otherwise would be
+          the dishonest thing to do here. Strava's login requires a secret that cannot be kept
+          in a web page, so requests travel from your browser to this site's server and on to
+          Strava. That server is deliberately forgetful: it holds the secret, passes your
+          request along, hands Strava's answer straight back, and keeps no database, no log of
+          what you opened and no copy of anything it carried. What it costs you is real and
+          worth naming — your Strava token travels through it in a request header, and your
+          activity data travels back through it — over an encrypted connection to the same
+          address as the page. Approval happens on Strava's own site, read-only, and pressing
+          "Disconnect" revokes it at Strava rather than merely forgetting it here.
         </li>
       </ul>
       <p>

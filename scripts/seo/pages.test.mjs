@@ -59,12 +59,27 @@ describe('SEO page content model', () => {
   it('leads with the privacy claim on the pages that target it', () => {
     const about = pages.find((page) => page.slug === 'about')
     expect(about.intro).toMatch(/never sent to a server/i)
-    // The claim stops being an absolute somewhere on the page: two opt-in
+    // The claim stops being an absolute somewhere on the page: three opt-in
     // features do reach the network, and a reader who used one must not feel
     // the page misled them.
     expect(about.body).toMatch(/only when you ask them to/i)
     expect(about.body).toMatch(/GitHub as a public issue/i)
     expect(about.body).toMatch(/never pass through this app's server/i)
+  })
+
+  // The two account routes are NOT the same story, and the page must not let
+  // them read as one. intervals.icu is browser-direct; Strava goes through this
+  // app's server because its OAuth needs a secret a web page cannot hold. The
+  // temptation when editing this prose is to summarise both as "connecting an
+  // account" — which would make the sentence above a lie for half the readers
+  // it applies to, silently, in a file no component renders and nobody
+  // re-reads. Hence a test rather than a comment.
+  it('says plainly that the Strava route does reach the server, and what that costs', () => {
+    const about = pages.find((page) => page.slug === 'about')
+    expect(about.body).toMatch(/strava/i)
+    expect(about.body).toMatch(/does<\/strong> go through this site's server/i)
+    // And that the honest cost of it is stated, not buried.
+    expect(about.body).toMatch(/token travels through it/i)
   })
 
   it('answers FAQ entries in plain text, since they are reused verbatim as JSON-LD', () => {

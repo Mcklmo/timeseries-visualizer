@@ -327,7 +327,9 @@ just a web page that syncs from their existing account.
 > directly.
 >
 > Your browser calls intervals.icu itself — the key and the files never pass through my
-> server, which serves nothing but the page. Free, no account, no upload.
+> server. (Strava is also supported now, and that one *does* go through my server: its OAuth
+> needs a client secret a web page can't hold. The server passes requests through and stores
+> nothing.) Free, no account, no upload.
 >
 > https://activitymaxxer.com
 >
@@ -335,8 +337,10 @@ just a web page that syncs from their existing account.
 > issue.
 
 *Caveat worth knowing before you post:* Strava-synced activities can't be downloaded from
-intervals.icu — it doesn't keep an original file for those. Say so if asked; don't lead with
-it.
+intervals.icu — it doesn't keep an original file for those. Connecting Strava directly is
+now the answer to that, so it is a good reply to have ready rather than a weakness. Mention
+the 10-athlete cap if pressed: Strava's Standard Tier caps a developer app there, and being
+told "the app is full" without warning is the worse version of finding out.
 
 ### D2. Reddit — *lead with privacy and the phone workflow*
 
@@ -356,9 +360,10 @@ subreddit's self-promotion rule first; several require you to be a participating
 > axis, with a crosshair that reads all of them at the same moment, plus pinch-zoom on
 > mobile.
 >
-> If your watch syncs to intervals.icu you can connect it and browse your history instead of
-> hunting for files — useful on a phone, where a .fit file isn't something you can easily
-> browse to. That connection is opt-in and your browser talks to intervals.icu directly.
+> If your watch syncs to intervals.icu or Strava you can connect it and browse your history
+> instead of hunting for files — useful on a phone, where a .fit file isn't something you can
+> easily browse to. Both are opt-in and off by default. intervals.icu goes browser-direct;
+> Strava routes through my server, because its login needs a secret a web page can't hold.
 >
 > https://activitymaxxer.com — free, no account, no ads, no analytics.
 
@@ -374,25 +379,35 @@ the first two hours** — an unanswered thread dies.
 First comment, posted by you immediately after submitting:
 
 > Author here. This parses Garmin FIT, TCX and GPX files entirely in the browser — no
-> upload, no accounts, no analytics, no cookies. The server serves the page and nothing
-> else; the one API route it has files feedback as a GitHub issue.
+> upload, no accounts, no analytics, no cookies. The server serves the page, files feedback
+> as a GitHub issue, and proxies Strava (which is the one route that needs it — see below).
 >
 > The FIT parsing uses Garmin's own SDK in the tab. Everything normalizes to one internal
 > sample shape, so a GPX with nothing but lat/lon/ele/time still gets a speed and elevation
 > chart derived from position, while a FIT from a Stryd pod brings running power through
 > untouched. Charts share a time axis with a crosshair that reads across all of them.
 >
-> The one genuinely interesting architectural bit: the source of activities is a port with
-> file adapters and an intervals.icu adapter, and adding the network one needed no
-> server-side code at all — intervals.icu sends CORS headers, so the browser calls it
-> directly and the API key never touches my infrastructure.
+> The one genuinely interesting architectural bit: the source of activities is a port, and
+> the port turned out to be `RawTrackpoint[]`, not `File` — nothing below it has ever seen a
+> file. So intervals.icu (which hands back your *original upload*) reuses the three parsers
+> byte for byte and needed no server-side code at all: it sends CORS headers, so the browser
+> calls it directly and the API key never touches my infrastructure. Strava has no
+> original-file endpoint, so that adapter assembles trackpoints from the streams API instead
+> — and everything below the port, including the pause detection and the pace derivation, is
+> shared with the file path unchanged. Strava is also where the "no server" property had to
+> go: OAuth needs a `client_secret`, so there is a stateless proxy for it, and I'd rather say
+> that plainly than have someone find it in DevTools.
 >
 > Source: https://github.com/Mcklmo/timeseries-visualizer
 
 Expect HN to interrogate the privacy claim. The honest answer is on `/about` and it is
-precise: two things reach the network, both opt-in — the feedback form (posts to GitHub as a
-public issue, guarded by Turnstile, which loads only when you open the dialog) and the
-intervals.icu connection. Nothing else. Don't overstate it in the thread; the page doesn't.
+precise: three things reach the network, all opt-in — the feedback form (posts to GitHub as
+a public issue, guarded by Turnstile, which loads only when you open the dialog), the
+intervals.icu connection (browser-direct), and the Strava connection (through the Worker,
+which holds the OAuth secret, stores nothing and logs nothing). Nothing else. **Lead with
+the Strava one if the claim is challenged**, rather than defending the absolute version:
+the page already concedes it, the concession is what makes the rest credible, and a reader
+who finds it themselves in DevTools will read every other sentence as marketing.
 
 ---
 

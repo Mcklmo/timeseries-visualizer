@@ -1,7 +1,8 @@
 # ActivityMaxxer — Architecture as Built
 
 > **Audience:** anyone about to change the system — no prior reading required.
-> **Status:** as-built description, verified against the working tree on 2026-08-08 (branch `derivatives`).
+> **Status:** as-built description, verified against the working tree on 2026-08-09 (branch `derivatives`),
+> with Strava stages 0a–2 landed. §9 records what shipped and what is still outstanding.
 > **Companion:** `ARCHITECTURE.md` is the *decision record*. This document is the *current map*.
 
 ---
@@ -17,24 +18,29 @@ is now load-bearing in two specific ways:
 - Its stated dependency rule — *"arrows point inward-to-outward only"* — has acquired four real
   exceptions, none of which were written down anywhere.
 
-A second thing anchors this document: **Strava sync is the next feature.** The working assumption
-going in was "the input data is already behind dependency injection, so perhaps all is good."
-That is half right. The half that is right is genuinely reassuring and is documented in §9. The
-half that fails is load-bearing. So §7 below is ranked by what Strava actually needs, not by
-abstract tidiness — four of its nine items are marked **[Strava]** because they are prerequisites
-rather than cleanups.
+A second thing anchors this document: **Strava sync was the next feature, and it is now mostly
+built.** The working assumption going in was "the input data is already behind dependency
+injection, so perhaps all is good." That was half right. The half that was right is genuinely
+reassuring; the half that failed was load-bearing. So §7 below is ranked by what Strava actually
+needed, not by abstract tidiness — four of its nine items are marked **[Strava]**, and all four
+have since shipped. **§9 is now the record of what landed, what changed against the assessment,
+and what is still outstanding**, rather than a forecast.
 
 ---
 
-## 2. What the system is — three runtime flows
+## 2. What the system is — four runtime flows
 
-The app is a static, client-side time-series viewer for endurance-activity files, deployed as a
-Cloudflare Worker with static assets. Three flows run through it, and they are more independent
-than their shared codebase suggests.
+The app is a client-side time-series viewer for endurance-activity files, deployed as a Cloudflare
+Worker with static assets. Four flows run through it, and they are more independent than their
+shared codebase suggests. **Only one of the four is not client-side**, and which one is the single
+most useful thing to know here.
 
-**Activity flow (the main one).** A file drop or an id reference enters an `ActivitySource`, which
-dispatches to `parseTcx` / `parseFit` / `parseGpx`, hands the resulting raw trackpoints to
-`normalizeActivity`, and publishes an `Activity` into `ActivityContext`. From there
+**Activity flow (the main one).** A file drop or an id reference enters `sourceRegistry`, which
+dispatches — on the filename extension for a file, on `ref.provider` for an id — to one of five
+adapters. Three of them parse (`parseTcx` / `parseFit` / `parseGpx`); the Strava one assembles
+trackpoints from stream arrays instead. All five hand `RawTrackpoint[]` to `normalizeActivity`,
+which publishes an `Activity` into `ActivityContext`. **That is the real port** — nothing below
+`data/` has ever seen a `File`. From there
 `ChartViewContext` (zoom, x-axis mode, metric/stat toggles) and then `StatsBasisContext` (which
 window statistics are computed over) derive view state, which `ChartStack` fans out to one
 `MetricPanel` per visible metric, each rendering Recharts.
@@ -46,12 +52,20 @@ mount in `App.jsx`, and the shared constants in `shared/feedbackLimits.js`.
 
 **intervals.icu flow.** `IntervalsPage` → `intervalsApi` → intervals.icu **directly from the
 browser** — no proxy, no Worker route. It rejoins the activity flow only by handing up an
-`{ type: 'id' }` activity reference for the main flow to load.
+`{ type: 'id', provider: 'intervals' }` activity reference for the main flow to load.
+
+**Strava flow — the one that is not client-side.** `StravaPage` → `stravaApi` → **this app's own
+Worker** at `/api/strava/*` → Strava. It is the only data path that touches a server, and it is not
+a preference: Strava's OAuth requires a `client_secret` that cannot live in a web page, and its
+streams endpoint has lost and regained CORS more than once. The Worker is stateless — it holds the
+secret, forwards the browser's bearer token upstream, and hands Strava's body back verbatim. Like
+intervals.icu, this flow rejoins the main one by handing up an id reference — but that reference
+must carry `startedAtUtc` and `sportType` as well, for reasons §9 explains. See §9(a)/(b).
 
 The build is `vite build` → `dist/`, after which `scripts/build-seo-pages.mjs` prerenders static
-pages, `sitemap.xml` and `robots.txt` into `dist/`. `worker/index.js` is 13 lines: it matches
-`/api/feedback` and hands every other request to the `ASSETS` binding. This is *not* Cloudflare
-Pages — it is Workers with static assets, so routing is explicit and visible.
+pages, `sitemap.xml` and `robots.txt` into `dist/`. `worker/index.js` is 18 lines: it matches
+`/api/feedback` and `/api/strava/*`, and hands every other request to the `ASSETS` binding. This is
+*not* Cloudflare Pages — it is Workers with static assets, so routing is explicit and visible.
 
 ---
 
@@ -63,21 +77,25 @@ Measured on 2026-08-09, non-test files only.
 |---|---|---|---|
 | `shared/` | 1 | 13 | nothing — the browser + Worker kernel |
 | `src/domain/` | 16 | 1275 | only `domain/` — no React, no DOM |
-| `src/data/` | 15 | 1430 | `domain/`, React (see finding D3) |
+| `src/data/` | 25 | 2771 | `domain/`, `lib/`, React (see finding D3) |
 | `src/metrics/` | 1 | 194 | `domain/units.js` |
-| `src/state/` | 3 | 305 | `domain/`, `metrics/`, `data/`, React |
+| `src/state/` | 3 | 296 | `domain/`, `metrics/`, `data/`, React |
 | `src/stats/` | 5 | 443 | `domain/`, `metrics/`, `state/`, React |
-| `src/lib/` | 1 | 64 | nothing app-specific (`feedbackClient`) |
-| `src/ui/` | 27 | 2611 | everything below + Recharts |
+| `src/lib/` | 2 | 197 | nothing app-specific (`feedbackClient`, `safeStorage`) |
+| `src/ui/` | 28 | 2650 | everything below + Recharts |
 | `src/app/` + `App.jsx` | 2 | 231 | composition root |
 | `src/main.jsx` | 1 | 11 | entry point |
-| `worker/` | 8 | 415 | `shared/` |
+| `worker/` | 11 | 980 | `shared/` |
 
-**80 non-test source files, ~7,000 LOC.**
+**~94 non-test source files, ~9,000 LOC** — `data/` and `worker/` roughly doubled, and both grew
+for the same reason: Strava is the first provider that needs a server half and the first adapter
+that builds `RawTrackpoint[]` rather than reusing a parser.
 
-**Test posture: 71 test files, 875 tests, all passing.** That ratio — roughly one test file per
+**Test posture: 83 test files, 1,073 tests, all passing.** That ratio — roughly one test file per
 source file — is the single most important fact for §7: every refactor listed there is guarded by
-existing tests, which is why they are safe to attempt at all.
+existing tests, which is why they are safe to attempt at all. It is also what made the three
+Stage-0 refactors provably behaviour-preserving: their acceptance criterion was that the *existing*
+suite passed unchanged.
 
 ---
 
@@ -86,7 +104,7 @@ existing tests, which is why they are safe to attempt at all.
 ```mermaid
 flowchart TB
   subgraph UI["UI — React + Recharts"]
-    Shell[App / AppShell<br/>composition root · view enum · source dispatch]
+    Shell[App / AppShell<br/>composition root · view enum]
     Ctl[ControlPanel]
     Stack[ChartStack]
     Panel[MetricPanel xN]
@@ -138,30 +156,48 @@ flowchart TB
 
   subgraph DATA["Ports & adapters"]
     PORT{{ActivitySource port<br/>load ref → Promise Activity}}
+    DISP["sourceRegistry<br/>the ONLY place adapters are instantiated<br/>file→extension · id→ref.provider"]
+    NEUTRAL[fileFormat · activityDateRange<br/>provider-neutral, pure]
+    SAFE[lib/safeStorage<br/>guarded-storage kernel]
     FILES[TcxActivitySource · FitActivitySource · GpxActivitySource<br/>→ parseTcx / parseFit / parseGpx]
     ICU[IntervalsActivitySource<br/>reuses all three parsers]
-    API[intervalsApi · detectActivityFormat<br/>credentialStore · dateRangeStore · activityDateRange]
+    API[intervalsApi · credentialStore · dateRangeStore]
+    STV["StravaActivitySource<br/>builds RawTrackpoint[] itself"]
+    SAPI[stravaApi · stravaAuth · stravaTokenStore<br/>stravaBoundsFor · streamCache · sportFor]
+    S2T[streamsToTrackpoints<br/>pure: StreamSet + startTime + sport]
     ROW[(ActivityRow<br/>typedef, zero imports)]
-    MAP[toActivityRow<br/>wire shape stops here]
+    MAP[toActivityRow ×2<br/>wire shape stops here]
     FILES -.implements.-> PORT
     ICU -.implements.-> PORT
-    ICU --> API
+    STV -.implements.-> PORT
+    DISP --> FILES & ICU & STV
+    ICU --> API & NEUTRAL
+    STV --> SAPI --> SAFE
+    STV --> S2T
+    API --> SAFE
     MAP --> ROW
   end
 
   subgraph WORKER["Cloudflare Worker"]
-    WIDX[index.js<br/>/api/feedback else ASSETS]
+    WIDX[index.js<br/>/api/feedback · /api/strava/* else ASSETS]
     WFB[routes/feedback]
+    WST[routes/strava<br/>stateless: holds client_secret, stores no token]
     WLIB[validateFeedback · verifyTurnstile<br/>githubClient · rateLimit · buildIssuePayload]
+    WSLIB[stravaOAuth · stravaProxy<br/>header allowlists, both directions]
     WIDX --> WFB --> WLIB
+    WIDX --> WST --> WSLIB
+    WST --> WLIB
   end
 
   SHARED[/shared/feedbackLimits.js/]
 
   FILE[/TCX · FIT · GPX file/] --> FILES
   ICUAPI[/intervals.icu API<br/>browser-direct, no proxy/] --> API
+  STVAPI[/Strava API<br/>via the Worker — client_secret + unreliable CORS/] --> WSLIB
+  SAPI -->|"/api/strava/*, same-origin"| WIDX
   FILES --> NORM
   ICU --> NORM
+  STV --> NORM
   MODEL --> AC
   PORT -.injected via ActivitySourceProvider.-> AC
   AC --> Stack & Ctl & Hdr
@@ -177,6 +213,7 @@ flowchart TB
   Fb --> SHARED
   SHARED --> WLIB
   Fb -->|POST /api/feedback| WIDX
+  Shell -->|createDefaultSource| DISP
 
   %% inversions — see section 5
   REG -.->|D1 inversion| AGG
@@ -308,36 +345,32 @@ rather than fixed, since this refactor was strictly behaviour-preserving: `conne
 leaves `error`/`results`/`searchStatus` set, stranding hits behind the connect form; "Searching…"
 renders on top of stale results where its browse-side twin is gated on `isAwaitingFirstWindow`.
 
-### 2. [Strava] Move the source dispatcher out of `App.jsx`, and qualify the id ref *(low)*
+### 2. [Strava] Move the source dispatcher out of `App.jsx`, and qualify the id ref — **DONE (`51bdc55`)**
 
-`src/App.jsx:186-199` instantiates four concrete adapters and owns `sourceFor`, which maps
-`ref.type === 'id'` → `intervalsSource` **unconditionally**. A Strava id would be indistinguishable
-from an intervals.icu one — the dispatcher has no way to tell them apart.
+Was: `App.jsx` instantiated four concrete adapters and owned `sourceFor`, which mapped
+`ref.type === 'id'` → `intervalsSource` **unconditionally**. A Strava id would have been
+indistinguishable from an intervals.icu one.
 
-→ `data/sourceRegistry.js` exporting `createDefaultSource({ getApiKey })`, and widen
-`IdActivityRef` (`src/data/ActivitySource.js:14`) with a `provider` field.
+Shipped as `data/sourceRegistry.js` exporting `createDefaultSource({ getIntervalsApiKey,
+getStravaAccessToken, fetchImpl })`. `IdActivityRef` gained a **required** `provider` — an id ref
+without one throws rather than falling through, because the failure mode of a wrong guess is
+reading from the wrong athlete's account. It also gained `startedAtUtc` and `sportType`; the
+second was not in the original plan and is explained in §9.
 
-Also extract the inline `useIsScrolled` (`src/App.jsx:34-45`) to `ui/useIsScrolled.js`, beside the
-existing `ui/useIsNarrow.js`. The `view` enum can stay in `App.jsx` until a third view exists —
-that is a deliberate call, not an oversight.
+`useIsScrolled` moved to `ui/useIsScrolled.js`. The `view` enum stayed in `App.jsx`, as called —
+Stage 3 is what gives it a third value.
 
-### 3. [Strava] Make file-format detection provider-agnostic *(trivial)*
+### 3. [Strava] Make file-format detection provider-agnostic — **DONE (`1c9d01c`)**
 
-`src/data/intervals/detectActivityFormat.js` exports `detectActivityFormat` and `gunzipIfNeeded` —
-both pure, both byte-level, neither intervals-specific — yet they sit under `data/intervals/`.
+`detectActivityFormat` + `gunzipIfNeeded` moved to `data/fileFormat.js`, and
+`activityDateRange.js` up to `data/activityDateRange.js` with `toApiDate` (from `intervalsApi.js`)
+folded into it — the single import that had pinned an otherwise provider-neutral module to one
+provider.
 
-→ Move to `data/fileFormat.js`.
-
-`src/data/intervals/activityDateRange.js` now belongs in the same batch. Item 1 made it fully
-provider-neutral — it filters `ActivityRow`s and names no intervals.icu field — but it stayed put,
-because it imports `toApiDate` from `intervalsApi.js`. Moving one means moving both: `toApiDate` is
-a `Date` → `YYYY-MM-DD` formatter with nothing intervals-specific about it either. Do the three
-together.
-
-**This exposes a latent defect worth recording: the file path and the network path disagree about
-format detection.** The network path sniffs bytes and gunzips. `sourceFor` trusts the filename
-extension, so a `.fit.gz` dropped on the page falls through to `TcxActivitySource` and dies on
-"invalid XML" — using inflate code the repo already owns, one directory away.
+**The latent defect this exposed is still open**, and is now a ~6-line change rather than a
+refactor: the network path sniffs bytes and gunzips, while `sourceFor` trusts the filename
+extension — so a `.fit.gz` dropped on the page still falls through to `TcxActivitySource` and dies
+on "invalid XML", using inflate code one directory away. Its own commit or not at all.
 
 ### 4. Split `metricRegistry` into model + presentation *(medium — highest leverage of the non-Strava items)*
 
@@ -349,22 +382,22 @@ extension, so a `.fit.gz` dropped on the page falls through to `TcxActivitySourc
 and `state/viewPrefsStore.js` then import the model only — **resolving D1 and D2 together.**
 Touches roughly 8 files, all test-covered.
 
-### 5. [Strava] Shared guarded-storage kernel *(low)*
+### 5. [Strava] Shared guarded-storage kernel — **DONE (`ea80ae3`)**
 
-Three modules reimplement the identical `try { globalThis.X ?? null } catch { return null }`
-accessor plus per-call try/catch: `src/state/viewPrefsStore.js:47` (`browserSessionStorage`),
-`src/data/intervals/credentialStore.js:30` (`browserStorage`),
-`src/data/intervals/dateRangeStore.js:39` (`browserSessionStorage`). Two of them also repeat a
-`SCHEMA_VERSION` + normalize/validate shape.
+`lib/safeStorage.js` now owns the guarded property reads (`localStorageOrNull` /
+`sessionStorageOrNull`) and the try/catch'd accessors (`createSafeStorage` →
+`{getString, setString, remove, getJson, setJson}`). `viewPrefsStore`, `credentialStore` and
+`dateRangeStore` keep only their `SCHEMA_VERSION`, `normalize*` and key constant, and their tests
+passed byte-unchanged — which is what makes the extraction provably behaviour-preserving.
 
-→ `lib/safeStorage.js` with an injectable `Storage`; the three keep only their schema and
-validation. **Preserve and document the deliberate localStorage-vs-sessionStorage split** — that is
-a stated decision, not an inconsistency.
+The deliberate localStorage-vs-sessionStorage split is preserved and documented at each call site;
+it is a stated decision in three module headers, not an inconsistency to flatten.
 
-Strava makes this a fourth store *and* changes the shape: `credentialStore` holds one
-never-expiring string, where Strava needs `{ accessToken, refreshToken, expiresAt }` plus
-refresh-on-expiry. The storage backend is already a factory argument; the *shape and lifecycle* are
-not, and that is what Strava stresses.
+Strava is the fourth store and the one that forced this: `stravaTokenStore` holds
+`{accessToken, refreshToken, expiresAt, athleteId}` with rotation and a 60-second expiry skew,
+where `credentialStore` holds one never-expiring string. `stravaAuth.js` deliberately uses the raw
+`Storage` for its CSRF state instead, because it needs `getItem`-then-`removeItem` as one guarded
+unit — a shape the wrapper does not offer.
 
 ### 6. Extract chart-row building out of `MetricPanel` *(low–medium)*
 
@@ -417,13 +450,35 @@ Recorded so nobody spends a weekend on them:
 
 ---
 
-## 9. Readiness for Strava
+## 9. Strava — the readiness assessment, and what actually shipped
 
-*All external facts in this section verified 2026-08-08. Strava's CORS behaviour and API policy
-have both changed within the past year — **re-check before building.***
+*Rewritten 2026-08-09. The 2026-08-08 version of this section was a **pre-build assessment**, and
+**four of its claims were already stale when the work started** — the developer program changed on
+2026-06-01. The corrected facts are inline below, each marked. External facts here were verified
+2026-08-09; Strava's CORS behaviour and API policy have both changed within the past year, so
+**re-check anything load-bearing if this is more than a month old.***
 
-> **Verdict: yes for everything above `data/`. No for four things inside and below it — and the
-> most important of the four is not an engineering problem.**
+> **The original verdict — "yes for everything above `data/`, no for four things inside and below
+> it, and the most important of the four is not an engineering problem" — held.** Nothing above
+> `data/` changed. The product decision in (a) was taken deliberately, and (c) is exactly where the
+> work went.
+
+### Where the code stands
+
+| Stage | Ships | Commit |
+|---|---|---|
+| 0a `data/fileFormat.js`, `data/activityDateRange.js` | invisible | `1c9d01c` |
+| 0b `lib/safeStorage.js` | invisible | `ea80ae3` |
+| 0c `data/sourceRegistry.js`, `provider` on the id ref | invisible | `51bdc55` |
+| 1 `worker/routes/strava.js` + `lib/stravaOAuth` + `lib/stravaProxy` | routes exist, nothing calls them | `9964c40` |
+| 2 all of `src/data/strava/` | no UI mounts it | `a57cd65` |
+
+**Two things are outstanding and neither is code**: the two Strava apps are not registered (the
+client ids in `wrangler.jsonc` and `.env` are marked placeholders), and **nothing has been
+exercised end to end against real Strava.** Stage 1 was verified against `wrangler dev` + curl;
+everything else is unit-tested only. The recorded-response and cross-check fixture tiers (§8 of the
+implementation brief) need a real account and are not in the repo — check **API Policy §5.3**,
+which prohibits using Strava Data in connection with AI development, before committing one here.
 
 ### What genuinely already works
 
@@ -437,6 +492,13 @@ Strava's stream keys map onto `RawTrackpoint` (`src/domain/types.js:38`) essenti
 
 **Nothing above `data/` changes.** The original intuition was right — but the reason is subtler
 than "it's behind DI," and the four items below are where it stops being right.
+
+One correction to the mapping above, because it is the trap that fails silently: `cadence` →
+`cadenceSpm` is **not** 1:1. Strava's cadence stream is RPM, and for a foot sport that is *one leg*
+(~85). `RawTrackpoint.cadenceSpm` is contractually already-doubled. That is why `sport` is an
+argument to `streamsToTrackpoints`, resolved **before** assembly — and why `IdActivityRef` carries
+`sportType`, which was not in the original plan: the sport has to be known before the trackpoints
+exist, and the alternative was a provider-specific field on the neutral `ActivityRow`.
 
 ### (a) The "no server" property is gone, and it is not negotiable
 
@@ -455,30 +517,68 @@ indistinguishable from the browser — for Strava that is not hypothetical. So �
 "`/api/intervals/*` Worker pass-through escape hatch" should be built for Strava **from day one**,
 which means athlete data passes through the Worker at least contingently.
 
-Copy that becomes false and must be revised:
+**DECIDED: taken, deliberately.** The proxy was built from day one rather than kept as a
+contingency, because CORS breaking is a total outage and the secret is needed regardless. **The
+Worker is stateless** — it holds `client_secret`, forwards the browser's bearer token upstream and
+never stores an athlete token or touches KV/D1/DO. That makes Policy §6.3 and §7.4 trivially
+satisfied server-side: there is nothing to delete. The honest cost, which belongs in the copy and
+now is in it: the athlete's token transits the Worker in a request header and their telemetry in a
+response body. Same-origin HTTPS, never logged, never persisted.
 
-- `doc/overview.md:61` — "serves nothing but the page itself"
-- `README.md` (the intervals.icu section, ~line 195) — "there's no Worker route involved"
-- `src/ui/IntervalsConnectForm.jsx:88-89` — "the key and your activities never pass through this
-  app's server"
+The proxy forwards Strava's body **verbatim**, so `src/data/strava/stravaApi.js` is written against
+Strava's wire shape. If Strava's CORS ever becomes reliable, going direct is changing one base-URL
+constant. Only the Worker's *own* failures use the `{ok:false, error, message}` envelope — which is
+also how the client tells our 429 from Strava's.
 
-**This is a product decision, not an engineering one.** It is presented here with its cost stated
-so it can be decided deliberately.
+Copy that became false, and where it now stands — **all revised**:
 
-### (b) The rate limit is architectural, and it inverts a settled decision
+- `doc/overview.md` — was "serves nothing but the page itself"; now covers both providers and says
+  plainly that Strava does route through the server
+- `README.md` — the intervals.icu section is scoped to intervals.icu, and there is a "Connecting
+  Strava" section beside it
+- `scripts/seo/pages.mjs` — the `/about` "what reaches the network, and when" inventory has a third
+  bullet, and `pages.test.mjs` now pins it
+- `src/ui/IntervalsConnectForm.jsx:88-89` — **unchanged, deliberately.** It is scoped to
+  intervals.icu, which stays direct-to-API, so it stays literally true.
+  `IntervalsPage.test.jsx:93` pins the phrase.
 
-Strava's limits are **per-application, not per-athlete**: 100 non-upload requests / 15 min and
-1,000 / day, shared across *every user of the app*.
+### (b) The rate limit is architectural — **and the 2026-06-01 program change inverts this item**
 
-intervals.icu's limits are per-key, which is why `ARCHITECTURE.md` §12 could reason: at 1 call per
-list load, 1 per search burst and 1 per activity opened, usage is nowhere near the ceiling — *which
-is why neither is cached yet*. **That reasoning does not transfer.** One shared 1,000/day quota is
-roughly 500 activity views per day for the entire app, across all users.
+**The numbers in the pre-build version of this section were wrong**, and wrong in the direction
+that matters. Corrected, as of 2026-06-01:
 
-**Caching stops being optional.** Strava's API Policy §6.2 permits a cache of up to seven days;
-§7.4 requires deletion within 30 days of revocation, and §6.3 within 48 hours of a user action.
-The repo's existing `sessionStorage` pattern (`viewPrefsStore`, `dateRangeStore`) already has the
-right lifecycle for that — which is why decoupling item #5 lands in exactly the right place.
+- Standard Tier read limits are **200 requests / 15 min and 2,000 / day** (overall 400 / 4,000),
+  not 100 / 1,000. Still **per-application**, shared across every athlete.
+- Standard Tier now caps an app at **10 connected athletes** and requires a **paid Strava
+  subscription** (enforced 2026-06-30). Extended Access lifts both but needs review.
+
+That cap is what inverts the conclusion. At ≤10 athletes, 2,000 reads/day is ~200 per athlete per
+day, which is comfortable — so **caching is an ergonomics win, not a survival requirement**, and
+the decision was to ship on Standard Tier with honest copy about the cap rather than block on an
+Extended Access review. Athlete 11 gets its own `StravaApiError` code and copy saying what actually
+happened, not a generic auth failure.
+
+Caching landed client-side, for a reason the pre-build version missed: cross-user caching is
+useless here, because each athlete's activities are private to them. Client-side also makes §6.3
+and §7.4 automatic *by evaporation*. Two caches, with different lifecycles on purpose:
+
+1. **Stream sets — in-memory LRU, cap 8, no TTL**, wired inside `StravaActivitySource.load` so
+   `ErrorState`'s "Try again" gets it free. **Not sessionStorage**: a 90-minute run at 1 Hz is
+   300–600 KB of JSON against a ~5 MB per-origin budget already shared with `viewPrefsStore` —
+   whose `save` *swallows* `QuotaExceededError`, so the visible symptom of getting this wrong would
+   be remembered chart views randomly breaking, on an unrelated feature, with no error anywhere.
+2. **The activity list — sessionStorage, ~10 KB, TTL 15 minutes.** Fifteen minutes rather than
+   §6.2's seven-day ceiling because an athlete who just uploaded a run expects to see it, and a
+   stale list reads as a broken feature.
+
+**Never retry a 429.** Unlike intervals.icu the copy can name a real wait: Strava's window resets
+on the quarter hour and the rate-limit headers are readable because this is same-origin.
+
+**Cloudflare's rate-limit binding cannot express "2,000/day"** — `period` must be 10 or 60 seconds,
+and the counters are per-colo and eventually consistent, documented as *not* an accurate accounting
+system. `STRAVA_RATE_LIMITER` is a per-IP **burst cap** only. The app-wide daily budget can be
+*observed* through the `X-ReadRateLimit-Usage` header and not enforced; the module says so rather
+than implying the guard does more than it does.
 
 ### (c) The parser-reuse payoff does not transfer
 
@@ -490,16 +590,29 @@ entire point." That is true **only because intervals.icu returns the original up
 *construct* `RawTrackpoint[]` itself, with its own tests, and it cannot join the existing
 four-route cross-check fixture strategy.
 
-Two consequences to record as decisions:
+**This was the correct read, and it is where the work went** (`a57cd65`). Three consequences, all
+now decided and implemented:
 
-- **The `time` stream is elapsed seconds**, so `RawTrackpoint.time` (a `Date`) must be rebuilt from
-  the activity's `start_date`. Carry it on the ref — following the precedent that already widened
-  `IdActivityRef` with an optional `name` (`src/data/ActivitySource.js:14`) — rather than spending a
-  second request per activity against a shared quota.
-- **Strava supplies a `moving` stream, which must be discarded.** `RawTrackpoint` has no such field,
-  and `normalizeActivity` derives pauses itself via `detectPauses`. This is consistent with §12's
-  rule that production stays derived so every format behaves identically — but it is a choice, so
-  it is named here rather than left to whoever writes the adapter.
+- **The `time` stream is elapsed seconds**, so `RawTrackpoint.time` is rebuilt from the activity's
+  `start_date`, carried on the ref as `startedAtUtc` — following the precedent that already widened
+  `IdActivityRef` with an optional `name` — rather than spending a second request per activity.
+  Deliberately **not** `start_date_local`, which carries a bogus trailing `Z` on what is really the
+  athlete's wall clock; that value becomes `ActivityRow.startedAt` with the `Z` stripped, because
+  `ActivityRowList` and `startDayOf` both do a bare `new Date(startedAt)` and leaving it on lands
+  every row west of Greenwich on the wrong calendar day, where the on-by-default filter drops it.
+- **`moving` is never requested**, which is a stronger form of discarding it: there is no field for
+  a later change to start reading. `normalizeActivity` derives pauses via `detectPauses`, so every
+  format behaves identically. `temp` and `grade_smooth` are likewise not requested — no
+  `RawTrackpoint` field exists for either, and `temp` is named in the module header as the seam for
+  a future temperature metric.
+- **`velocity_smooth` IS requested, knowingly**, and this is the one place the app gives something
+  up. `deriveSpeed` short-circuits the moment any trackpoint carries `speedMps`, so Strava's
+  pre-smoothed speed — not this app's own derivation — drives every pace chart on this path, and a
+  Strava-loaded activity will *not* numerically match its own FIT file. Requested anyway because
+  adapters do field mapping, not interpretation, and it is Strava's own displayed number. The
+  divergence is documented in `streamsToTrackpoints.js`, and the fixture cross-check (when it can
+  be built) asserts a **tolerance rather than equality** — that tolerance being the honest
+  statement of how far a Strava stream sits from the original file.
 
 ### (d) The picker is not reusable — **RESOLVED (2026-08-09)**
 
@@ -515,21 +628,36 @@ copy outright.
 doesn't keep the original file for them. Direct Strava support closes a hole the product already
 documents in `README.md:199` and `doc/SEO_LAUNCH.md:337`.
 
-### Smaller items — listed, not analysed
+### Smaller items — how each was answered
 
-- `Sport` is `'running' | 'cycling' | 'track'` against Strava's ~50 `sport_type` values. §12 already
-  flags this for intervals.icu; Strava makes it worse.
-- Strava API Policy §4.4 requires Garmin attribution for Garmin-derived data. The app **already
-  implements this** (`src/ui/IntervalsPage.jsx:67`, `hasGarminData`) and can reuse it.
-- Policy §5.4 restricts combining Strava data with other data — worth a lawyer's read before the
-  §12 "multi-activity overlay" seam is ever built against Strava.
+- `Sport` is `'running' | 'cycling' | 'track'` against Strava's ~50 `sport_type` values. Resolved by
+  `sportFor.js`: a lookup table for the foot and wheel sports, and **everything else falls back to
+  `track`, never throwing.** `track` means "a generic GPS log with no sport of its own" and
+  `metricRegistry` gives it every metric except pace, so a Swim charts as speed + HR + altitude —
+  correct rather than degraded, and strictly better than the file parsers, which throw. Strava adds
+  sport types faster than a table can track them and a new one must not break the picker. **The
+  honest cost, stated because it is silent:** an unknown *foot* sport lands in `track`, is therefore
+  not a foot sport, and its cadence is not doubled.
+- Strava API Policy §4.4 requires Garmin attribution for Garmin-derived data. The app already
+  implemented this for intervals.icu, and the mechanism is reused — but the *detection* had to
+  change: `device_name` is a `DetailedActivity` field, so a Strava **list** row cannot use it.
+  `external_id?.startsWith('garmin')` can. The `isGarminDerived` flag on the row is shared; the
+  attribution *sentence* stays per-provider, because intervals.icu's names intervals.icu.
+- Policy §5.4 restricts combining Strava data with other data — still open, and still worth a
+  lawyer's read before the §12 "multi-activity overlay" seam is ever built against Strava.
+- **Policy §5.3 prohibits using Strava Data in connection with AI application development,
+  training, evaluation or operation.** Directly relevant to committing a recorded real response as
+  a fixture into a repo worked on with AI agents. Unresolved; read it before doing so.
 
-### Sequencing
+### Sequencing — as executed
 
-**Do decouplings #1, #2, #3 and #5 first.** All four are small, independently verifiable, and each
-is a prerequisite. Then the Worker OAuth route. Then `StravaActivitySource`.
+**Decouplings #2, #3 and #5 first**, then the Worker, then `data/strava/`, then copy, then the UI.
+That order held and is worth keeping if any of this is ever redone: **do not start with the
+adapter.** It is the part the architecture already supports, and it would have been written wrong
+without `provider`, `startedAtUtc` and `safeStorage` in place first.
 
-**Do not start with the adapter.** It is the part the architecture already supports.
+Stages 1 and 2 parallelise once 0c has landed — Stage 2 depends only on the Worker's route
+*contract*, not its implementation.
 
 ### Sources
 
@@ -540,7 +668,15 @@ is a prerequisite. Then the Worker OAuth route. Then `StravaActivitySource`.
   distance, latlng, altitude, velocity_smooth, heartrate, cadence, watts, temp, moving,
   grade_smooth`); no original-file endpoint
 - [Strava — Rate Limits](https://developers.strava.com/docs/rate-limits/) — "limited on a
-  **per-application** basis"; 100/15min and 1,000/day non-upload
+  **per-application** basis". **Read limits are 200/15min and 2,000/day** (overall 400/4,000) on
+  Standard Tier as of 2026-06-01. The 100/1,000 figures in the pre-build version of this section
+  were the older schedule.
+- [Strava — Developer Program tiers](https://developers.strava.com/docs/getting-started/) —
+  Standard Tier caps an app at **10 connected athletes** and requires a paid Strava subscription
+  (changed 2026-06-01, enforced 2026-06-30); Extended Access lifts both, by application and review.
+- [Cloudflare — Rate limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)
+  — `period` must be 10 or 60 seconds; counters are per-colo and eventually consistent,
+  "intentionally designed to not be used as an accurate accounting system"
 - [Strava — API Agreement / Policy](https://www.strava.com/legal/api_policy) — §6.2 seven-day cache
   cap, §6.3 48-hour deletion, §7.4 30-day deletion on revocation, §4.4 Garmin attribution, §5.4
   data-combination restriction

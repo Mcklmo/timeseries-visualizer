@@ -56,9 +56,10 @@ This project is **functional end-to-end, including real Garmin file upload** —
   1 Hz watch files behave exactly as they did (asserted, not assumed — see Testing notes).
 - The footer's **Feedback** link opens a dialog that files a labelled GitHub issue on this
   repo via `POST /api/feedback`, guarded by Cloudflare Turnstile plus a native rate-limit
-  binding. This is the project's only server-side code (`worker/`) — activity files are
-  still parsed entirely in the browser and never uploaded anywhere. See "Feedback form
-  configuration" under Deploying.
+  binding. This was the project's only server-side code (`worker/`) until the Strava route
+  below — a **dropped file** is still parsed entirely in the browser and never uploaded
+  anywhere, which is the claim the app actually makes. See "Feedback form configuration"
+  under Deploying.
 - **intervals.icu activity browser** (`data/intervals/` + `ui/Intervals*.jsx`) — paste an
   API key once and pick from your real activity history instead of hunting for a file. This
   is the phone route: a watch file syncs to Garmin Connect and there is no practical way to
@@ -68,6 +69,15 @@ This project is **functional end-to-end, including real Garmin file upload** —
   history, or by date range — presets plus two day fields, narrowing the request itself rather
   than paging back a window at a time. It needed **no server-side code**: intervals.icu sends
   CORS headers, so the browser talks to it directly. See "Connecting intervals.icu" below.
+- **Strava activity browser** (`data/strava/` + `ui/Strava*.jsx` + `worker/routes/strava.js`)
+  — the second network route in, and the one that closes the hole the row above documents
+  against itself: intervals.icu keeps no original file for a Strava-synced activity, so those
+  rows have always been listed and disabled. Connect Strava directly and they open. There is
+  no original-file endpoint on Strava's side either, so this adapter is the first that builds
+  `RawTrackpoint[]` itself, out of the streams API — everything below `data/` is shared with
+  the file parsers unchanged. **Unlike intervals.icu it does route through the Worker**, and
+  that is not optional: Strava's OAuth needs a `client_secret` that cannot live in a web page.
+  See "Connecting Strava" below.
 - `downsample.js` is still unbuilt — not needed until there's an activity long enough to
   need downsampling. (The old `data/http/` source stub is gone: the real API hands back the
   original uploaded file rather than normalized samples, so the seam became `data/intervals/`
@@ -112,8 +122,8 @@ shipping, since `dev` mode hides bugs that only show up once the code is minifie
   day-to-day development.
 - `npm run build` then `npm run preview` — builds the real `dist/` bundle (the same output
   `wrangler deploy` uploads) and serves it locally, so you're testing what actually ships.
-  Note `preview` serves the static assets only — `/api/feedback` doesn't exist here, so use
-  `wrangler dev` below to exercise the feedback form:
+  Note `preview` serves the static assets only — neither `/api/feedback` nor `/api/strava/*`
+  exists here, so use `wrangler dev` below to exercise the feedback form or Strava:
 
   ```bash
   npm run build
@@ -129,10 +139,13 @@ shipping, since `dev` mode hides bugs that only show up once the code is minifie
 Deployment runs through Wrangler (see `wrangler.jsonc` and the Deploying section below), not
 plain static hosting, so it's worth a local pass through Wrangler's own runtime before
 pushing — it's the closest local simulation of the actual Cloudflare environment, and the
-only one that runs the Worker, so it's the **only** way to exercise `/api/feedback` locally:
+only one that runs the Worker, so it's the **only** way to exercise `/api/feedback` **or the
+whole Strava route** locally. `npm run dev` cannot reach either:
 
 ```bash
 cp .dev.vars.example .dev.vars   # first time only, then fill in a real GITHUB_TOKEN
+                                 # and STRAVA_CLIENT_SECRET (the localhost app's — see
+                                 # "Connecting Strava" for why there are two apps)
 npm run build
 npx wrangler dev
 ```
@@ -164,9 +177,11 @@ access to the origin can read `localStorage`, so treat a shared or borrowed devi
 accordingly.
 
 **Where it goes.** Only to intervals.icu. Requests go browser → `https://intervals.icu`
-directly; nothing — not the key, not your activities — passes through this app's Worker,
-which serves nothing but the page. This works because intervals.icu's API sends CORS
-headers, which is why the feature needed no server-side code at all.
+directly; nothing — not the key, not your activities — passes through this app's Worker.
+This works because intervals.icu's API sends CORS headers, which is why *this* provider
+needed no server-side code at all. It is scoped to intervals.icu, and it is not a claim
+about the app as a whole: the Worker also serves `/api/feedback`, and the Strava route
+below deliberately does go through it.
 
 **Finding an activity.** The list shows the **last 90 days**, widened backwards another 90 days
 each time you press **Load earlier activities**. The search box above it does not search that
@@ -192,21 +207,91 @@ have older matches — widen the range or narrow the query.
 
 **Consequences worth knowing:**
 
-- Because there's no Worker route involved, `npm run dev` alone is enough to develop and
-  test this — unlike the feedback form, which needs `npx wrangler dev`.
+- Because there's no Worker route involved **on this provider**, `npm run dev` alone is
+  enough to develop and test it — unlike the feedback form and the whole Strava route, both
+  of which need `npx wrangler dev`.
 - Search returns at most 30 matches and there's no "show more" — narrow the query if what
   you want isn't there. Nothing is cached, so the same search runs again next time.
 - **Strava-synced activities can't be downloaded.** intervals.icu doesn't keep an original
   file for them. Those rows appear in the list, disabled, with that as the stated reason —
-  they're shown rather than hidden so a missing activity doesn't read as a bug. The one
-  exception is a row that arrives with **no date at all** (some Strava rows are near-empty
-  stubs): it can't honestly be placed inside a date range, so the date filter drops it. Empty
-  both date fields to see those rows again.
+  they're shown rather than hidden so a missing activity doesn't read as a bug. Connecting
+  Strava directly (below) is what opens them. The one exception is a row that arrives with
+  **no date at all** (some Strava rows are near-empty stubs): it can't honestly be placed
+  inside a date range, so the date filter drops it. Empty both date fields to see those rows
+  again.
 - What you get is the *original* file, so it carries everything the file carries — including
   Stryd power from a FIT developer field, which Garmin Connect's own TCX export drops. It is
   not, however, byte-identical to a manual Garmin Connect export: Garmin filters some
   session-level summary fields (VO2max, recovery time) out of its API. Per-record telemetry,
   which is everything this app charts, comes through intact.
+
+## Connecting Strava
+
+Optional and off by default, like intervals.icu, and it exists for two reasons: it is the
+second phone route in, and it opens the activities intervals.icu can only list.
+
+**How you connect.** Press **Connect with Strava** and you land on Strava's own consent
+page. Approve, and Strava sends you back to `/` with a one-time code the app trades for
+tokens. There is nothing to paste and no password to hand over.
+
+**What you're granting.** `activity:read_all` — read-only, and `_all` rather than plain
+`activity:read` because the narrower scope silently excludes private activities, and "my run
+isn't in the list" is a confusing failure that looks like a bug here. Strava's consent
+screen lets you untick the private-activity half; the app checks the *granted* scope on the
+way back and says so rather than showing a mysteriously short list.
+
+**Where the tokens live.** In this browser's `localStorage`, same as the intervals.icu key
+and for the same phone-shaped reason. The trade is genuinely better on this side, and it's
+worth stating plainly: a Strava access token is scoped read-only, expires after six hours,
+and — unlike an intervals.icu key — **is really revocable from inside this app**.
+**Disconnect** calls Strava's `/oauth/deauthorize`, so the grant is gone upstream, not just
+locally.
+
+**Where it goes — this route does touch the server.** Requests go browser →
+`/api/strava/*` on this app's Worker → Strava. That is not a preference: the OAuth exchange
+and every six-hourly refresh require a `client_secret`, which cannot live in a web page, and
+Strava's CORS headers on the streams endpoint have disappeared and returned more than once.
+The Worker is **stateless** — it holds the secret, forwards your bearer token upstream and
+hands Strava's response back verbatim. It stores nothing, logs nothing and has no database.
+The honest cost, stated because it is real: your token transits it in a request header and
+your telemetry in a response body, over same-origin HTTPS.
+
+**The 10-athlete cap.** Strava's Standard Tier caps a developer app at **10 connected
+athletes** and the app doesn't have Extended Access. Athlete 11 gets a specific message
+saying the app is full, not a generic auth failure. This is a limit on this app, not on your
+account.
+
+**What gets cached.** An activity's streams are held in memory (at most 8 of them), so
+reopening one or pressing "Try again" costs no request; the activity list is held in
+`sessionStorage` for 15 minutes. Both evaporate when the tab closes, which is what makes
+Strava's API Policy §6.3 and §7.4 deletion obligations automatic rather than something this
+app has to implement — and Disconnect clears both explicitly before deauthorizing.
+
+**Consequences worth knowing:**
+
+- **This feature needs `npx wrangler dev`, not `npm run dev`.** Nothing about it works
+  against the Vite dev server alone, because `/api/strava/*` does not exist there.
+- **A Strava app has exactly one Authorization Callback Domain**, so one app cannot serve
+  both `activitymaxxer.com` and `localhost` — there are two registered. The production id is
+  in the committed `.env`; put the dev app's in a gitignored `.env.local` and its secret in
+  `.dev.vars`. Both files carry a cross-reference comment.
+- **Pace on this route is Strava's number, not this app's.** The `velocity_smooth` stream is
+  requested and `deriveSpeed` short-circuits on any sample that already carries a speed, so
+  the same activity opened from Strava and from its own `.fit` file will not match to the
+  second. Strava also resamples and applies its own elevation correction. That divergence is
+  deliberate — adapters map fields, they don't reinterpret them — and it's documented in
+  `src/data/strava/streamsToTrackpoints.js`.
+- **Cadence is doubled for foot sports.** Strava reports one leg (~85 rpm); this app's
+  `RawTrackpoint.cadenceSpm` is contractually already-doubled (~170 spm). An *unknown* foot
+  sport falls back to the generic `track` sport and is therefore **not** doubled — see
+  `sportFor.js`, which lists the sports it knows.
+- **Manual entries and stub rows are listed but disabled**, with the reason as visible text,
+  on the same principle as the intervals.icu list: an activity you know you recorded is never
+  silently missing.
+- **Rate limits are per-application, shared across every connected athlete** — 200 reads /
+  15 min and 2,000 / day on Standard Tier. At ≤10 athletes that is comfortable. A 429 is
+  never retried automatically, and Strava's window resets on the quarter hour, which the
+  error copy can name because the rate-limit headers are readable same-origin.
 
 ## Project structure
 
@@ -214,18 +299,21 @@ have older matches — widen the range or narrow the query.
 src/
   App.jsx     # composition root: AppShell (by ActivityContext.status) + AppProviders
   app/        # composes ActivitySourceProvider + ActivityProvider + ChartViewProvider
-  data/       # ActivitySource port + adapters: tcx, fit, gpx (files) and intervals
-              # (the intervals.icu bridge — the only data path that touches the network)
+  data/       # ActivitySource port + sourceRegistry (the one dispatch table) + adapters:
+              # tcx, fit, gpx (files); intervals (browser-direct); strava (via the Worker)
   domain/     # pure, framework-free normalization pipeline (types, units, buildDistanceAxis,
               # deriveSpeed, detectPauses, smooth, samplingInterval, insertGapBreaks,
               # normalizeActivity)
   lib/        # feedbackClient — the browser side of POST /api/feedback
+              # safeStorage — the guarded-storage kernel the four stores share
   stats/      # max/min/avg/median aggregation, strategy-aware, memoized hook
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
   ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
               # EmptyState, ErrorState, FileDropZone,
-              # IntervalsPage/ConnectForm/ActivityList + useDebouncedValue,
+              # ActivityRowList + ActivityDateFilter — the picker chrome, provider-neutral,
+              # IntervalsPage/ConnectForm + useIntervalsActivities + useDebouncedValue,
+              # StravaPage/ConnectButton + useStravaActivities + useStravaOAuthCallback,
               # FeedbackWidget/Dialog/Form + useTurnstile
   styles/     # tokens.css (dark theme + metric hues), global.css (layout, chrome)
 scripts/
@@ -234,9 +322,11 @@ scripts/
   seo/pages.mjs        # their content, as plain data — including the About prose
   seo/pages.test.mjs   # the content rules, enforced rather than reviewed
 shared/       # environment-agnostic values imported by BOTH src/ and worker/ (feedbackLimits)
-worker/       # the Cloudflare Worker: routes /api/feedback, serves dist/ via env.ASSETS
-  routes/     # feedback.js — the request orchestration
-  lib/        # validateFeedback, buildIssuePayload, verifyTurnstile, githubClient, rateLimit
+worker/       # the Cloudflare Worker: routes /api/feedback and /api/strava/*,
+              # serves dist/ via env.ASSETS
+  routes/     # feedback.js, strava.js — the request orchestration
+  lib/        # validateFeedback, buildIssuePayload, verifyTurnstile, githubClient, rateLimit,
+              # stravaOAuth (the client_secret half), stravaProxy (header allowlists)
 fixtures/
   activity_23870166877.tcx               # real Garmin export, used by the parser cross-check test
   activity_23870166877-meta.json         # Garmin's own reported stats for that export
@@ -516,16 +606,18 @@ path, though (see step 9 below).
 ## Deploying (Cloudflare Workers)
 
 Deployment is a **Worker with static assets** (`wrangler.jsonc`), not Cloudflare Pages: one
-Worker serves both `dist/` and the `/api/feedback` route the feedback form posts to. The
-old Pages dashboard "Connect to Git" flow is gone on purpose — it has no concept of
-`wrangler.jsonc`'s `main`/`assets.binding`/`ratelimits`, so it cannot serve that route at
-all.
+Worker serves `dist/`, the `/api/feedback` route the feedback form posts to, and the
+`/api/strava/*` routes the Strava picker reads through. The old Pages dashboard "Connect to
+Git" flow is gone on purpose — it has no concept of `wrangler.jsonc`'s
+`main`/`assets.binding`/`ratelimits`, so it cannot serve those routes at all.
 
 One-time setup, by whoever owns the Cloudflare account:
 
 ```bash
-npx wrangler secret put GITHUB_TOKEN          # fine-grained PAT, this repo only, "Issues: write"
-npx wrangler secret put TURNSTILE_SECRET_KEY  # secret half of the Turnstile widget
+npx wrangler secret put GITHUB_TOKEN           # fine-grained PAT, this repo only, "Issues: write"
+npx wrangler secret put TURNSTILE_SECRET_KEY   # secret half of the Turnstile widget
+npx wrangler secret put STRAVA_CLIENT_SECRET   # the production Strava app's; its *id* is
+                                               # public and lives in wrangler.jsonc + .env
 ```
 
 Then, for every deploy:
