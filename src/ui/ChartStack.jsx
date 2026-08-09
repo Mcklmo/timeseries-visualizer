@@ -17,6 +17,7 @@ import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
 import { usePinchZoom } from './usePinchZoom.js'
 import { useTouchHoverHandoff } from './useTouchHoverHandoff.js'
+import { useTouchScrub } from './useTouchScrub.js'
 
 const FIRST_PANEL_HEIGHT = 200
 const OTHER_PANEL_HEIGHT = 140
@@ -73,19 +74,23 @@ export function ChartStack({ positionSlot = null }) {
     rightInset,
   })
   const handoffRef = useTouchHoverHandoff()
+  const scrubRef = useTouchScrub({ rightInset })
 
-  // Two callback refs, one node. Both return a React 19 cleanup, so both have
-  // to be collected and both have to run — dropping either leaks its listeners
-  // on every remount. Both are useCallback(…, []), so this stays stable too and
-  // the listeners are never torn down mid-gesture.
+  // Three callback refs, one node. All three return a React 19 cleanup, so all
+  // three have to be collected and all three have to run — dropping any leaks
+  // its listeners on every remount. All are useCallback(…, []), so this stays
+  // stable too and the listeners are never torn down mid-gesture. Their ORDER
+  // does not matter, even though two of them call stopPropagation():
+  // stopPropagation never affects other listeners on the same target, which is
+  // already why the pinch guard and the handoff coexist here.
   const stackRef = useCallback(
     (node) => {
-      const cleanups = [pinchRef(node), handoffRef(node)]
+      const cleanups = [pinchRef(node), handoffRef(node), scrubRef(node)]
       return () => {
         for (const cleanup of cleanups) cleanup?.()
       }
     },
-    [pinchRef, handoffRef],
+    [pinchRef, handoffRef, scrubRef],
   )
 
   if (!activity) return null
@@ -99,8 +104,8 @@ export function ChartStack({ positionSlot = null }) {
       // role="group" is what makes the aria-label reachable at all: a bare div
       // is `generic`, and an accessible name on a generic element is dropped.
       role="group"
-      title="Pinch, or Ctrl + scroll, to zoom. While zoomed, scroll sideways to pan"
-      aria-label="Activity charts. Pinch, or Ctrl and scroll, to zoom the time axis. While zoomed, scroll sideways to pan."
+      title="Pinch, or Ctrl + scroll, to zoom. While zoomed, scroll sideways to pan. Swipe one finger sideways to move the crosshair"
+      aria-label="Activity charts. Pinch, or Ctrl and scroll, to zoom the time axis. While zoomed, scroll sideways to pan. Swipe one finger sideways to move the crosshair, which follows the swipe rather than jumping to the finger."
     >
       {/* Inside the stack, not in App.jsx, so `touch-action: pan-y` below covers
           this row too — which is what closed the limit ARCHITECTURE.md §13

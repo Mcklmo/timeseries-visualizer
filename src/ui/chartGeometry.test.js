@@ -3,6 +3,7 @@ import {
   CHART_MARGIN,
   clampFraction,
   fractionAcross,
+  parseCursorX,
   plotRectFromSurface,
   Y_AXIS_RIGHT_WIDTH,
   Y_AXIS_WIDTH,
@@ -105,5 +106,47 @@ describe('clampFraction', () => {
 
   it('falls back to the plot centre for a non-finite input', () => {
     expect(clampFraction(NaN)).toBe(0.5)
+  })
+})
+
+// The pure half of the crosshair reader (crosshairClientX is the impure half,
+// and unpinnable here for the same fixed-rect reason as above). The touch
+// scrub asks "where is the crosshair now?" once per gesture, and this is the
+// only place that question is answered.
+describe('parseCursorX', () => {
+  it('reads the x out of a vertical cursor path', () => {
+    // What Recharts' <Curve> emits for a cartesian tooltip cursor: a moveto at
+    // the top of the plot and a lineto at the bottom, both at the same x.
+    expect(parseCursorX('M242,5L242,195')).toBe(242)
+  })
+
+  it('takes the leading moveto, not any later coordinate', () => {
+    expect(parseCursorX('M60,5L60,195')).toBe(60)
+    expect(parseCursorX('M0,5L0,195')).toBe(0)
+  })
+
+  it('reads a fractional x, since a crosshair rarely lands on a whole pixel', () => {
+    expect(parseCursorX('M242.5,5L242.5,195')).toBe(242.5)
+  })
+
+  it('reads a negative x rather than treating it as absent', () => {
+    // A cursor left of the plot origin is still a position. Silently returning
+    // null would make the scrub bootstrap and jump to the finger instead.
+    expect(parseCursorX('M-12,5L-12,195')).toBe(-12)
+  })
+
+  it('tolerates whitespace-separated coordinates', () => {
+    expect(parseCursorX('M 242 5 L 242 195')).toBe(242)
+  })
+
+  it('is total: no cursor, or one it does not recognise, gives null', () => {
+    // null is the "no crosshair on screen" signal the gesture bootstraps from,
+    // so an unparseable path must not come back as 0 — that would silently
+    // anchor every swipe at the left edge of the plot.
+    expect(parseCursorX(null)).toBeNull()
+    expect(parseCursorX(undefined)).toBeNull()
+    expect(parseCursorX('')).toBeNull()
+    expect(parseCursorX('L242,195')).toBeNull()
+    expect(parseCursorX('M,5L,195')).toBeNull()
   })
 })

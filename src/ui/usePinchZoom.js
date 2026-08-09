@@ -17,7 +17,10 @@
 //
 // Gestures deliberately NOT implemented (declined; see ARCHITECTURE.md §13):
 // one-finger drag-to-pan, mouse click-and-drag-to-pan, double-tap-to-reset,
-// long-press readout.
+// long-press readout. One-finger drag-to-pan is now foreclosed permanently
+// rather than merely declined: a one-finger horizontal swipe scrubs the
+// crosshair (ui/useTouchScrub.js), and it clamps at the plot edge rather than
+// pushing the window along, so one finger does exactly one thing.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   isFullDomain,

@@ -122,10 +122,12 @@ flowchart TB
     Fb[FeedbackWidget → Dialog → Form]
     Geo[chartGeometry<br/>pixels]
     Pinch[usePinchZoom<br/>events]
+    Scrub[useTouchScrub<br/>events]
     Shell --> Stack & IPage & SPage & SCb & Fb & Hdr
     Stack --> Bar
     Stack --> Panel --> Read
     Stack --> Pinch --> Geo
+    Stack --> Scrub --> Geo
     Panel --> Geo
     IPage --> IHook & IList & IConn & IDate
     SPage --> SHook & IList & SConn & IDate

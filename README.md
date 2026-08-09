@@ -25,7 +25,12 @@ This project is **functional end-to-end, including real Garmin file upload** —
   graph's upper left** rather than following the cursor: one shared crosshair updates every
   graph's label in place, and the elapsed time and distance are reported once, in the sticky
   app header beside the activity's name and duration — so the reading stays in view however
-  far down the stack you have scrolled.
+  far down the stack you have scrolled. **On touch the crosshair is scrubbed relatively**
+  (`useTouchScrub`): a tap leaves it exactly where it is and a horizontal swipe drags it by
+  the distance the finger travelled, so your hand can rest well away from the graph shape
+  you are reading instead of covering it. It clamps at either end of the plot, and the first
+  touch with nothing on screen places it at the finger. Mouse behaviour is unchanged — a
+  cursor obscures nothing.
 - The chart's controls live where what they act on is: `ChartToolbar` holds the two that
   belong to no single graph (`XAxisModeSwitch`, `MetricToggle`), while each graph's
   `max/min/avg/median` and derivative boxes (`StatCheckboxes`) fold out of that graph's own
@@ -649,6 +654,18 @@ path, though (see step 9 below).
       follows, in place. Lift → they stay put, so the numbers can be read. Then tap a
       checkbox in a head → the readout must **not** blank; only touching another chart hands
       the crosshair over.
+    - **The crosshair scrub — two of these are invisible to CI, so this is the only place
+      they get checked.** With the crosshair already placed, **tap** a chart well to its
+      left or right → it does **not** move, and the readouts do not flicker at the tap point
+      even for a frame (that flicker is the browser's compatibility mouse events, which
+      jsdom does not synthesize at all). **Swipe horizontally** → the crosshair tracks the
+      finger 1:1 while the finger sits well away from it, and every panel's label plus the
+      header's `12:05 · 2.34 km` follow. **Lift** → it stays put. **Swipe hard past either
+      end** → it stops on the last sample and stays **visible**, never blanking. A
+      **vertical** drag on a chart still scrolls the page. Start a one-finger scrub and then
+      add a second finger → it becomes a pinch without the crosshair skittering. And
+      **swipe right-to-left starting near the screen edge** → **no back-navigation**; the
+      loaded activity survives (there is no history gesture in jsdom either).
     - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take
       one. It must show, in one translucent chip in the upper left, the bolt +
       "ActivityMaxxer" on the first row and the activity name, sport chip, start date/time

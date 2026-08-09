@@ -133,6 +133,31 @@ async function settleHover() {
   await new Promise((resolve) => requestAnimationFrame(resolve))
 }
 
+// Where the crosshair is drawn on each panel, in SVG x — which is client x too,
+// since ResponsiveContainer sizes the <svg> in CSS pixels with no transform.
+// Panels differ in height, so the cursor's y-extent legitimately differs; only
+// x means anything across panels.
+function cursorXs(container) {
+  return [...container.querySelectorAll('.recharts-wrapper')].map(
+    (w) => w.querySelector('.recharts-tooltip-cursor')?.getAttribute('d').match(/M(-?[\d.]+),/)[1],
+  )
+}
+
+// One finger, in the plain-object form jsdom's missing Touch constructor forces
+// (see the note at the top of useTouchScrub.test.jsx). clientY 100 is the
+// vertical middle of every element under setupTests.js's fixed rect.
+const touchAt = (clientX, clientY = 100) => ({ touches: [{ clientX, clientY }] })
+const lifted = { touches: [] }
+
+// Puts the crosshair somewhere with the mouse, so a touch scrub has something
+// to move *relative to*. clientX 300 settles on the sample at t=10s, i.e. 242.
+async function anchorCrosshair(container, clientX = 300) {
+  const wrapper = container.querySelector('.recharts-wrapper')
+  fireEvent.mouseOver(wrapper)
+  fireEvent.mouseMove(wrapper, { clientX, clientY: 50 })
+  await settleHover()
+}
+
 // A panel found by the colour of the line it draws, since the panels carry no
 // metric id in the DOM and their order shifts as metrics are toggled.
 function panelFor(container, metricId) {
@@ -471,14 +496,12 @@ describe('ChartStack', () => {
   it('releases a previously-touched panel back to the synced crosshair when another panel is touched', async () => {
     const { container } = await renderStack()
     const wrappers = [...container.querySelectorAll('.recharts-wrapper')]
-    const cursorXs = () =>
-      wrappers.map((w) => w.querySelector('.recharts-tooltip-cursor').getAttribute('d').match(/M(-?[\d.]+),/)[1])
 
     // Panel 0 takes the crosshair and is left holding a self-hover.
     fireEvent.mouseOver(wrappers[0])
     fireEvent.mouseMove(wrappers[0], { clientX: 300, clientY: 50 })
     await settleHover()
-    expect(new Set(cursorXs()).size).toBe(1)
+    expect(new Set(cursorXs(container)).size).toBe(1)
 
     // The finger lands on panel 1. Remove this line and the assertion below
     // fails — that contrast is what makes this a regression guard.
@@ -488,7 +511,130 @@ describe('ChartStack', () => {
     await settleHover()
 
     // Panel 0 moved to panel 1's position instead of freezing at 300.
-    expect(new Set(cursorXs()).size).toBe(1)
+    expect(new Set(cursorXs(container)).size).toBe(1)
+  })
+
+  // ── the touch crosshair scrub (ui/useTouchScrub.js) ─────────────────────
+  //
+  // On touch the crosshair is positioned RELATIVELY: a tap holds it, a
+  // horizontal swipe drags it by the distance the finger travelled, so the
+  // finger can rest far from the graph shape being read. These drive real touch
+  // events against real rendered Recharts panels; the gesture's own mechanics
+  // (axis lock, slop, terminal `off`) are covered in useTouchScrub.test.jsx.
+  it('leaves the crosshair exactly where it is when a chart is tapped', async () => {
+    const { container } = await renderStack()
+    await anchorCrosshair(container)
+    expect(cursorXs(container)).toEqual(['242', '242', '242', '242'])
+
+    // Tapped on a different panel, and far from the crosshair: absolute
+    // positioning would teleport it to 606.
+    const wrapper = [...container.querySelectorAll('.recharts-wrapper')][2]
+    fireEvent.touchStart(wrapper, touchAt(606))
+    fireEvent.touchEnd(wrapper, lifted)
+    await settleHover()
+
+    expect(cursorXs(container)).toEqual(['242', '242', '242', '242'])
+    expect(container.querySelector('.crosshair-position').textContent).toContain('0:10')
+  })
+
+  it('drags the crosshair by the distance the finger travelled, not to the finger', async () => {
+    const { container } = await renderStack()
+    await anchorCrosshair(container)
+
+    // Finger down at 606 — one sample to the RIGHT of the crosshair — and moved
+    // +182px. The crosshair advances one sample, from 242 to 424.
+    const wrapper = container.querySelector('.recharts-wrapper')
+    fireEvent.touchStart(wrapper, touchAt(606))
+    fireEvent.touchMove(wrapper, touchAt(788))
+    await settleHover()
+
+    await waitFor(() => expect(cursorXs(container)).toEqual(['424', '424', '424', '424']))
+    expect(container.querySelector('.crosshair-position').textContent).toContain('0:20')
+  })
+
+  it('accumulates successive swipes, re-reading the crosshair each time', async () => {
+    // The gesture reads the rendered cursor per touchstart rather than
+    // remembering the last x it dispatched — so a second swipe starts from
+    // where the first one left the crosshair, not from the original position.
+    const { container } = await renderStack()
+    await anchorCrosshair(container)
+    const wrapper = container.querySelector('.recharts-wrapper')
+
+    fireEvent.touchStart(wrapper, touchAt(606))
+    fireEvent.touchMove(wrapper, touchAt(788))
+    fireEvent.touchEnd(wrapper, lifted)
+    await settleHover()
+    await waitFor(() => expect(cursorXs(container)).toEqual(['424', '424', '424', '424']))
+
+    fireEvent.touchStart(wrapper, touchAt(606))
+    fireEvent.touchMove(wrapper, touchAt(788))
+    await settleHover()
+
+    await waitFor(() => expect(cursorXs(container)).toEqual(['606', '606', '606', '606']))
+    expect(container.querySelector('.crosshair-position').textContent).toContain('0:30')
+  })
+
+  it('leaves the crosshair alone on a vertical drag, so reading through still scrolls', async () => {
+    const { container } = await renderStack()
+    await anchorCrosshair(container)
+
+    const wrapper = container.querySelector('.recharts-wrapper')
+    fireEvent.touchStart(wrapper, touchAt(606, 100))
+    fireEvent.touchMove(wrapper, touchAt(610, 400))
+    await settleHover()
+
+    expect(cursorXs(container)).toEqual(['242', '242', '242', '242'])
+  })
+
+  it('places the crosshair at the finger on the first touch, with none on screen to keep', async () => {
+    // The one absolute placement, and what makes the gesture discoverable:
+    // there is nothing to preserve, so the finger gets to say where it starts.
+    const { container } = await renderStack()
+    expect(container.querySelectorAll('.recharts-tooltip-cursor')).toHaveLength(0)
+
+    fireEvent.touchStart(container.querySelector('.recharts-wrapper'), touchAt(606))
+    await settleHover()
+
+    await waitFor(() => expect(cursorXs(container)).toEqual(['606', '606', '606', '606']))
+  })
+
+  it('clamps at the plot edge instead of dragging the crosshair off the chart', async () => {
+    // THE trap: a mousemove resolving outside the plot makes Recharts dispatch
+    // mouseLeaveChart(), so an unclamped swipe past the end would DELETE the
+    // crosshair rather than stopping it on the last sample. "The readout is not
+    // blank" is the whole assertion.
+    const { container } = await renderStack()
+    await anchorCrosshair(container)
+
+    const wrapper = container.querySelector('.recharts-wrapper')
+    fireEvent.touchStart(wrapper, touchAt(300))
+    fireEvent.touchMove(wrapper, touchAt(3000))
+    await settleHover()
+
+    await waitFor(() => expect(cursorXs(container)).toEqual(['788', '788', '788', '788']))
+    expect(container.querySelector('.crosshair-position').textContent).toContain('0:40')
+    expect([...container.querySelectorAll('.crosshair-slot')].every((s) => s.textContent !== '')).toBe(true)
+  })
+
+  it('hands a scrub over to the pinch when a second finger lands', async () => {
+    // One finger does exactly one thing, and a second finger means zoom. The
+    // scrub must not swallow the pinch usePinchZoom is waiting for.
+    const { container } = await renderStack()
+    await anchorCrosshair(container)
+    const panels = [...container.querySelectorAll('.metric-panel')]
+    const spreadBefore = panels.map(xSpread)
+
+    const wrapper = container.querySelector('.recharts-wrapper')
+    fireEvent.touchStart(wrapper, touchAt(606))
+    fireEvent.touchMove(wrapper, touchAt(788))
+    await settleHover()
+
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+
+    await waitFor(() => {
+      const panelsNow = [...container.querySelectorAll('.metric-panel')]
+      panelsNow.forEach((panel, i) => expect(xSpread(panel)).toBeGreaterThan(spreadBefore[i]))
+    })
   })
 
   it('drops a panel when its metric is toggled off via ChartViewContext', async () => {

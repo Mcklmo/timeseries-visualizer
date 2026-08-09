@@ -101,3 +101,54 @@ export function clampFraction(fraction) {
   if (!Number.isFinite(fraction)) return 0.5
   return Math.min(1, Math.max(0, fraction))
 }
+
+// Recharts draws the crosshair as a <Curve className="recharts-tooltip-cursor">
+// inside each panel's .recharts-surface, and only while the tooltip is active
+// (component/Cursor.js returns null without an active coordinate). A vertical
+// line's path is therefore `M<x>,<top>L<x>,<bottom>` — the leading moveto is
+// where the crosshair is.
+const CURSOR_START_X = /^\s*M\s*(-?[\d.]+)[,\s]/
+
+/**
+ * The x of a rendered tooltip cursor, in SVG user units.
+ *
+ * Pure, and split from crosshairClientX for the reason at the top of
+ * chartGeometry.test.js: the impure half cannot be pinned in a rendered test,
+ * this half can.
+ *
+ * @param {string | null | undefined} d - the cursor path's `d` attribute
+ * @returns {number | null} null when there is no cursor, or none we recognise
+ */
+export function parseCursorX(d) {
+  if (typeof d !== 'string') return null
+  const match = CURSOR_START_X.exec(d)
+  if (!match) return null
+  const x = Number(match[1])
+  return Number.isFinite(x) ? x : null
+}
+
+/**
+ * Where the crosshair currently is under `el`, in client pixels.
+ *
+ * READ THE DOM RATHER THAN REMEMBERING THE LAST X DISPATCHED. A pinch moves the
+ * crosshair's *pixel* position without changing its index, and a desktop mouse
+ * can place it too, so any cached pixel value goes stale. Re-reading per
+ * gesture is also what makes repeated swipes accumulate instead of all
+ * measuring from the same original point.
+ *
+ * SVG user units are client pixels 1:1 here: ResponsiveContainer sizes the
+ * <svg> in CSS pixels with no transform. That is the same assumption Recharts
+ * itself encodes as `scaleX = rect.width / bbox.width` in
+ * util/getRelativeCoordinate.js.
+ *
+ * @param {Element | null} el
+ * @returns {number | null} null while no crosshair is rendered
+ */
+export function crosshairClientX(el) {
+  const cursor = el?.querySelector('.recharts-tooltip-cursor')
+  const surface = el?.querySelector('.recharts-surface')
+  if (!cursor || !surface) return null
+  const x = parseCursorX(cursor.getAttribute('d'))
+  if (x === null) return null
+  return surface.getBoundingClientRect().left + x
+}
