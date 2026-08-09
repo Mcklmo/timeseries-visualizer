@@ -73,9 +73,9 @@ export const pages = [
 
       <h2>What does reach the network, and when</h2>
       <p>
-        Three things do, and only when you ask them to. Being precise about them is the point: a
+        Four things do, and only when you ask them to. Being precise about them is the point: a
         reader who uses one of these features should not feel that the paragraph above misled
-        them. Two of the three are opt-in ways to reach your own training history, and they do
+        them. Two of the four are opt-in ways to reach your own training history, and they do
         not work the same way as each other — so they are described separately rather than
         summarised together.
       </p>
@@ -106,6 +106,20 @@ export const pages = [
           activity data travels back through it — over an encrypted connection to the same
           address as the page. Approval happens on Strava's own site, read-only, and pressing
           "Disconnect" revokes it at Strava rather than merely forgetting it here.
+        </li>
+        <li>
+          <strong>Switching on the map background</strong> under a route. It ships
+          <strong>off</strong>, so an activity you open shows its route drawn on a plain
+          background and asks the network for nothing. Turn it on and your browser requests map
+          tiles — small square images, addressed by coordinate and zoom — from activitymaxxer.com,
+          which fetches them from the tile provider and passes them back. That indirection is the
+          entire reason it exists: fetching tiles straight from a map host would tell that host
+          which coordinates your device is looking at and when, which is a location record of your
+          training held by a company you never chose. Requests leave this app's server carrying no
+          part of yours — not your address, not your cookies, not the page you came from — so the
+          provider sees only that somebody, somewhere, wanted that square of the world. Your
+          activity file is not involved at any point: a tile request says "the ground between these
+          coordinates", never anything about the line drawn on top of it.
         </li>
       </ul>
       <p>

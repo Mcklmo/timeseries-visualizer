@@ -4,6 +4,7 @@
 // is handed to the static-assets binding, which serves ./dist.
 import { handleFeedbackRequest } from './routes/feedback.js'
 import { STRAVA_ROUTE_PREFIX, handleStravaRequest } from './routes/strava.js'
+import { TILES_ROUTE_PREFIX, handleTilesRequest } from './routes/tiles.js'
 
 export default {
   async fetch(request, env) {
@@ -13,6 +14,9 @@ export default {
     // so the five Strava endpoints stay one line here. The OAuth *callback*
     // needs nothing — it lands on `/`, which is already served below.
     if (url.pathname.startsWith(STRAVA_ROUTE_PREFIX)) return handleStravaRequest(request, env)
+    // Basemap tiles for the route map panel. Same shape as Strava's: the route
+    // owns its own path parsing and validation, so this stays one line.
+    if (url.pathname.startsWith(TILES_ROUTE_PREFIX)) return handleTilesRequest(request, env)
     return env.ASSETS.fetch(request)
   },
 }

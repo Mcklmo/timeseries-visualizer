@@ -656,7 +656,8 @@ main {
    no 60px literal here: that module exists so the number has one home, and a
    copy in this file would be free to drift from the one the chart is laid out
    with. The fallback keeps the head sane if the property ever fails to arrive. */
-.metric-panel__head {
+.metric-panel__head,
+.map-panel__head {
   padding-left: var(--plot-inset, 0);
   font-size: 13px;
 }
@@ -726,6 +727,119 @@ main {
   color: var(--deriv-hue, var(--text-dim));
   font-family: var(--font-data);
   font-variant-numeric: tabular-nums;
+}
+
+/* The map is not a metric — no registry entry, and deliberately no entry in
+   availableMetrics — but its show/hide control sits in the same row as the
+   metric ones and its head reads like theirs, so both take the same dot. The
+   hue is the one the bright zoom window is stroked in (MapPanel), which is what
+   makes the control and the mark it governs read as the same thing. It is
+   shared with pace/speed, which §9's one-hue-per-metric rule tolerates for the
+   same reason pace and speed already share it: the two are never on screen as
+   the same kind of object. */
+.metric-toggle--map,
+.map-panel .metric-readout {
+  --metric-color: var(--metric-pace);
+}
+
+/* Route map panel — the canvas stack above the charts.
+
+   The drawing area is inset by the SAME numbers the charts' plot areas are:
+   --plot-inset on the left (chartGeometry's Y_AXIS_WIDTH + CHART_MARGIN.left)
+   and --plot-right-inset on the right (CHART_MARGIN.right plus the stack-wide
+   derivative gutter). Both arrive from JS as custom properties rather than
+   being written out as literals here, for the reason chartGeometry.js exists:
+   a copy in this file would be free to drift from the one the charts are laid
+   out with, and the map would stop lining up with the lines under it. */
+.map-panel__canvases {
+  position: relative;
+  margin-left: var(--plot-inset, 0);
+  margin-right: var(--plot-right-inset, 0);
+  /* Its own ground, a step darker than the panel: it delimits the drawing area
+     without a border, and gives the marker's halo something consistent to sit
+     on whether or not a basemap is underneath. */
+  background: var(--bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Three stacked layers — base, window, marker — so a hover frame repaints only
+   the one holding the dot. See map/drawTrack.js. `display: block` kills the
+   inline-element descender gap a canvas would otherwise leave. */
+.map-panel__layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* Required by OpenStreetMap's and CARTO's terms wherever their tiles are shown
+   — quiet, but it is not decoration and it never hides. It sits inside the
+   drawing area rather than under it so it credits the thing it is next to, and
+   it is only rendered at all while tiles are on screen (MapPanel). The chip
+   keeps it legible over an arbitrary photograph of a city, which is the one
+   background in this app whose colour is not ours to choose. */
+.map-panel__attribution {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  margin: 0;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border-radius: var(--radius);
+  /* It must never eat a pinch that began on the map. */
+  pointer-events: none;
+}
+
+/* The basemap chooser, inside the map panel's own <details> body — the same
+   place a metric's stat checkboxes live, for the same reason. A <fieldset>
+   rather than a bare group of labels: the radios need a shared accessible name
+   ("Background") and this is the element that gives them one for free. Its own
+   UA border and padding are dropped; the panel head is already a bounded area
+   and a second box inside it reads as chrome. */
+.basemap-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-family: var(--font-data);
+  color: var(--text-dim);
+}
+
+.basemap-control__legend {
+  /* float, not `display`, is what takes a <legend> out of its reserved slot at
+     the top of the fieldset and lets it sit inline with the options — the
+     element ignores most display values in every engine. */
+  float: left;
+  padding: 0 12px 0 0;
+}
+
+.basemap-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Same treatment as .feedback-form__notice and .intervals-connect__notice: this
+   is the one control in the app that turns a network request on, and the
+   disclosure beside it must not read as a throwaway hint. */
+.basemap-control__notice {
+  flex-basis: 100%;
+  max-width: 62ch;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--bg);
+  border-left: 2px solid var(--metric-power);
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 /* The About prose column used to live here. It is now a static page at

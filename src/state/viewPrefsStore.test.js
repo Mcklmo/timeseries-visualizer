@@ -20,9 +20,11 @@ const prefs = {
   xMode: 'distance',
   enabledMetrics: ['heartRate', 'cadence'],
   enabledStats: Object.fromEntries(metricOrder.map((id) => [id, id === 'heartRate' ? ['max', 'median'] : []])),
+  showMap: true,
+  basemap: 'none',
 }
 
-const storedPayload = (extra) => JSON.stringify({ v: 1, ...prefs, ...extra })
+const storedPayload = (extra) => JSON.stringify({ v: 2, ...prefs, ...extra })
 
 describe('viewPrefsStore', () => {
   it('round-trips a saved view under its activity key', () => {
@@ -55,9 +57,48 @@ describe('viewPrefsStore', () => {
   })
 
   it('drops a payload from another schema version instead of guessing at it', () => {
-    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: storedPayload({ v: 2 }) })).read(KEY)).toBeNull()
+    // Both directions: an entry written before the map fields existed (v1) and
+    // one from a future shape (v3). Dropped, never migrated — the documented
+    // policy, and the whole cost of the v1 -> v2 bump is that in-flight
+    // sessions forget their toggles once.
+    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: storedPayload({ v: 1 }) })).read(KEY)).toBeNull()
+    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: storedPayload({ v: 3 }) })).read(KEY)).toBeNull()
     expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: JSON.stringify(prefs) })).read(KEY)).toBeNull()
     expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: '"a string"' })).read(KEY)).toBeNull()
+  })
+
+  it('round-trips the map panel choices', () => {
+    const store = createViewPrefsStore(fakeStorage())
+    store.save(KEY, { ...prefs, showMap: false, basemap: 'standard' })
+
+    const restored = store.read(KEY)
+    expect(restored.showMap).toBe(false)
+    expect(restored.basemap).toBe('standard')
+  })
+
+  it('defaults the map panel on, since an activity with a route should show it', () => {
+    const raw = storedPayload({ showMap: undefined })
+    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY).showMap).toBe(true)
+  })
+
+  it('does not coerce a non-boolean showMap, which truthiness would read backwards', () => {
+    const raw = storedPayload({ showMap: 'false' })
+    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY).showMap).toBe(true)
+  })
+
+  // An unknown id would have the client asking the Worker for a provider it
+  // does not serve, on every tile, forever.
+  it('falls back to the private default for an unrecognised basemap', () => {
+    const raw = storedPayload({ basemap: 'satellite-pro' })
+    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY).basemap).toBe('none')
+  })
+
+  // The privacy default is a product commitment, so it is pinned here as well
+  // as by App.test.jsx's no-fetch assertion: nothing a stored entry can say
+  // makes a fresh read come back with tiles switched on by accident.
+  it('leaves the basemap off when the stored entry says nothing about it', () => {
+    const raw = storedPayload({ basemap: undefined })
+    expect(createViewPrefsStore(fakeStorage({ [STORAGE_KEY]: raw })).read(KEY).basemap).toBe('none')
   })
 
   it('filters out an unknown metric id, which would otherwise throw in StatCheckboxes', () => {

@@ -126,7 +126,8 @@ describe('ChartViewContext', () => {
   it('publishes no hoverIndex, since nothing reads one', () => {
     renderProbe()
     expect(screen.getByText(/^keys:/).textContent).toBe(
-      'keys:enabledMetrics,enabledStats,setXMode,setZoomDomain,toggleMetric,toggleStat,xMode,zoomDomain',
+      'keys:basemap,enabledMetrics,enabledStats,setBasemap,setXMode,setZoomDomain,showMap,toggleMap,toggleMetric,' +
+        'toggleStat,xMode,zoomDomain',
     )
   })
 

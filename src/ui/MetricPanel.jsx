@@ -17,7 +17,7 @@ import { derivativeKindFor, metricRegistry, metricUnit, scalarStatKinds } from '
 import { computeYDomain } from '../stats/aggregate.js'
 import { useDerivativeSeries } from '../stats/useDerivativeSeries.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
-import { CHART_MARGIN, Y_AXIS_WIDTH } from './chartGeometry.js'
+import { CHART_MARGIN, PLOT_INSET, Y_AXIS_WIDTH } from './chartGeometry.js'
 import { CrosshairReadout } from './CrosshairReadout.jsx'
 import { derivativeStroke } from './derivativeStyle.js'
 import { StatCheckboxes } from './StatCheckboxes.jsx'
@@ -28,12 +28,11 @@ import { StatCheckboxes } from './StatCheckboxes.jsx'
 // gesture would quietly grab a few pixels off the line it looks like it's on.
 const SYNC_ID = 'activity'
 
-// Where the plot area starts, measured in from the panel's left edge: exactly
-// the sum plotRectFromSurface subtracts. Handed to CSS as `--plot-inset` so the
-// head's label sits over the line it names rather than over the y-axis gutter.
-// Derived here and never written as `60px` in the stylesheet, for the same
-// reason the two constants above are imported rather than redeclared.
-const PLOT_INSET = Y_AXIS_WIDTH + CHART_MARGIN.left
+// PLOT_INSET — where the plot area starts, handed to CSS as `--plot-inset` so
+// the head's label sits over the line it names rather than over the y-axis
+// gutter — is imported too, and for one more reason than the two constants
+// above: MapPanel insets its canvases by the same number so the map's drawing
+// area lines up with the plot areas of the charts below it.
 
 // Draw order comes from the registry's `scalarStatKinds`; the dash patterns
 // stay here, being presentation rather than domain. Scalar kinds only —
@@ -156,6 +155,12 @@ export function MetricPanel({
   // nothing. `positionSlot` is null on every panel but the first (ChartStack).
   onToggleStat,
   positionSlot = null,
+  // Whether this is the stack's first visible panel — the one that reports the
+  // shared position, both into the header slot and onto ui/crosshairBus.js for
+  // the map's marker. Defaults false so a panel rendered bare publishes
+  // nothing: the bus is module-level state, and a stray publisher in a test
+  // would outlive that test's DOM.
+  primary = false,
 }) {
   const metric = metricRegistry[metricId]
   // A callback ref captured INTO STATE, not a plain ref: the bridge below has
@@ -340,6 +345,7 @@ export function MetricPanel({
                 derivative={hasOverlay ? { key: derivKey, spec: derivSpec } : null}
                 valueSlot={valueSlot}
                 positionSlot={positionSlot}
+                primary={primary}
               />
             }
             cursor={{ stroke: 'var(--stat-line)' }}

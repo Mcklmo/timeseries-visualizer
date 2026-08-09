@@ -71,6 +71,21 @@
         "limit": 30,
         "period": 60
       }
+    },
+    {
+      // Basemap tiles. Far looser than the other two because the unit is a
+      // tile, not a user action: one activity at one fit is ~10-30 tiles, and
+      // a resize or a second activity asks for another set. 300/60s is roughly
+      // "keep working while someone flicks through a morning's rides" and is
+      // still a hard stop on anything trying to use this Worker as an open
+      // tile proxy. The edge cache (worker/routes/tiles.js) is what keeps the
+      // steady-state volume near zero; this is the burst cap behind it.
+      "name": "TILES_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
     }
   ]
 }

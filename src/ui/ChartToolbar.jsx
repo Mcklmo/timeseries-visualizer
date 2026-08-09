@@ -16,11 +16,14 @@
 // applies. See ARCHITECTURE.md §7.
 import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
+import { useChartView } from '../state/ChartViewContext.jsx'
 import { MetricToggle } from './MetricToggle.jsx'
 import { XAxisModeSwitch } from './XAxisModeSwitch.jsx'
 
 export function ChartToolbar() {
   const { activity } = useActivity()
+  // Hoisted above the guard — a hook is a hook wherever its value comes from.
+  const { showMap, toggleMap } = useChartView()
 
   if (!activity) return null
 
@@ -35,6 +38,22 @@ export function ChartToolbar() {
     <div className="chart-toolbar">
       <XAxisModeSwitch />
       <ul className="metric-controls">
+        {/* The map rides in this row for exactly the reason the comment above
+            gives for listing available-∧-sport rather than the enabled subset:
+            a hidden panel has no head of its own, so this is the only way back
+            to it. It is gated on `activity.track != null` — the feature's whole
+            availability rule — and NOT on an entry in availableMetrics, which
+            is hashed into the activity's id (domain/activityKey.js). It is
+            therefore a plain checkbox rather than a <MetricToggle>: there is no
+            registry entry behind it and there must not be one. */}
+        {activity.track != null && (
+          <li>
+            <label className="metric-toggle metric-toggle--map">
+              <input type="checkbox" checked={showMap} onChange={toggleMap} />
+              Route
+            </label>
+          </li>
+        )}
         {visibleMetrics.map((id) => (
           <li key={id}>
             <MetricToggle metricId={id} />

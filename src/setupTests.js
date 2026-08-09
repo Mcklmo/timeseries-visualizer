@@ -75,6 +75,69 @@ window.matchMedia = function (query) {
 // layout, so every rect is 0 by default and charts render at 0x0 with none
 // of their children (axes, lines, cursor) in the DOM. A fixed non-zero rect
 // lets Recharts lay out real, assertable SVG geometry in every test.
+//
+// It is also what makes the map panel's canvas sizing deterministic: MapPanel
+// measures its own host the same way, so every test draws into an 800×200 area.
 Element.prototype.getBoundingClientRect = function () {
   return { x: 0, y: 0, top: 0, left: 0, bottom: 200, right: 800, width: 800, height: 200, toJSON() {} }
+}
+
+// jsdom implements no canvas at all: `getContext('2d')` returns null and logs
+// "Not implemented" noise. Neither `canvas` (a native build) nor
+// `vitest-canvas-mock` is installed, and neither is worth its weight here —
+// ui/MapPanel.jsx and map/drawTrack.js are written around an INJECTED context
+// precisely so a stub of this size can stand in.
+//
+// Returning a working stub rather than letting MapPanel take its `if (!ctx)
+// return` branch is the point: the real draw path then executes under test, so
+// a test can assert that the route was stroked, that a gap lifted the pen, and
+// that the marker moved — against the actual calls the production code makes.
+//
+// Every call is recorded WITH the style state in effect at the time, because
+// the interesting assertions are about which layer was painted in which colour
+// and the style properties are mutated between calls (`drawSegment` sets
+// strokeStyle, then strokes). Reading `ctx.strokeStyle` afterwards would only
+// ever report the last value set.
+const CANVAS_2D_METHODS = [
+  'save',
+  'restore',
+  'beginPath',
+  'closePath',
+  'moveTo',
+  'lineTo',
+  'arc',
+  'rect',
+  'stroke',
+  'fill',
+  'clearRect',
+  'setTransform',
+  'drawImage',
+]
+
+HTMLCanvasElement.prototype.getContext = function (contextType) {
+  if (contextType !== '2d') return null
+  // Cached per element, matching the real API: getContext returns the SAME
+  // context object every time, and a fresh stub per call would drop the
+  // recorded history a test is about to read.
+  if (!this._recordingContext2d) {
+    const calls = []
+    const ctx = {
+      canvas: this,
+      calls,
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineJoin: 'miter',
+      lineCap: 'butt',
+      globalAlpha: 1,
+      imageSmoothingEnabled: true,
+    }
+    for (const name of CANVAS_2D_METHODS) {
+      ctx[name] = (...args) => {
+        calls.push({ name, args, strokeStyle: ctx.strokeStyle, fillStyle: ctx.fillStyle, lineWidth: ctx.lineWidth })
+      }
+    }
+    this._recordingContext2d = ctx
+  }
+  return this._recordingContext2d
 }

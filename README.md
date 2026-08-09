@@ -31,8 +31,21 @@ This project is **functional end-to-end, including real Garmin file upload** —
   you are reading instead of covering it. It clamps at either end of the plot, and the first
   touch with nothing on screen places it at the finger. Mouse behaviour is unchanged — a
   cursor obscures nothing.
+- **The route is drawn as a map panel at the top of the stack** (`MapPanel`) whenever the
+  recording carries GPS — every ingestion path already did, the coordinates were simply
+  being discarded during normalization. It fits the whole route **once** and never re-fits:
+  zooming the charts brightens the corresponding sub-segment over a dimmed whole rather than
+  moving the map, and there is no independent pan or zoom — a pinch over the map zooms the
+  shared time axis like a pinch anywhere else. The shared crosshair moves a marker along it,
+  driven over a module-level pub/sub (`crosshairBus`) rather than React state, so a hover
+  frame re-renders nothing. Hand-rolled canvas 2D on three stacked layers, no mapping
+  library. **The map background is off by default and is the only opt-in here that touches
+  the network**: tiles are proxied through the app's own Worker, which forwards no client
+  header, so the tile provider never sees your address — and with it off, a freshly loaded
+  activity still issues zero requests.
 - The chart's controls live where what they act on is: `ChartToolbar` holds the two that
-  belong to no single graph (`XAxisModeSwitch`, `MetricToggle`), while each graph's
+  belong to no single graph (`XAxisModeSwitch`, `MetricToggle`) plus the map's show/hide,
+  while each graph's
   `max/min/avg/median` and derivative boxes (`StatCheckboxes`) fold out of that graph's own
   head — also verified against real rendered Recharts SVG output, not just context state.
 - Zooming is a **two-finger pinch** anywhere on the chart stack, or **ctrl/⌘ + scroll** on a
@@ -322,13 +335,18 @@ src/
               # tcx, fit, gpx (files); intervals (browser-direct); strava (via the Worker)
   domain/     # pure, framework-free normalization pipeline (types, units, buildDistanceAxis,
               # deriveSpeed, detectPauses, smooth, samplingInterval, insertGapBreaks,
-              # normalizeActivity)
+              # normalizeActivity, and for the route map: webMercator, buildTrack,
+              # simplifyTrack)
+  map/        # the route map's non-React half: fitBounds (the one affine transform),
+              # drawTrack (canvas ink, over an injected 2D context), basemapRegistry,
+              # tileMath, tileLoader
   lib/        # feedbackClient — the browser side of POST /api/feedback
               # safeStorage — the guarded-storage kernel the four stores share
   stats/      # max/min/avg/median aggregation, strategy-aware, memoized hook
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
-  ui/         # ChartStack, MetricPanel, CrosshairReadout, ChartToolbar + toggles/switch,
+  ui/         # ChartStack, MetricPanel, MapPanel + crosshairBus,
+              # CrosshairReadout, ChartToolbar + toggles/switch,
               # EmptyState, ErrorState, FileDropZone,
               # ActivityRowList + ActivityDateFilter — the picker chrome, provider-neutral,
               # IntervalsPage/ConnectForm + useIntervalsActivities + useDebouncedValue,
@@ -341,9 +359,11 @@ scripts/
   seo/pages.mjs        # their content, as plain data — including the About prose
   seo/pages.test.mjs   # the content rules, enforced rather than reviewed
 shared/       # environment-agnostic values imported by BOTH src/ and worker/ (feedbackLimits)
-worker/       # the Cloudflare Worker: routes /api/feedback and /api/strava/*,
+worker/       # the Cloudflare Worker: routes /api/feedback, /api/strava/* and /api/tiles/*,
               # serves dist/ via env.ASSETS
-  routes/     # feedback.js, strava.js — the request orchestration
+  routes/     # feedback.js, strava.js, tiles.js — the request orchestration.
+              # tiles.js also owns the basemap provider allowlist and the upstream
+              # URLs, which deliberately appear nowhere in the client bundle
   lib/        # validateFeedback, buildIssuePayload, verifyTurnstile, githubClient, rateLimit,
               # stravaOAuth (the client_secret half), stravaProxy (header allowlists)
 fixtures/
@@ -412,6 +432,12 @@ examples, and ARCHITECTURE.md §0 for the jsdom pitfalls that motivated this app
   (jsdom reports 0×0 otherwise, which collapses Recharts' `ResponsiveContainer`), stubs
   `<dialog>`'s `showModal`/`close` (still unimplemented in jsdom 30), and calls
   `afterEach(cleanup)` explicitly since this project doesn't enable Vitest's `globals`.
+- It also installs a **recording 2D canvas context**, because jsdom implements no canvas and
+  `getContext('2d')` returns `null`. `src/map/drawTrack.js` takes its context as an argument
+  for exactly this reason, so no native `canvas` build and no `vitest-canvas-mock` is
+  needed: the map's real draw path executes under test, and `MapPanel.test.jsx` asserts on
+  the calls it actually makes (that a GPS dropout lifted the pen, that the marker moved,
+  that tiles were drawn *under* the route) rather than that a mock was invoked.
 - The Worker's tests (`worker/**/*.test.js`) run in the same single Vitest config, on Node's
   native `fetch`/`Request`/`Response`. Pure functions get plain input/output tests; the two
   modules that call out (`verifyTurnstile`, `githubClient`) take an injected `fetchImpl`; and
@@ -494,6 +520,20 @@ path, though (see step 9 below).
    reading `Heart rate —`, while the header reading and its `·` separator both vanish.
 5. **Metric toggles** — uncheck "Cadence" in the toolbar → its panel *and its head* disappear,
    others stay aligned. Re-check it → both come back.
+5b. **The route map** — the fixtures all carry GPS, so a **Route** panel should sit above
+   every chart, drawn edge to edge on the same left/right inset as the plot areas below it.
+   Check four things by eye. The route is **whole and correctly proportioned** — an
+   out-and-back should retrace itself, not come back lopsided (that failure is a lost
+   Mercator projection). Hovering any chart moves a **dot along the route**, and it stops
+   being drawn where the recording lost its fix. Pinching the charts **brightens the
+   corresponding stretch** while the rest stays dim, and the map itself must **not move or
+   re-fit** while you do it. And the **Route** checkbox in the toolbar hides and restores the
+   panel. Then unfold the map's own head: **Background** should be on **None**, and switching
+   it to **Map** should load tiles under the route, with the OpenStreetMap/CARTO attribution
+   appearing bottom-right. Open DevTools' Network tab for that last step: every tile request
+   must go to **this origin** (`/api/tiles/…`), never to a tile host — and with the
+   background on **None**, a fresh load must show **no requests at all**. Note that
+   `npm run dev` serves no Worker, so tiles only load under `wrangler dev`.
 6. **Per-graph settings** — click the arrow beside a metric's name → its
    max/min/avg/median (plus `d/dt`, `d²/dt²` where offered) unfold **in flow**, pushing the
    charts below down rather than floating over them. Check "max" on heart rate → a dashed
@@ -537,7 +577,9 @@ path, though (see step 9 below).
     **Track**, the name reads **"3-day Track"**, panels are Speed + Elevation, the x-axis
     ticks read `0h · 1d0h · 2d0h` (not `259200`), avg speed is a plausible walking figure,
     and **both lines break visibly** at the 6-hour dropout and at each of the three nights
-    in camp rather than running a straight diagonal across them. Hover anywhere: the
+    in camp rather than running a straight diagonal across them. **The route on the map must
+    break in the same places** — a dropout is a gap, not a line drawn straight across
+    country, and this is the fixture that shows it. Hover anywhere: the
     toolbar's position readout shows elapsed time in days (e.g. `2d 4:15:30`). Ctrl+scroll into one day
     and confirm the crosshair still syncs across both panels, the ticks stay real dates
     rather than `NaN`, and the zoom doesn't hit its floor prematurely — the max-zoom limit is

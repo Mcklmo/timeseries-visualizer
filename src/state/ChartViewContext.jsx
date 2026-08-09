@@ -19,6 +19,7 @@
 //     piece of this state that is neither persisted nor carried over.
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { fullDomain } from '../domain/zoomDomain.js'
+import { DEFAULT_BASEMAP } from '../map/basemapRegistry.js'
 import { derivativeStatKinds, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from './ActivityContext.jsx'
 import { viewPrefsStore } from './viewPrefsStore.js'
@@ -39,6 +40,19 @@ function initialState(prefs) {
     // requested. enabledMetrics keeps its all-on default — a panel that isn't
     // drawn is a metric you can't see at all, which is a different question.
     enabledStats: prefs?.enabledStats ?? Object.fromEntries(metricOrder.map((id) => [id, []])),
+    // ⚠️ NOT AN ENTRY IN `enabledMetrics`, and it must never become one.
+    // viewPrefsStore filters that array against `metricOrder`, so a 'map' id
+    // surviving into it would reach `metricRegistry['map'].label` in
+    // StatCheckboxes and throw a real TypeError. It is also not in
+    // `availableMetrics` — see normalizeActivity.js. On by default: someone who
+    // recorded a route wants to see it, and the panel simply does not render
+    // when `activity.track` is null.
+    showMap: prefs?.showMap ?? true,
+    // A STRING, not a boolean, so satellite imagery slots in as one more id
+    // without a second schema bump (map/basemapRegistry.js). Defaults to
+    // 'none' — the opt-in privacy stance, pinned mechanically by App.test.jsx's
+    // no-fetch assertion.
+    basemap: prefs?.basemap ?? DEFAULT_BASEMAP,
   }
 }
 
@@ -79,8 +93,10 @@ export function ChartViewProvider({ children }) {
       xMode: state.xMode,
       enabledMetrics: state.enabledMetrics,
       enabledStats: state.enabledStats,
+      showMap: state.showMap,
+      basemap: state.basemap,
     })
-  }, [activityKey, state.xMode, state.enabledMetrics, state.enabledStats])
+  }, [activityKey, state.xMode, state.enabledMetrics, state.enabledStats, state.showMap, state.basemap])
 
   // A numeric zoomDomain is meaningless across modes (seconds vs metres), so
   // switching axes resets zoom rather than silently misreading stale bounds.
@@ -126,12 +142,18 @@ export function ChartViewProvider({ children }) {
     [],
   )
 
+  const toggleMap = useCallback(() => setState((s) => ({ ...s, showMap: !s.showMap })), [])
+
+  const setBasemap = useCallback((basemap) => setState((s) => ({ ...s, basemap })), [])
+
   const value = {
     ...state,
     setXMode,
     setZoomDomain,
     toggleMetric,
     toggleStat,
+    toggleMap,
+    setBasemap,
   }
 
   return <ChartViewContext.Provider value={value}>{children}</ChartViewContext.Provider>

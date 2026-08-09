@@ -32,9 +32,35 @@
 // therefore every <LineChart> under it — today only this subtree re-renders per
 // mouse move), and `<Tooltip position={{x, y}}>` (it pins the box inside
 // `.recharts-wrapper`, so it cannot reach a row that sits above the chart).
+import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { formatDistanceKm, formatDuration } from '../domain/units.js'
 import { metricUnit } from '../metrics/metricRegistry.js'
+import { publishCrosshair } from './crosshairBus.js'
+
+/**
+ * Announces the hovered position on ui/crosshairBus.js, for the map panel's
+ * marker canvas. Renders nothing.
+ *
+ * **A CHILD COMPONENT, NOT A HOOK IN CrosshairReadout ITSELF.** That function's
+ * `if (!active || !payload …) return null` is its first statement and there are
+ * no hooks below it; adding one would be a hook-order violation the moment the
+ * tooltip goes inactive. Mounting this only while active turns that early
+ * return into exactly the signal the map needs — unmount is "clear the marker",
+ * handled by the effect's own cleanup, with no second code path to keep in sync.
+ *
+ * An effect rather than publishing during render, so it is StrictMode-safe: a
+ * double-invoked render would publish twice with nothing to undo it, while a
+ * double-invoked effect runs publish → cleanup → publish and ends in the
+ * correct state.
+ */
+function HoverPublisher({ t, d }) {
+  useEffect(() => {
+    publishCrosshair({ t, d })
+    return () => publishCrosshair(null)
+  }, [t, d])
+  return null
+}
 
 /**
  * @param {object} props
@@ -46,8 +72,14 @@ import { metricUnit } from '../metrics/metricRegistry.js'
  * @param {Element|null} [props.positionSlot] - the app header's shared time/distance
  *   slot. Passed to the FIRST visible panel only: every panel is synced to the
  *   same sample, so one of them reports the position and the rest pass null.
+ * @param {boolean} [props.primary] - whether this is that first visible panel.
+ *   An EXPLICIT prop rather than inferring it from `positionSlot != null`, even
+ *   though ChartStack derives both from the same `i === 0`: dozens of tests
+ *   render a panel with a null slot, and the map's marker must still be driven
+ *   in those. One panel publishes because every panel is synced to the same
+ *   sample and N publishers would be N redundant writes per hover frame.
  */
-export function CrosshairReadout({ active, payload, metric, sport, derivative, valueSlot, positionSlot }) {
+export function CrosshairReadout({ active, payload, metric, sport, derivative, valueSlot, positionSlot, primary }) {
   if (!active || !payload || payload.length === 0) return null
 
   // Selected BY dataKey, never by position. A panel with a derivative overlay
@@ -91,6 +123,11 @@ export function CrosshairReadout({ active, payload, metric, sport, derivative, v
           </>,
           positionSlot,
         )}
+      {/* Same "first visible panel only" rule as the position slot above, and
+          the same reason. Rendered last so its effect runs after the portals
+          have committed — irrelevant to correctness, but it keeps the reading
+          order of this component matching the order things reach the screen. */}
+      {primary && <HoverPublisher t={point.t} d={point.d} />}
     </>
   )
 }

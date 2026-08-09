@@ -1,5 +1,38 @@
 import { describe, it, expect } from 'vitest'
-import { sliceBoundsByX, sliceSamplesByX } from './sliceSamples.js'
+import { indexAtX, sliceBoundsByX, sliceSamplesByX } from './sliceSamples.js'
+
+describe('indexAtX', () => {
+  const samples = [
+    { t: 0, d: 0 },
+    { t: 10, d: 50 },
+    { t: 20, d: 100 },
+  ]
+
+  it('finds an exact hit', () => {
+    expect(indexAtX(samples, 't', 10)).toBe(1)
+  })
+
+  it('rounds up to the next sample between two of them', () => {
+    expect(indexAtX(samples, 't', 11)).toBe(2)
+  })
+
+  it('reads whichever axis it is given', () => {
+    expect(indexAtX(samples, 'd', 50)).toBe(1)
+  })
+
+  // Clamped rather than returning `length`: the caller subscripts the result
+  // directly to find a position on the route, and an off-the-end index there
+  // would read undefined and draw the marker at NaN.
+  it('clamps to the last real index past the end', () => {
+    expect(indexAtX(samples, 't', 999)).toBe(2)
+  })
+
+  it('is total for an empty array or a garbage value', () => {
+    expect(indexAtX([], 't', 5)).toBe(0)
+    expect(indexAtX(samples, 't', NaN)).toBe(0)
+    expect(indexAtX(null, 't', 5)).toBe(0)
+  })
+})
 
 const samples = [
   { t: 0, d: 0 },

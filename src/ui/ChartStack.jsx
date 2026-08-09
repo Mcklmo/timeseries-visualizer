@@ -13,6 +13,7 @@ import { useChartView } from '../state/ChartViewContext.jsx'
 import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
 import { ChartToolbar } from './ChartToolbar.jsx'
 import { Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
+import { MapPanel } from './MapPanel.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
 import { usePinchZoom } from './usePinchZoom.js'
@@ -26,6 +27,13 @@ const OTHER_PANEL_HEIGHT = 140
 const NARROW_FIRST_PANEL_HEIGHT = 150
 const NARROW_OTHER_PANEL_HEIGHT = 105
 
+// The map's drawing area. Taller than the first chart panel because a route is
+// two-dimensional — a 140px-tall map of a city loop is a scribble — and the
+// metric heights above are deliberately UNCHANGED by its presence: the map
+// takes its space from the page, not from the charts.
+const MAP_PANEL_HEIGHT = 240
+const NARROW_MAP_PANEL_HEIGHT = 180
+
 /**
  * @param {object} props
  * @param {Element|null} [props.positionSlot] - the app header's shared
@@ -36,7 +44,8 @@ const NARROW_OTHER_PANEL_HEIGHT = 105
  */
 export function ChartStack({ positionSlot = null }) {
   const { activity } = useActivity()
-  const { xMode, zoomDomain, enabledMetrics, enabledStats, setZoomDomain, toggleStat } = useChartView()
+  const { xMode, zoomDomain, enabledMetrics, enabledStats, showMap, basemap, setZoomDomain, setBasemap, toggleStat } =
+    useChartView()
   const isNarrow = useIsNarrow()
 
   // Both the extent the gesture solves against and the window the chips report
@@ -114,6 +123,27 @@ export function ChartStack({ positionSlot = null }) {
           app header, so reachability from a panel's readout bridge no longer
           keeps it here. */}
       <ChartToolbar />
+      {/* FIRST in the stack, above every chart: the route is the frame the
+          numbers below are read inside, and it is also the one panel with no
+          x-axis of its own to align to the ticks at the bottom.
+          `activity.track != null` is the whole availability rule — see
+          domain/normalizeActivity.js for why this is not an availableMetrics
+          entry. The metric panel heights below are untouched by its presence. */}
+      {activity.track != null && showMap && (
+        <MapPanel
+          activity={activity}
+          xMode={xMode}
+          zoomDomain={zoomDomain}
+          // The SAME extent usePinchZoom solves against, from one basis above
+          // this component, so the bright window and the charts cannot disagree
+          // about where the edges of the zoom are.
+          fullExtent={fullExtent}
+          rightInset={rightInset}
+          height={isNarrow ? NARROW_MAP_PANEL_HEIGHT : MAP_PANEL_HEIGHT}
+          basemap={basemap}
+          onBasemapChange={setBasemap}
+        />
+      )}
       {visibleMetrics.map((metricId, i) => {
         const isBottom = i === visibleMetrics.length - 1
         const height =
@@ -137,6 +167,11 @@ export function ChartStack({ positionSlot = null }) {
             // drive the shared position readout; the first is the stable choice,
             // and it re-homes by itself when a metric is toggled off.
             positionSlot={i === 0 ? positionSlot : null}
+            // The same rule, named rather than inferred from the slot above
+            // being non-null — the slot is legitimately null in the app's own
+            // tests, and the map's marker must still be driven there. See
+            // CrosshairReadout's `primary` prop.
+            primary={i === 0}
           />
         )
       })}

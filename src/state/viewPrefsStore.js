@@ -31,19 +31,27 @@
 // throw on touching Storage at all. Losing a remembered view is a shrug; taking
 // the app down with it is not.
 import { createSafeStorage, sessionStorageOrNull } from '../lib/safeStorage.js'
+import { DEFAULT_BASEMAP, isKnownBasemap } from '../map/basemapRegistry.js'
 import { metricOrder, statKinds } from '../metrics/metricRegistry.js'
 
 const KEY_PREFIX = 'timeseries-visualizer.chartView.'
 
 // Bumped only if the payload shape changes incompatibly. An entry that
 // doesn't match is dropped, not migrated — these are cheap to recreate.
-const SCHEMA_VERSION = 1
+//
+// 1 -> 2 added `showMap` and `basemap` for the route map panel. The one-time,
+// user-visible cost is that sessions in flight across the deploy forget their
+// toggles once; that is cheaper than a migration path that would then have to
+// be carried forever for a preference worth one click to restore.
+const SCHEMA_VERSION = 2
 
 const X_MODES = ['time', 'distance']
 
 /** @typedef {{xMode: import('../domain/types.js').XAxisMode,
  *             enabledMetrics: import('../domain/types.js').MetricId[],
- *             enabledStats: Record<string, import('../domain/types.js').StatKind[]>}} ViewPrefs */
+ *             enabledStats: Record<string, import('../domain/types.js').StatKind[]>,
+ *             showMap: boolean,
+ *             basemap: string}} ViewPrefs */
 
 /** Canonical order regardless of what order the stored array happened to be
  *  in, matching what toggleMetric/statKinds guarantee for live state. */
@@ -79,6 +87,14 @@ function normalizePrefs(raw) {
     xMode: X_MODES.includes(raw.xMode) ? raw.xMode : 'time',
     enabledMetrics,
     enabledStats,
+    // Anything non-boolean falls back to the live default rather than being
+    // coerced: `showMap: 'false'` is a hand-edited entry, and truthiness would
+    // read it as "on".
+    showMap: typeof raw.showMap === 'boolean' ? raw.showMap : true,
+    // Validated against the registry in the same shape as the X_MODES check
+    // above, and for a stronger reason: an unknown id here would ask the
+    // Worker for a provider it does not serve, on every tile, forever.
+    basemap: isKnownBasemap(raw.basemap) ? raw.basemap : DEFAULT_BASEMAP,
   }
 }
 
@@ -112,6 +128,8 @@ export function createViewPrefsStore(storage = sessionStorageOrNull()) {
         xMode: prefs.xMode,
         enabledMetrics: prefs.enabledMetrics,
         enabledStats: prefs.enabledStats,
+        showMap: prefs.showMap,
+        basemap: prefs.basemap,
       })
     },
   }

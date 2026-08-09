@@ -4,6 +4,7 @@
 // adapter can stay a dumb field-mapper.
 import { activityKeyOf } from './activityKey.js'
 import { buildDistanceAxis } from './buildDistanceAxis.js'
+import { buildTrack } from './buildTrack.js'
 import { deriveSpeed } from './deriveSpeed.js'
 import { deriveWorkoutName } from './deriveWorkoutName.js'
 import { detectPauses } from './detectPauses.js'
@@ -70,6 +71,13 @@ export function normalizeActivity({ sport, sportLabel, trackpoints }) {
     moving: moving[i],
   }))
 
+  // Built from `usable` — the SAME array, in the same order, as the samples
+  // above — which is what makes `track.x[i]` and `samples[i]` the same instant.
+  // That invariant is by construction and nothing enforces it: keep these two
+  // adjacent, and if either ever stops mapping over `usable`, the map's
+  // crosshair silently points at the wrong place. Null for a treadmill run.
+  const track = buildTrack(usable)
+
   // Computed before the name, not inline below it: a recording spanning days
   // is named by its duration rather than by a time-of-day bucket.
   const totalTime = samples.length > 0 ? samples[samples.length - 1].t : 0
@@ -78,6 +86,13 @@ export function normalizeActivity({ sport, sportLabel, trackpoints }) {
   // a fingerprint *of* them (activityKey.js) — no adapter supplies an id any
   // more, and the ones they used to supply were unusable as identity.
   const totalDistance = samples.length > 0 ? samples[samples.length - 1].d : 0
+  // ⚠️ THE MAP HAS NO ENTRY HERE, AND MUST NOT GET ONE. `availableMetrics` is
+  // hashed into the activity's identity (activityKey.js hashes
+  // `availableMetrics.join(',')`), so adding 'map' would change every existing
+  // Activity.id and silently fork every remembered view in sessionStorage. It
+  // would also reach `metricRegistry['map'].label` in StatCheckboxes via a
+  // restored `enabledMetrics` and throw. The map's availability gate is
+  // `activity.track != null`, and nothing else.
   const availableMetrics = availableMetricsOf(samples)
 
   return {
@@ -94,5 +109,6 @@ export function normalizeActivity({ sport, sportLabel, trackpoints }) {
     samples,
     samplingIntervalS: intervalS,
     availableMetrics,
+    track,
   }
 }

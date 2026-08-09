@@ -215,4 +215,58 @@ describe('normalizeActivity', () => {
     })
     expect(activity.name).toMatch(/Gravel Ride$/)
   })
+
+  describe('track', () => {
+    it('carries the route, index-aligned with the samples', () => {
+      const trackpoints = [
+        tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, lat: 55, lon: 12 }),
+        tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, lat: 55.001, lon: 12.001 }),
+      ]
+      const activity = normalizeActivity({ sport: 'running', trackpoints })
+
+      expect(activity.track.fixCount).toBe(2)
+      expect(activity.track.x).toHaveLength(activity.samples.length)
+    })
+
+    // The alignment is by construction — both are built from the same `usable`
+    // array — and nothing in the type system enforces it. This is the net.
+    it('stays aligned when a time-only trackpoint is filtered out', () => {
+      const trackpoints = [
+        tp({ time: new Date('2026-01-01T00:00:00.000Z'), lat: 55, lon: 12 }),
+        tp({ time: new Date('2026-01-01T00:00:05.000Z') }), // dropped by hasAnyData
+        tp({ time: new Date('2026-01-01T00:00:10.000Z'), lat: 55.001, lon: 12.001 }),
+      ]
+      const activity = normalizeActivity({ sport: 'running', trackpoints })
+
+      expect(activity.samples.map((s) => s.t)).toEqual([0, 10])
+      expect(activity.track.x).toHaveLength(2)
+      expect(activity.track.fixCount).toBe(2)
+    })
+
+    it('is null for a recording with no GPS at all', () => {
+      const trackpoints = [
+        tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, heartRateBpm: 120 }),
+        tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, heartRateBpm: 125 }),
+      ]
+      expect(normalizeActivity({ sport: 'running', trackpoints }).track).toBeNull()
+    })
+
+    // Trap 1. `availableMetrics.join(',')` is inside the content fingerprint,
+    // so a map entry there would change every existing id and fork every
+    // remembered view. The gate is `track != null` and must stay that way.
+    it('adds nothing to availableMetrics, so the activity id is unchanged by GPS', () => {
+      const withGps = [
+        tp({ time: new Date('2026-01-01T00:00:00.000Z'), distanceMeters: 0, speedMps: 3, lat: 55, lon: 12 }),
+        tp({ time: new Date('2026-01-01T00:00:10.000Z'), distanceMeters: 30, speedMps: 3, lat: 55.1, lon: 12.1 }),
+      ]
+      const withoutGps = withGps.map(({ lat: _lat, lon: _lon, ...rest }) => rest)
+
+      const a = normalizeActivity({ sport: 'running', trackpoints: withGps })
+      const b = normalizeActivity({ sport: 'running', trackpoints: withoutGps })
+
+      expect(a.availableMetrics).toEqual(b.availableMetrics)
+      expect(a.availableMetrics).not.toContain('map')
+      expect(a.id).toBe(b.id)
+    })
+  })
 })

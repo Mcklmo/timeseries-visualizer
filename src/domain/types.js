@@ -20,6 +20,24 @@
  */
 
 /**
+ * The route, pre-projected. Parallel to `Activity.samples` — `x[i]` and
+ * `samples[i]` describe the same instant — which holds by construction because
+ * `normalizeActivity` builds both from the same filtered trackpoint array.
+ * **Nothing in this type system enforces that alignment**, and the map's
+ * crosshair lookup rests on it entirely; see domain/buildTrack.js.
+ *
+ * Typed arrays rather than lat/lon on `Sample`: the render loop wants
+ * contiguous, already-projected numbers, and `Sample`'s contract is scalar
+ * metrics in SI units. Full rationale in buildTrack.js.
+ *
+ * @typedef {object} Track
+ * @property {Float64Array} x - projected easting, normalised Web Mercator [0,1]; NaN where there was no fix
+ * @property {Float64Array} y - projected northing, [0,1], NORTH to SOUTH (screen order); NaN where there was no fix
+ * @property {{x0: number, y0: number, x1: number, y1: number}} bounds - over the fixes only
+ * @property {number} fixCount - how many slots carry a real position
+ */
+
+/**
  * @typedef {object} Activity
  * @property {string} id
  * @property {Sport} sport
@@ -31,6 +49,10 @@
  * @property {Sample[]} samples - full resolution
  * @property {number} samplingIntervalS - median gap between samples; every sampling-adaptive threshold reads this
  * @property {MetricId[]} availableMetrics - drives which panels can render
+ * @property {Track|null} track - null when the recording carries no GPS at all.
+ *   **This null is the map panel's entire availability gate** — deliberately
+ *   NOT an entry in `availableMetrics`, which is hashed into `Activity.id`
+ *   (domain/activityKey.js) and would fork every remembered view.
  */
 
 /**

@@ -25,6 +25,32 @@ function lowerBound(samples, xKey, target) {
   return lo
 }
 
+/**
+ * Where a single x value sits in `samples` — the first index at or after it.
+ *
+ * The map's crosshair lookup. `<Tooltip content>` publishes the hovered row's
+ * `{t, d}` rather than an index, because the index Recharts hands out
+ * (`activeIndex`) counts the gap-break rows insertGapBreaks.js splices into the
+ * CHART data and diverges from the sample array after the first dropout — see
+ * ui/crosshairBus.js. So the position comes back as a value and is resolved
+ * here, in O(log n) against ~20k samples, which is nothing per hover frame.
+ *
+ * A thin wrapper on `lowerBound` rather than a second binary search: the
+ * off-by-ones in one of these are hard enough to get right once.
+ *
+ * @param {import('./types.js').Sample[]} samples - ascending in `xKey`
+ * @param {'t'|'d'} xKey
+ * @param {number} value
+ * @returns {number} 0..samples.length — clamped to the last real index, so the
+ *   result is always safe to use as a subscript on a non-empty array
+ */
+export function indexAtX(samples, xKey, value) {
+  if (!Array.isArray(samples) || samples.length === 0) return 0
+  if (!Number.isFinite(value)) return 0
+  const i = lowerBound(samples, xKey, value)
+  return i >= samples.length ? samples.length - 1 : i
+}
+
 /** First index whose x is > target — the exclusive end of an inclusive window. */
 function upperBound(samples, xKey, target) {
   let lo = 0

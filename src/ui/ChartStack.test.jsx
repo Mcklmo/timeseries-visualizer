@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { ActivityHeader } from './ActivityHeader.jsx'
 import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
+import { buildTrack } from '../domain/buildTrack.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
 import { metricRegistry, metricOrder, statKindsFor } from '../metrics/metricRegistry.js'
+import { resetCrosshairBus } from './crosshairBus.js'
 import { statCheckboxLabel } from './StatCheckboxes.jsx'
 
 const fixtureActivity = {
@@ -22,6 +24,19 @@ const fixtureActivity = {
     { t: 40, d: 200, speed: 3, heartRate: 110, cadence: 178, altitude: 18, moving: true },
   ],
   availableMetrics: ['pace', 'heartRate', 'cadence', 'altitude'],
+  // No route by default, so the ~40 tests above this line see exactly the stack
+  // they always did. The map is opt-in per fixture, not per test file.
+  track: null,
+}
+
+// The same activity with a route on it. Five fixes running due east, one per
+// sample, so `track.x[i]` and `samples[i]` line up the way normalizeActivity
+// guarantees they do in the app.
+const routedActivity = {
+  ...fixtureActivity,
+  track: buildTrack(
+    [12, 12.01, 12.02, 12.03, 12.04].map((lon) => ({ time: new Date(0), lat: 55, lon })),
+  ),
 }
 
 function makeSource(activity) {
@@ -871,6 +886,124 @@ describe('ChartStack', () => {
   })
 })
 
+// The route map panel, as it behaves inside the real stack. Unit-level coverage
+// of the drawing itself is in MapPanel.test.jsx; these are the integration
+// facts — where it sits, that it does not disturb the gesture, and that the
+// shared crosshair reaches it.
+describe('ChartStack with a route', () => {
+  // The bus is module-level state and outlives Testing Library's cleanup. In
+  // practice HoverPublisher's unmount already publishes null, but a hover
+  // leaking into the next test's fresh mount would be a maddening failure to
+  // diagnose, so it is cleared explicitly. See ui/crosshairBus.js.
+  afterEach(() => resetCrosshairBus())
+
+  const mapPanel = (container) => container.querySelector('.map-panel')
+  /** The marker layer — the third of MapPanel's three canvases. */
+  const markerCalls = (container) =>
+    container.querySelectorAll('.map-panel__layer')[2].getContext('2d').calls
+
+  it('renders the map first, above every chart', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    const panels = [...container.querySelectorAll('.map-panel, .metric-panel')]
+
+    expect(panels[0]).toHaveClass('map-panel')
+    expect(panels).toHaveLength(5) // the map plus the four metric panels
+  })
+
+  // The availability gate is `activity.track != null` and nothing else — in
+  // particular NOT an entry in availableMetrics, which is hashed into the
+  // activity's id (domain/activityKey.js).
+  it('renders no map panel, and no toggle, for an activity with no GPS', async () => {
+    const { container } = await renderStack()
+    expect(mapPanel(container)).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Route' })).not.toBeInTheDocument()
+  })
+
+  it('leaves the metric panels’ heights untouched', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.minHeight)
+    expect(heights).toEqual(['200px', '140px', '140px', '140px'])
+    expect(mapPanel(container).style.minHeight).toBe('240px')
+  })
+
+  it('hides and restores the map from the toolbar', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    const toggle = screen.getByRole('checkbox', { name: 'Route' })
+    expect(toggle).toBeChecked()
+
+    fireEvent.click(toggle)
+    await waitFor(() => expect(mapPanel(container)).toBeNull())
+    // The toggle itself must survive, or there is no way back: a hidden panel
+    // has no head of its own.
+    expect(screen.getByRole('checkbox', { name: 'Route' })).not.toBeChecked()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Route' }))
+    await waitFor(() => expect(mapPanel(container)).not.toBeNull())
+  })
+
+  // ⚠️ TRAP 3, pinned mechanically rather than by memory.
+  //
+  // `plotRectOf` measures the FIRST `.recharts-surface` in the stack and
+  // applies that one rect to gestures anywhere on it. The map is safe above the
+  // charts precisely because it renders canvases and no surface — so the first
+  // surface is still the first MetricPanel and the arithmetic is unchanged. If
+  // the map ever grows an SVG chart of its own, this is what fails.
+  it('still zooms on a pinch, with the map above the charts', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    const panels = [...container.querySelectorAll('.metric-panel')]
+    const spreadBefore = panels.map(xSpread)
+
+    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+
+    await waitFor(() => {
+      const panelsNow = [...container.querySelectorAll('.metric-panel')]
+      panelsNow.forEach((panel, i) => expect(xSpread(panel)).toBeGreaterThan(spreadBefore[i]))
+      const xs = panelsNow.map((panel) => pathXs(panel).join(','))
+      expect(new Set(xs).size).toBe(1)
+    })
+  })
+
+  it('renders no .recharts-surface of its own, which is why the pinch is safe', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    expect(mapPanel(container).querySelector('.recharts-surface')).toBeNull()
+    // And the first surface in the whole stack is still a metric panel's.
+    const firstSurface = container.querySelector('.recharts-surface')
+    expect(firstSurface.closest('.metric-panel')).not.toBeNull()
+  })
+
+  it('moves the marker along the route as a chart is hovered', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    expect(markerCalls(container).filter((c) => c.name === 'arc')).toHaveLength(0)
+
+    await anchorCrosshair(container, 300)
+    const first = markerCalls(container).findLast((c) => c.name === 'arc')
+    expect(first).toBeDefined()
+
+    await anchorCrosshair(container, 600)
+    const second = markerCalls(container).findLast((c) => c.name === 'arc')
+    expect(second.args[0]).toBeGreaterThan(first.args[0])
+  })
+
+  // Only the FIRST visible panel publishes — every panel is synced to the same
+  // sample, so N publishers would be N redundant writes per hover frame.
+  it('drives the marker from a hover on any panel, through syncId', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    const lastPanel = [...container.querySelectorAll('.metric-panel')].at(-1)
+
+    fireEvent.mouseOver(lastPanel.querySelector('.recharts-wrapper'))
+    fireEvent.mouseMove(lastPanel.querySelector('.recharts-wrapper'), { clientX: 300, clientY: 50 })
+    await settleHover()
+
+    expect(markerCalls(container).filter((c) => c.name === 'arc').length).toBeGreaterThan(0)
+  })
+
+  it('ships the basemap off, so the stack asks the network for nothing', async () => {
+    const { container } = await renderStack({ activity: routedActivity })
+    expect(screen.getByRole('radio', { name: 'None' })).toBeChecked()
+    expect(mapPanel(container).querySelector('.map-panel__attribution')).toBeNull()
+  })
+})
+
 // setupTests.js stubs matchMedia to matches:false ("not narrow"), which is the
 // branch every assertion above expects. This block reassigns it and restores
 // it in an afterEach — without the restore, every later test file in the run
@@ -878,11 +1011,7 @@ describe('ChartStack', () => {
 describe('ChartStack on a narrow viewport', () => {
   const realMatchMedia = window.matchMedia
 
-  afterEach(() => {
-    window.matchMedia = realMatchMedia
-  })
-
-  it('cuts panel heights by ~25%, keeping the §9 promise the Brush-era constants never did', async () => {
+  const goNarrow = () => {
     window.matchMedia = (query) => ({
       matches: query.includes('max-width: 720px'),
       media: query,
@@ -893,6 +1022,20 @@ describe('ChartStack on a narrow viewport', () => {
       removeEventListener() {},
       dispatchEvent: () => false,
     })
+  }
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia
+  })
+
+  it('shrinks the map panel too, since it is a JS number like the others', async () => {
+    goNarrow()
+    const { container } = await renderStack({ activity: routedActivity })
+    expect(container.querySelector('.map-panel').style.minHeight).toBe('180px')
+  })
+
+  it('cuts panel heights by ~25%, keeping the §9 promise the Brush-era constants never did', async () => {
+    goNarrow()
 
     const { container } = await renderStack()
     const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.minHeight)

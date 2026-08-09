@@ -29,6 +29,19 @@ export const Y_AXIS_RIGHT_WIDTH = 44
 /** Fed to <LineChart margin>. */
 export const CHART_MARGIN = { top: 8, right: 12, bottom: 16, left: 4 }
 
+/**
+ * Where the plot area starts, measured in from a panel's left edge: exactly the
+ * sum `plotRectFromSurface` subtracts on that side.
+ *
+ * Handed to CSS as `--plot-inset` by both MetricPanel (so a head's label sits
+ * over the line it names rather than over the y-axis gutter) and MapPanel (so
+ * the map's drawing area lines up with the plot areas of the charts below it).
+ * It lives HERE rather than in either of them for the reason this whole module
+ * exists: two panels deriving it separately would be two things free to drift
+ * from the one number the gesture subtracts.
+ */
+export const PLOT_INSET = Y_AXIS_WIDTH + CHART_MARGIN.left
+
 // Below this the plot is too small to gesture in at all, and the arithmetic
 // would start producing negative widths.
 const MIN_PLOT_WIDTH = 32
