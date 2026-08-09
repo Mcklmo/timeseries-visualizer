@@ -34,6 +34,12 @@ function epochSecondsAtLocalMidnight(day) {
 /**
  * What to ask `/athlete/activities` for.
  *
+ * The `range` it takes is the effective **request** window, which is not always
+ * the filter the athlete set: `useStravaActivities` pages by handing it the
+ * range's own `from` under a ceiling that walks backwards. Nothing here needs
+ * to know that — a window is a window — but a reader tracing `to` back to a
+ * date field would otherwise come away with the wrong picture.
+ *
  * `after` is nudged one second earlier than local midnight because Strava
  * treats it as strictly-after: without that, an activity started at exactly
  * 00:00:00 on the `from` day would be excluded from a range that names that

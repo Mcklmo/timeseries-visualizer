@@ -99,6 +99,84 @@ function stubApi({ list = activities, status = {}, body = {} } = {}) {
   })
 }
 
+/** One activity a day: `Day 1` yesterday, back to `Day n`. Enough of them to
+ *  overflow a 50-row page, which is the only way the paging bug shows up. */
+function activityPool(days) {
+  return Array.from({ length: days }, (_, index) => {
+    const n = index + 1
+    return {
+      id: 7000 + n,
+      name: `Day ${n}`,
+      sport_type: 'Run',
+      start_date_local: localDaysAgo(n),
+      start_date: utcDaysAgo(n),
+      distance: 10000,
+      moving_time: 3000,
+    }
+  })
+}
+
+/**
+ * Honours `before`/`after` and the `per_page` cap, newest first — the shape the
+ * real endpoint has, and the only one in which the paging bug is visible at
+ * all. `stubApi` above returns its whole list whatever the window, so under it
+ * a request that can never reach older activities looks exactly like one that
+ * can; that is why the old paging test passed against broken paging.
+ *
+ * The window is applied to `start_date_local` read as wall clock, not to the
+ * true UTC instant Strava would compare: the app's bounds are epoch seconds at
+ * **local** midnight, so the two agree here whatever timezone the test machine
+ * is in. Filtering on `start_date` would make this file's results depend on it.
+ */
+function windowedStubApi(pool, defaultPerPage = 50) {
+  const startedAt = (activity) =>
+    new Date(activity.start_date_local.replace(/Z$/, '')).getTime() / 1000
+  return vi.fn(async (url) => {
+    if (url.includes('/api/strava/deauthorize')) return jsonResponse({ ok: true })
+    if (url.includes('/api/strava/refresh')) {
+      return jsonResponse({ accessToken: 'access-2', refreshToken: 'refresh-2', expiresAt: Date.now() + 3600_000 })
+    }
+    if (url.includes('/api/strava/activities')) {
+      const params = new URL(url, 'http://localhost').searchParams
+      // `after` is strictly-after and `before` exclusive, per Strava's docs —
+      // the semantics stravaBoundsFor's ±1-day/±1-second nudges are written
+      // against.
+      const after = params.has('after') ? Number(params.get('after')) : -Infinity
+      const before = params.has('before') ? Number(params.get('before')) : Infinity
+      const perPage = Number(params.get('per_page')) || defaultPerPage
+      const inWindow = pool
+        .filter((a) => startedAt(a) > after && startedAt(a) < before)
+        .sort((a, b) => startedAt(b) - startedAt(a))
+      return jsonResponse(inWindow.slice(0, perPage))
+    }
+    throw new Error(`unexpected request: ${url}`)
+  })
+}
+
+/** Epoch seconds at local midnight — the unit the request bounds are sent in. */
+function midnightOn(day) {
+  const [year, month, dayOfMonth] = day.split('-').map(Number)
+  return Math.floor(new Date(year, month - 1, dayOfMonth).getTime() / 1000)
+}
+
+/** The `?before=`/`?after=` of each list request, in order. Refresh and
+ *  deauthorize calls share the stub and are not requests for a window. */
+function listWindows(fetchImpl) {
+  return fetchImpl.mock.calls
+    .filter(([url]) => url.includes('/api/strava/activities'))
+    .map(([url]) => {
+      const params = new URL(url, 'http://localhost').searchParams
+      return { after: Number(params.get('after')), before: Number(params.get('before')) }
+    })
+}
+
+/** The day numbers currently on screen, in render order. */
+function visibleDays() {
+  return screen
+    .getAllByRole('button', { name: /^Day \d/ })
+    .map((row) => Number(row.textContent.match(/^Day (\d+)/)[1]))
+}
+
 function renderPage(props = {}) {
   const seams = {
     store: tokenStoreDouble(),
@@ -310,22 +388,118 @@ describe('StravaPage — the connected half', () => {
     expect(screen.queryByLabelText(/search activities/i)).not.toBeInTheDocument()
   })
 
-  // Paging *is* widening the range here, exactly as next door — and unlike the
-  // intervals.icu list the control is always offered, because there is no
-  // search mode with no window under it.
-  it('widens the range backwards on Load earlier activities', async () => {
-    const user = userEvent.setup()
-    const fetchImpl = stubApi()
-    renderPage({ store: tokenStoreDouble(LIVE_TOKENS), fetchImpl })
+  // Unlike the intervals.icu list, the control is always offered: there is no
+  // search mode on this provider, so there is never a set of hits with no
+  // window under it to page.
+  it('offers Load earlier activities as soon as the first window lands', async () => {
+    renderPage({ store: tokenStoreDouble(LIVE_TOKENS), fetchImpl: stubApi() })
 
     await screen.findByRole('button', { name: /Tempo 5×1k/ })
-    const firstAfter = new URL(fetchImpl.mock.calls[0][0], 'http://localhost').searchParams.get('after')
+    expect(screen.getByRole('button', { name: /load earlier activities/i })).toBeInTheDocument()
+  })
+})
 
-    await user.click(screen.getByRole('button', { name: /load earlier activities/i }))
+// **The regression suite for the ~50-row wall.** Every test here needs
+// `windowedStubApi`: paging past the first page is invisible against a stub
+// that returns its whole list however narrow the window, which is exactly why
+// the old "widens the range backwards" test passed while the button was dead.
+//
+// One activity a day for 120 days, against a 90-day default range and a 50-row
+// page: the first window can only return days 1-50, so days 51+ exist solely on
+// the far side of a working *Load earlier activities*.
+describe('StravaPage — paging past the first window', () => {
+  const POOL_DAYS = 120
 
-    await waitFor(() => expect(fetchImpl.mock.calls.length).toBeGreaterThan(1))
-    const nextAfter = new URL(fetchImpl.mock.calls.at(-1)[0], 'http://localhost').searchParams.get('after')
-    expect(Number(nextAfter)).toBeLessThan(Number(firstAfter))
+  async function renderPaged() {
+    const user = userEvent.setup()
+    const fetchImpl = windowedStubApi(activityPool(POOL_DAYS))
+    renderPage({ store: tokenStoreDouble(LIVE_TOKENS), fetchImpl })
+    await screen.findByRole('button', { name: /^Day 1\D/ })
+    return { user, fetchImpl }
+  }
+
+  const loadEarlier = (user) =>
+    user.click(screen.getByRole('button', { name: /load earlier activities/i }))
+
+  // **The bug, stated directly.** `before` used to stay pinned to the range's
+  // end, so a wider window ending on the same day re-fetched the same newest 50
+  // activities, mergeById deduped every one of them away, and the list never
+  // grew past its first page.
+  it('reaches activities the first window could not return', async () => {
+    const { user } = await renderPaged()
+
+    expect(screen.queryByRole('button', { name: /^Day 60\D/ })).not.toBeInTheDocument()
+
+    await loadEarlier(user)
+
+    expect(await screen.findByRole('button', { name: /^Day 60\D/ })).toBeInTheDocument()
+  })
+
+  // The floor still has to widen too — a fetched row that falls outside the
+  // range is filtered straight back out of the list by `activityInRange`.
+  it('widens the range backwards *and* adds rows', async () => {
+    const { user, fetchImpl } = await renderPaged()
+    const before = visibleDays().length
+
+    await loadEarlier(user)
+
+    await waitFor(() => expect(visibleDays().length).toBeGreaterThan(before))
+    const windows = listWindows(fetchImpl)
+    expect(windows[1].after).toBeLessThan(windows[0].after)
+  })
+
+  // The ceiling lands on the whole of the oldest day held, not the day before
+  // it: one day can hold several activities and only some of them may have
+  // fitted in the last response. The overlapping day costs one duplicate that
+  // mergeById drops; skipping it would silently lose rows.
+  it('walks the request ceiling back to the oldest day held', async () => {
+    const { user, fetchImpl } = await renderPaged()
+
+    await loadEarlier(user)
+    await waitFor(() => expect(listWindows(fetchImpl).length).toBe(2))
+
+    const windows = listWindows(fetchImpl)
+    // First request: the range's own end — today, sent exclusive as midnight
+    // at the start of tomorrow, which is what `dayAgo(-1)` spells.
+    expect(windows[0].before).toBe(midnightOn(dayAgo(-1)))
+    // Second: the 50th day back is the oldest row held, so the ceiling is
+    // midnight at the start of the day after it.
+    expect(windows[1].before).toBe(midnightOn(dayAgo(49)))
+  })
+
+  // Rows arrive as a page strictly older than everything held, so the merged
+  // order has to be stated rather than inherited from the response — otherwise
+  // the second page renders above the first and the list reads oldest-first.
+  it('keeps the list newest first across pages', async () => {
+    const { user } = await renderPaged()
+
+    await loadEarlier(user)
+    await screen.findByRole('button', { name: /^Day 60\D/ })
+
+    const days = visibleDays()
+    expect(days).toEqual([...days].sort((a, b) => a - b))
+    expect(days[0]).toBe(1)
+  })
+
+  // A new filter is a new browse. Without the reset, tapping *30 days*
+  // mid-paging would ask for the last 30 days *ending months ago* — a window
+  // with nothing in it.
+  it('drops the ceiling back to the range end when the filter changes', async () => {
+    const { user, fetchImpl } = await renderPaged()
+    await loadEarlier(user)
+    await screen.findByRole('button', { name: /^Day 60\D/ })
+
+    await user.click(screen.getByRole('button', { name: /30 days/ }))
+
+    await waitFor(() => expect(listWindows(fetchImpl).length).toBe(3))
+    const windows = listWindows(fetchImpl)
+    expect(windows[2].before).toBe(midnightOn(dayAgo(-1)))
+    // `after` is nudged one second earlier than local midnight, per
+    // stravaBoundsFor — Strava reads it as strictly-after.
+    expect(windows[2].after).toBe(midnightOn(dayAgo(30)) - 1)
+    // And the list narrows to what the athlete asked for, keeping the rows it
+    // already fetched behind the filter rather than dropping them.
+    expect(screen.queryByRole('button', { name: /^Day 60\D/ })).not.toBeInTheDocument()
   })
 })
 

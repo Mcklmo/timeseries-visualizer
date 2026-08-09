@@ -247,9 +247,17 @@ export const ACTIVITY_PAGE_SIZE = 50
  * stravaBoundsFor.js, which is the only caller that computes them and exists
  * to get that conversion right in one place.
  *
- * Paging is by widening the date range rather than by Strava's `page` param,
- * so this picker and the intervals.icu one behave identically and share
- * `widenedStart`.
+ * **Newest first, and capped at `per_page` — which is where this endpoint and
+ * intervals.icu's part company.** That one returns the *whole* `[oldest,
+ * newest]` range, so widening the range's floor is enough to page it. This one
+ * returns the newest `perPage` **of** the range, so widening a floor under a
+ * fixed ceiling asks for the same activities again. `useStravaActivities` pages
+ * it by walking `before` backwards instead — see `loadEarlier` there. The two
+ * pickers still share `widenedStart`; they do not share a paging strategy, and
+ * the reason is right here.
+ *
+ * Strava's `page` param is not used: with offsets, changing the date range
+ * resets to page 1 and every page already held is fetched again.
  *
  * @param {{accessToken: string, after?: number, before?: number, perPage?: number,
  *          fetchImpl?: typeof fetch}} options

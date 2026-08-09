@@ -44,6 +44,7 @@ import {
   activityInRange,
   defaultRange,
   isValidRange,
+  startDayOf,
   widenedStart,
 } from '../data/activityDateRange.js'
 import { stravaDateRangeStore } from '../data/dateRangeStore.js'
@@ -70,9 +71,32 @@ const TERMINAL_CODES = new Set(['unauthorized', 'invalid_grant', 'athlete_cap', 
 /** @typedef {import('../data/activityRow.js').ActivityRow} ActivityRow */
 
 /**
- * Newest first, no duplicates — the same merge, and the same reasoning, as the
- * intervals.icu hook: each widened window re-returns everything already held
- * and the incoming copy simply wins.
+ * Newest first, by the athlete's own wall clock. `startedAt` is
+ * `YYYY-MM-DDTHH:MM:SS` with the offset already gone (toActivityRow strips
+ * Strava's bogus trailing Z), so comparing the strings compares the instants —
+ * the same property activityDateRange.js is built on.
+ *
+ * A row that never said when it happened sorts last rather than to the top: it
+ * has no evidence for a position, and it must stay visible, which is
+ * ActivityRowList's rule.
+ */
+function byNewestFirst(a, b) {
+  if (!a.startedAt || !b.startedAt) return a.startedAt ? -1 : b.startedAt ? 1 : 0
+  if (a.startedAt === b.startedAt) return 0
+  return a.startedAt < b.startedAt ? 1 : -1
+}
+
+/**
+ * Newest first, no duplicates. The dedup half is the intervals.icu hook's, for
+ * the same reason — an overlapping window re-returns rows already held and the
+ * incoming copy simply wins.
+ *
+ * **The sort is not.** Next door, `incoming` is always a superset of `held`, so
+ * the response's own newest-first order is the merged order and no sort is
+ * needed. Here `loadEarlier` lowers the request ceiling, so `incoming` is a
+ * page of rows *older* than everything held — concatenating would put the
+ * oldest page at the top of the list. The order is stated rather than inherited
+ * from whatever the last response happened to contain.
  *
  * **It only ever accumulates.** A narrower response — which is what narrowing
  * the range produces — takes nothing away, deliberately: widening it again, or
@@ -88,7 +112,7 @@ function mergeById(incoming, held) {
     seen.add(activity.id)
     merged.push(activity)
   }
-  return merged
+  return merged.sort(byNewestFirst)
 }
 
 /**
@@ -128,11 +152,24 @@ export function useStravaActivities({
   const [activities, setActivities] = useState(
     /** @returns {ActivityRow[]} */ () => listCache.read() ?? [],
   )
-  // The date filter, and the *only* browse floor — there is no separate rolling
-  // window beside it, so paging and filtering are one mechanism in one
-  // representation. Its own key, not intervals.icu's: two accounts, two
-  // histories, and narrowing one says nothing about the other.
+  // The date filter, and the browse floor. Still the only thing the athlete
+  // sees the list filtered *by* — but no longer the only edge of a request, and
+  // `browseCeiling` below is the other one. Its own key, not intervals.icu's:
+  // two accounts, two histories, and narrowing one says nothing about the
+  // other.
   const [range, setRange] = useState(() => rangeStore.read() ?? defaultRange())
+  // The upper edge of the *next request*; null means "the range's own end".
+  //
+  // The one piece of state the intervals.icu hook has no need of, and the
+  // reason is its endpoint: that one returns the *whole* range, so widening the
+  // floor genuinely returns more rows. Strava returns the newest `per_page`
+  // **of** the range, so a wider window ending on the same day is the same 50
+  // activities over again — the floor coming down does nothing unless the
+  // ceiling comes down with it. See `loadEarlier`.
+  //
+  // It is a request bound only. Nothing is ever filtered out of the list by it;
+  // `rows` below is `range` alone.
+  const [browseCeiling, setBrowseCeiling] = useState(null)
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
@@ -147,7 +184,15 @@ export function useStravaActivities({
   // stable across renders with no memo. Epoch **seconds**, and `before` is
   // exclusive — stravaBoundsFor exists to get that conversion right in one
   // place, on top of the neutral string-based range.
-  const { after, before } = stravaBoundsFor(range, fallbackFrom)
+  //
+  // What goes in is the effective *request* window — the athlete's floor under
+  // the browse ceiling — not the filter they see. The two differ only while
+  // paging, and moving the ceiling re-fires the effect below on its own,
+  // because `before` is already one of its deps.
+  const { after, before } = stravaBoundsFor(
+    { from: range.from, to: browseCeiling ?? range.to },
+    fallbackFrom,
+  )
   const isRangeUsable = isValidRange(range)
 
   /**
@@ -247,6 +292,7 @@ export function useStravaActivities({
     setError(null)
     setActivities([])
     setRange(defaultRange())
+    setBrowseCeiling(null)
     setIsConnected(true)
   }
 
@@ -276,6 +322,7 @@ export function useStravaActivities({
     setIsConnected(false)
     setActivities([])
     setRange(defaultRange())
+    setBrowseCeiling(null)
     setError(null)
     setNotice(null)
 
@@ -290,14 +337,52 @@ export function useStravaActivities({
     }
   }
 
-  // Paging *is* widening the range, since the range is the only browse floor
-  // there is. Anchored on `activities` rather than on `rows`: the anchor is the
-  // oldest row actually fetched, not the oldest one currently visible.
+  /**
+   * Paging moves **both** edges, and each half is load-bearing on its own.
+   *
+   * Lowering the ceiling is what actually pages: `/athlete/activities` answers
+   * newest-first capped at `per_page`, so a window whose end never moves keeps
+   * returning the same newest 50 however far back its start goes — which is
+   * precisely the bug this replaced, where the button looked dead at ~50 rows.
+   * Widening the floor is what makes the new rows *visible*: they still have to
+   * pass `activityInRange` to reach the list.
+   *
+   * This is keyset paging, chosen over Strava's `page` param deliberately —
+   * with offsets, changing the range resets to page 1 and the athlete re-walks
+   * every page they already hold before reaching new ground.
+   *
+   * Anchored on `activities` rather than on `rows`: the anchor is the oldest
+   * row actually fetched, not the oldest one currently visible.
+   */
   function loadEarlier() {
+    // The oldest day held, not the day before it: one day can hold several
+    // activities and only some of them may have fitted in the last response.
+    // Re-asking for that whole day costs one overlapping day, which mergeById
+    // dedupes; skipping it would silently drop rows.
+    const oldestHeldDay = activities.map(startDayOf).filter(Boolean).sort()[0]
     setRange((current) => ({
       ...current,
       from: widenedStart(current, activities, DEFAULT_RANGE_DAYS, fallbackFrom),
     }))
+    // With nothing held — an empty or failed first window — there is no row to
+    // anchor on, so the ceiling stays at the range's own end. The press is
+    // still not a no-op: `widenedStart`'s final guard moves the floor anyway,
+    // which changes `after` and re-fires the request.
+    setBrowseCeiling(oldestHeldDay ?? range.to)
+  }
+
+  /**
+   * The setter StravaPage hands to ActivityDateFilter. A new filter is a new
+   * browse, not a continuation of the last one, so the ceiling drops back to
+   * the range's own end — otherwise tapping *30 days* mid-paging would ask for
+   * the last 30 days *ending months ago* and come back empty.
+   *
+   * Safe as a plain wrapper: ActivityDateFilter always calls it with a finished
+   * range object, never with an updater function.
+   */
+  function changeRange(next) {
+    setRange(next)
+    setBrowseCeiling(null)
   }
 
   const isLoadingEarlier = status === 'loading' && activities.length > 0
@@ -317,7 +402,7 @@ export function useStravaActivities({
     error,
     notice,
     range,
-    setRange,
+    setRange: changeRange,
     isLoadingEarlier,
     isAwaitingFirstWindow,
     connect,

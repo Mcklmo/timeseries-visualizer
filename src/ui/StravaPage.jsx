@@ -154,8 +154,7 @@ export function StravaPage({
               isLoadingEarlier={isLoadingEarlier}
               // Always offered here, unlike the intervals.icu list, which hides
               // it while searching — there is no search on this provider, so
-              // the range always *is* the window and widening it always means
-              // paging.
+              // there is never a set of hits with no window under it to page.
               onLoadEarlier={loadEarlier}
               emptyMessage={emptyMessage}
               // **All four fields, and three of them fail silently if missed.**
