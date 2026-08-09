@@ -8,7 +8,6 @@ import { useActivity } from './state/ActivityContext.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { BrandMark } from './ui/BrandMark.jsx'
 import { ChartStack } from './ui/ChartStack.jsx'
-import { ControlPanel } from './ui/ControlPanel.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { ErrorState } from './ui/ErrorState.jsx'
 import { FeedbackWidget } from './ui/FeedbackWidget.jsx'
@@ -150,14 +149,12 @@ export function AppShell() {
               </p>
             )}
             {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
-            {status === 'ready' && activity && (
-              <>
-                {/* ActivityHeader is in <header> now, not here — it is what a
-                    scrolled screenshot is missing, and <main> scrolls away. */}
-                <ControlPanel />
-                <ChartStack />
-              </>
-            )}
+            {/* ActivityHeader is in <header> now, not here — it is what a
+                scrolled screenshot is missing, and <main> scrolls away. The
+                settings window that used to sit above the stack is gone too:
+                ChartStack carries its own chrome, a toolbar row plus one
+                foldable head per graph. */}
+            {status === 'ready' && activity && <ChartStack />}
           </>
         )}
       </main>

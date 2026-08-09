@@ -54,7 +54,14 @@ export function useTouchHoverHandoff() {
       // Two or more fingers is a pinch, owned by usePinchZoom — it suppresses
       // Recharts' tooltip pipeline itself and nothing here should interfere.
       if (e.touches.length > 1) return
-      for (const wrapper of node.querySelectorAll('.recharts-wrapper')) {
+      const wrappers = [...node.querySelectorAll('.recharts-wrapper')]
+      // A touch that lands on chrome rather than on a chart hands the crosshair
+      // to nobody, so it releases nobody. The stack contains real controls now
+      // — the toolbar row and every panel's head — and without this, tapping a
+      // checkbox would clear the readout the previous touch placed, which is
+      // the very thing the frozen-after-lift behaviour below exists to keep.
+      if (!wrappers.some((wrapper) => wrapper.contains(e.target))) return
+      for (const wrapper of wrappers) {
         // The panel being touched keeps its hover: clearing it too would wipe
         // the readout on a tap that never moves, since no touchmove would
         // follow to restore it.

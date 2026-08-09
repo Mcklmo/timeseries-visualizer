@@ -39,9 +39,17 @@ function initialState(prefs) {
     // requested. enabledMetrics keeps its all-on default — a panel that isn't
     // drawn is a metric you can't see at all, which is a different question.
     enabledStats: prefs?.enabledStats ?? Object.fromEntries(metricOrder.map((id) => [id, []])),
-    hoverIndex: null,
   }
 }
+
+// THERE IS NO `hoverIndex` HERE, and that is a decision rather than an omission.
+// It sat in this state for months as the documented seam for an external
+// readout (§13 Route C) with no reader anywhere. The fixed crosshair label that
+// finally needed one is built on Recharts' own hover instead — see
+// ui/CrosshairReadout.jsx — because publishing the hovered index through this
+// context would re-render ChartStack, and therefore every <LineChart> under it,
+// on every mouse-move frame. State that looks live and is not is worse than no
+// state, so it went with the feature that was supposed to use it.
 
 export function ChartViewProvider({ children }) {
   const { activity } = useActivity()
@@ -81,7 +89,6 @@ export function ChartViewProvider({ children }) {
     [],
   )
   const setZoomDomain = useCallback((zoomDomain) => setState((s) => ({ ...s, zoomDomain })), [])
-  const setHoverIndex = useCallback((hoverIndex) => setState((s) => ({ ...s, hoverIndex })), [])
 
   const toggleMetric = useCallback(
     (metricId) =>
@@ -123,7 +130,6 @@ export function ChartViewProvider({ children }) {
     ...state,
     setXMode,
     setZoomDomain,
-    setHoverIndex,
     toggleMetric,
     toggleStat,
   }

@@ -2,7 +2,12 @@
 // Every panel shares syncId, XAxis dataKey/domain, and YAxis width with its
 // siblings in ChartStack so plot areas align pixel-for-pixel and the
 // tooltip/crosshair stays in sync across the whole stack.
-import { useMemo } from 'react'
+//
+// Three parts, top to bottom: a fixed head carrying this metric's name, the
+// crosshair's current value and this graph's own settings (PanelHead); the
+// chart; and the stat chips (StatSummary). Only the head is new — the chart
+// between them is unchanged, including how its hover is wired.
+import { useMemo, useState } from 'react'
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { insertGapBreaks } from '../domain/insertGapBreaks.js'
 import { gapThresholdFor } from '../domain/samplingInterval.js'
@@ -13,14 +18,22 @@ import { computeYDomain } from '../stats/aggregate.js'
 import { useDerivativeSeries } from '../stats/useDerivativeSeries.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
 import { CHART_MARGIN, Y_AXIS_WIDTH } from './chartGeometry.js'
+import { CrosshairReadout } from './CrosshairReadout.jsx'
 import { derivativeStroke } from './derivativeStyle.js'
-import { SyncedTooltip } from './SyncedTooltip.jsx'
+import { StatCheckboxes } from './StatCheckboxes.jsx'
 
 // Y_AXIS_WIDTH and CHART_MARGIN are imported, not declared here, because the
 // pinch gesture measures the plot area by subtracting exactly these numbers
 // from the chart's rect (see chartGeometry.js). Two copies would drift and the
 // gesture would quietly grab a few pixels off the line it looks like it's on.
 const SYNC_ID = 'activity'
+
+// Where the plot area starts, measured in from the panel's left edge: exactly
+// the sum plotRectFromSurface subtracts. Handed to CSS as `--plot-inset` so the
+// head's label sits over the line it names rather than over the y-axis gutter.
+// Derived here and never written as `60px` in the stylesheet, for the same
+// reason the two constants above are imported rather than redeclared.
+const PLOT_INSET = Y_AXIS_WIDTH + CHART_MARGIN.left
 
 // Draw order comes from the registry's `scalarStatKinds`; the dash patterns
 // stay here, being presentation rather than domain. Scalar kinds only —
@@ -66,6 +79,42 @@ const DERIV_DOMAIN_PADDING = 0.08
 // spike draws out to the plot edge and back rather than vanishing.
 const DERIV_DOMAIN_QUANTILE = 0.99
 
+// The fixed label band above the chart: the metric's name, the crosshair's
+// current value beside it, and this graph's own settings behind the unfold
+// arrow. Local to this file, same house pattern as StatSummary below.
+//
+// The value is NOT rendered here — `crosshair-slot` is a portal target that
+// CrosshairReadout fills from inside the chart's own hover state, and React
+// must never give it children of its own or the portal would fight whatever
+// this component rendered. That is also what makes the at-rest em dash a plain
+// `:empty::after` rule in CSS with no branch in JS.
+//
+// The unfold arrow is the native <summary> marker, which rotates on open for
+// free — no custom triangle and no `list-style` override. Closed by default,
+// uncontrolled, and deliberately not persisted: it is a "what is this graph
+// doing" question, not a view preference. The flex/padding lives on an inner
+// `__body` rather than on the <details> itself, since overriding a <details>'s
+// own `display` is what historically broke closed-state hiding in WebKit
+// (ARCHITECTURE.md §13 Route D) — iOS Safari being exactly the browser these
+// per-graph panels have to fold on.
+function PanelHead({ metric, metricId, valueRef, enabledStats, onToggleStat }) {
+  return (
+    <div className="metric-panel__head">
+      <details className="metric-settings">
+        <summary className="metric-settings__summary">
+          <span className="metric-readout" style={{ '--metric-color': metric.color }}>
+            <span className="metric-readout__label">{metric.label}</span>
+            <span className="crosshair-slot" ref={valueRef} />
+          </span>
+        </summary>
+        <div className="metric-settings__body">
+          <StatCheckboxes metricId={metricId} enabled={enabledStats} onToggle={onToggleStat} />
+        </div>
+      </details>
+    </div>
+  )
+}
+
 // Plain-HTML summary row below the chart — a flex row naturally avoids
 // overlap between stat values, unlike the old SVG-positioned labels.
 function StatSummary({ metric, entries, sport }) {
@@ -101,8 +150,19 @@ export function MetricPanel({
   rightInset = 0,
   showXAxis,
   height,
+  // Both optional for the same reason `rightInset` is: the ~35 tests in this
+  // file render the panel bare from a DEFAULT_PROPS object, and a panel with no
+  // toggle handler is still a perfectly good chart — the boxes simply do
+  // nothing. `positionSlot` is null on every panel but the first (ChartStack).
+  onToggleStat,
+  positionSlot = null,
 }) {
   const metric = metricRegistry[metricId]
+  // A callback ref captured INTO STATE, not a plain ref: the bridge below has
+  // to re-render once the node exists, and a ref mutation does not re-render.
+  // Costs one extra render at mount and nothing after — the setter's identity
+  // is stable, so React never re-invokes it.
+  const [valueSlot, setValueSlot] = useState(null)
   const stats = useMetricStats(statsBasis, metricId)
   const xKey = xMode === 'distance' ? 'd' : 't'
 
@@ -191,7 +251,17 @@ export function MetricPanel({
   )
 
   return (
-    <div className="metric-panel" style={{ minHeight: height, ...(hasOverlay && { '--deriv-hue': derivColor }) }}>
+    <div
+      className="metric-panel"
+      style={{ minHeight: height, '--plot-inset': `${PLOT_INSET}px`, ...(hasOverlay && { '--deriv-hue': derivColor }) }}
+    >
+      <PanelHead
+        metric={metric}
+        metricId={metricId}
+        valueRef={setValueSlot}
+        enabledStats={enabledStats}
+        onToggleStat={onToggleStat}
+      />
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={data} syncId={SYNC_ID} margin={CHART_MARGIN}>
           <CartesianGrid stroke="var(--grid)" vertical={false} />
@@ -258,12 +328,18 @@ export function MetricPanel({
               interval={0}
             />
           )}
+          {/* Still a <Tooltip>, and that is load-bearing: syncId and the touch
+              handoff both ride on this pipeline. Its `content` no longer draws a
+              box that follows the cursor — it portals the value up into the head
+              above. See CrosshairReadout.jsx. */}
           <Tooltip
             content={
-              <SyncedTooltip
+              <CrosshairReadout
                 metric={metric}
                 sport={activity.sport}
                 derivative={hasOverlay ? { key: derivKey, spec: derivSpec } : null}
+                valueSlot={valueSlot}
+                positionSlot={positionSlot}
               />
             }
             cursor={{ stroke: 'var(--stat-line)' }}

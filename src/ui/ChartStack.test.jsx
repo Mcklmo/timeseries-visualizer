@@ -6,7 +6,8 @@ import { ChartStack } from './ChartStack.jsx'
 import { AppProviders } from '../app/providers.jsx'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
-import { metricRegistry, metricOrder } from '../metrics/metricRegistry.js'
+import { metricRegistry, metricOrder, statKindsFor } from '../metrics/metricRegistry.js'
+import { statCheckboxLabel } from './StatCheckboxes.jsx'
 
 const fixtureActivity = {
   id: 'a1',
@@ -123,6 +124,21 @@ function tickLabels(panel) {
 function tickSeconds(label) {
   const [minutes, seconds] = label.split(':').map(Number)
   return minutes * 60 + seconds
+}
+
+// Recharts' mouse middleware is rAF-throttled, so a hover is not observable
+// until a couple of frames have passed.
+async function settleHover() {
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+}
+
+// A panel found by the colour of the line it draws, since the panels carry no
+// metric id in the DOM and their order shifts as metrics are toggled.
+function panelFor(container, metricId) {
+  return [...container.querySelectorAll('.metric-panel')].find(
+    (p) => p.querySelector('.metric-line .recharts-curve')?.getAttribute('stroke') === metricRegistry[metricId].color,
+  )
 }
 
 async function renderStack({ activity = fixtureActivity, extra = null } = {}) {
@@ -309,6 +325,125 @@ describe('ChartStack', () => {
     expect(new Set(xPositions).size).toBe(1)
   })
 
+  // The readout is fixed at each panel's upper left now, fed by that panel's own
+  // <Tooltip content> portaling into its head (ui/CrosshairReadout.jsx). The
+  // panel under the pointer would fill its own label from its own hover no
+  // matter how this were wired — the three panels NOBODY is hovering are the
+  // assertion: they can only fill theirs by receiving the syncId event and
+  // rendering their content while inactive-but-synced.
+  it('fills every panel’s fixed label from a hover on any one of them', async () => {
+    const { container } = await renderStack()
+    const wrappers = [...container.querySelectorAll('.recharts-wrapper')]
+    const slots = () => [...container.querySelectorAll('.crosshair-slot')]
+
+    // At rest every slot is empty — the em dash is a CSS :empty rule, not text.
+    expect(slots()).toHaveLength(4)
+    expect(slots().every((slot) => slot.textContent === '')).toBe(true)
+
+    fireEvent.mouseOver(wrappers[0])
+    fireEvent.mouseMove(wrappers[0], { clientX: 300, clientY: 50 })
+    await settleHover()
+
+    // clientX 300 lands on the sample at t=10s (plot {left: 60, width: 728},
+    // so the samples sit at 60/242/424/606/788 and 300 is nearest 242).
+    await waitFor(() => expect(slots().every((slot) => slot.textContent !== '')).toBe(true))
+    const panels = [...container.querySelectorAll('.metric-panel')]
+    // Panels are pace, heartRate, cadence, altitude. Each reports its OWN
+    // metric at the shared sample, in its own unit.
+    expect(panels[1].querySelector('.crosshair-slot').textContent).toContain('130 bpm')
+    expect(panels[2].querySelector('.crosshair-slot').textContent).toContain('172 spm')
+  })
+
+  it('reports the hovered position once, in the toolbar, rather than once per panel', async () => {
+    const { container } = await renderStack()
+    const position = () => container.querySelector('.chart-toolbar .crosshair-position')
+    expect(container.querySelectorAll('.crosshair-position')).toHaveLength(1)
+    expect(position().textContent).toBe('')
+
+    fireEvent.mouseOver(container.querySelectorAll('.recharts-wrapper')[2])
+    fireEvent.mouseMove(container.querySelectorAll('.recharts-wrapper')[2], { clientX: 300, clientY: 50 })
+    await settleHover()
+
+    // Time AND distance, whichever the x-axis is showing. Driven by the first
+    // panel even though the third one was hovered — every panel is synced to
+    // the same sample, so one of them speaks for the stack.
+    await waitFor(() => expect(position().textContent).toContain('0:10'))
+    expect(position().textContent).toContain('0.05 km')
+  })
+
+  it('re-homes the shared position readout when the first metric is switched off', async () => {
+    // The first visible panel drives it, so "first" has to be resolved per
+    // render rather than pinned to a metric id.
+    const { container } = await renderStack({ extra: <ToggleMetric metricId="pace" /> })
+    fireEvent.click(screen.getByText('toggle-pace'))
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel')).toHaveLength(3))
+
+    const wrapper = container.querySelector('.recharts-wrapper')
+    fireEvent.mouseOver(wrapper)
+    fireEvent.mouseMove(wrapper, { clientX: 300, clientY: 50 })
+    await settleHover()
+
+    await waitFor(() =>
+      expect(container.querySelector('.crosshair-position').textContent).toContain('0:10'),
+    )
+  })
+
+  // ── per-graph settings ──────────────────────────────────────────────────
+  //
+  // Ported from ControlPanel.test.jsx, where the same clicks went through one
+  // settings window. The boxes are in each panel's head now, so what these
+  // check is the wiring ChartStack owns: `toggleStat` handed down as a prop,
+  // and the reference line landing on the graph whose head was clicked.
+  it('starts every stat unchecked, drawing no reference lines until one is asked for', async () => {
+    const { container } = await renderStack()
+    for (const id of metricOrder.filter((m) => fixtureActivity.availableMetrics.includes(m))) {
+      for (const kind of statKindsFor(metricRegistry[id])) {
+        expect(screen.getByRole('checkbox', { name: statCheckboxLabel(metricRegistry[id], kind) })).not.toBeChecked()
+      }
+      expect(panelFor(container, id).querySelectorAll('.recharts-reference-line')).toHaveLength(0)
+    }
+  })
+
+  it('draws a reference line on the graph whose own head asked for it, and only there', async () => {
+    const { container } = await renderStack()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Heart rate max' }))
+
+    await waitFor(() =>
+      expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(1),
+    )
+    expect(panelFor(container, 'cadence').querySelectorAll('.recharts-reference-line')).toHaveLength(0)
+
+    // Unchecking takes it away again, and a second kind adds a second line.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Heart rate avg' }))
+    await waitFor(() =>
+      expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(2),
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Heart rate max' }))
+    await waitFor(() =>
+      expect(panelFor(container, 'heartRate').querySelectorAll('.recharts-reference-line')).toHaveLength(1),
+    )
+  })
+
+  it('keeps the one-derivative-per-metric rule when the click comes from a panel head', async () => {
+    // The exclusion lives in ChartViewContext's toggleStat, and the head must
+    // keep going through it rather than writing enabledStats another way — one
+    // right-hand axis carries one unit.
+    const { container } = await renderStack()
+    const ramp = screen.getByRole('checkbox', { name: 'Heart rate ramp' })
+    const rampAccel = screen.getByRole('checkbox', { name: 'Heart rate ramp accel' })
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Heart rate max' }))
+    fireEvent.click(ramp)
+    await waitFor(() => expect(panelFor(container, 'heartRate').querySelector('.deriv-line')).not.toBeNull())
+
+    fireEvent.click(rampAccel)
+    await waitFor(() => expect(rampAccel).toBeChecked())
+    expect(ramp).not.toBeChecked()
+    // The scalar stat is untouched by the exclusion: it is on its own axis.
+    expect(screen.getByRole('checkbox', { name: 'Heart rate max' })).toBeChecked()
+  })
+
   // The mobile freeze (useTouchHoverHandoff): a panel that has been touched
   // holds its OWN Recharts hover, which outranks the incoming syncId event, so
   // without the handoff it stays pinned at its last index while every other
@@ -318,18 +453,13 @@ describe('ChartStack', () => {
   it('releases a previously-touched panel back to the synced crosshair when another panel is touched', async () => {
     const { container } = await renderStack()
     const wrappers = [...container.querySelectorAll('.recharts-wrapper')]
-    const settle = async () => {
-      // Recharts' mouse middleware is rAF-throttled.
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-    }
     const cursorXs = () =>
       wrappers.map((w) => w.querySelector('.recharts-tooltip-cursor').getAttribute('d').match(/M(-?[\d.]+),/)[1])
 
     // Panel 0 takes the crosshair and is left holding a self-hover.
     fireEvent.mouseOver(wrappers[0])
     fireEvent.mouseMove(wrappers[0], { clientX: 300, clientY: 50 })
-    await settle()
+    await settleHover()
     expect(new Set(cursorXs()).size).toBe(1)
 
     // The finger lands on panel 1. Remove this line and the assertion below
@@ -337,7 +467,7 @@ describe('ChartStack', () => {
     fireEvent.touchStart(wrappers[1], { touches: [{ clientX: 500, clientY: 50 }] })
     fireEvent.mouseOver(wrappers[1])
     fireEvent.mouseMove(wrappers[1], { clientX: 500, clientY: 50 })
-    await settle()
+    await settleHover()
 
     // Panel 0 moved to panel 1's position instead of freezing at 300.
     expect(new Set(cursorXs()).size).toBe(1)

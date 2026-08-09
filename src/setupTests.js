@@ -47,15 +47,14 @@ if (!HTMLDialogElement.prototype.showModal) {
   }
 }
 
-// jsdom implements no matchMedia at all, and useIsNarrow() (ChartStack's
-// panel heights, ControlPanel's collapse) calls it during render — so without
-// this every chart test throws at once. See ARCHITECTURE.md §13 Route A.
+// jsdom implements no matchMedia at all, and useIsNarrow() — now only
+// ChartStack's panel heights — calls it during render, so without this every
+// chart test throws at once. See ARCHITECTURE.md §13 Route A.
 //
 // `matches: false` is load-bearing, not just a convenient default: it means
-// "not narrow", which is the branch every existing panel-height assertion and
-// every ControlPanel role query already expects (a closed <details> hides its
-// contents from getByRole). A test wanting the narrow branch reassigns
-// window.matchMedia itself and restores it in an afterEach.
+// "not narrow", which is the branch every existing panel-height assertion
+// expects. A test wanting the narrow branch reassigns window.matchMedia itself
+// and restores it in an afterEach.
 window.matchMedia = function (query) {
   return {
     matches: false,

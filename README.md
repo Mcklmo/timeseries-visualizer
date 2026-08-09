@@ -20,11 +20,14 @@ This project is **functional end-to-end, including real Garmin file upload** —
 - Domain pipeline (`src/domain/`), stats/aggregation (`src/stats/`), the metric registry
   (`src/metrics/`), and the `ActivitySource` port are built and tested.
 - State layer (`ActivityContext`, `ChartViewContext`, `AppProviders`) is built and tested.
-- `ChartStack` / `MetricPanel` / `SyncedTooltip` render synced, aligned charts, verified
-  against real rendered Recharts SVG output.
-- `ControlPanel` and its children (`MetricToggle`, `StatCheckboxes`, `XAxisModeSwitch`) drive
-  metric visibility, per-metric stat lines, and x-axis mode — also verified against real
-  rendered Recharts SVG output, not just context state.
+- `ChartStack` / `MetricPanel` / `CrosshairReadout` render synced, aligned charts, verified
+  against real rendered Recharts SVG output. The crosshair's readout is **fixed at each
+  graph's upper left** rather than following the cursor: one shared crosshair updates every
+  graph's label in place, and the elapsed time and distance are reported once, at the top.
+- The chart's controls live where what they act on is: `ChartToolbar` holds the two that
+  belong to no single graph (`XAxisModeSwitch`, `MetricToggle`), while each graph's
+  `max/min/avg/median` and derivative boxes (`StatCheckboxes`) fold out of that graph's own
+  head — also verified against real rendered Recharts SVG output, not just context state.
 - Zooming is a **two-finger pinch** anywhere on the chart stack, or **ctrl/⌘ + scroll** on a
   desktop, writing one shared controlled `zoomDomain` so every panel zooms and pans in sync.
   Moving both fingers together pans, and on a desktop a **two-finger horizontal swipe**
@@ -36,8 +39,8 @@ This project is **functional end-to-end, including real Garmin file upload** —
   ~5px drag handles were unusable on touch — see ARCHITECTURE.md §13 Route B.
 - `App.jsx` is wired end-to-end: drop a file on the idle page's `EmptyState` hero (or on the
   compact control that takes its place in the header once something is loaded), watch
-  `ActivityContext` cycle through `loading`, and land on `ControlPanel` + `ChartStack` (or
-  `ErrorState`, with a "Try again" that replays the same load).
+  `ActivityContext` cycle through `loading`, and land on `ChartStack` — which carries its own
+  chrome now — (or `ErrorState`, with a "Try again" that replays the same load).
 - The dark, chart-forward visual theme from ARCHITECTURE.md §9 is applied
   (`styles/tokens.css` + `styles/global.css`); the old default-Vite-template files
   (`App.css`, `index.css`, starter assets) are gone.
@@ -318,7 +321,7 @@ src/
   stats/      # max/min/avg/median aggregation, strategy-aware, memoized hook
   metrics/    # metricRegistry — the extension point for adding metrics/sports
   state/      # ActivityContext, ChartViewContext
-  ui/         # ChartStack, MetricPanel, SyncedTooltip, ControlPanel + toggles/switch,
+  ui/         # ChartStack, MetricPanel, CrosshairReadout, ChartToolbar + toggles/switch,
               # EmptyState, ErrorState, FileDropZone,
               # ActivityRowList + ActivityDateFilter — the picker chrome, provider-neutral,
               # IntervalsPage/ConnectForm + useIntervalsActivities + useDebouncedValue,
@@ -395,7 +398,7 @@ npm run test:watch   # same, watch mode
 
 "System" here means component tests that render through `AppProviders` and assert against
 actual rendered Recharts SVG output (parsed path/line coordinates, `.recharts-*` DOM), not
-just component props or context state — see `ControlPanel.test.jsx` and `App.test.jsx` for
+just component props or context state — see `ChartToolbar.test.jsx` and `App.test.jsx` for
 examples, and ARCHITECTURE.md §0 for the jsdom pitfalls that motivated this approach.
 
 - `src/setupTests.js` stubs `ResizeObserver` and provides a fixed `getBoundingClientRect`
@@ -461,22 +464,31 @@ path, though (see step 9 below).
    `wrangler dev` to click it) — no second **drop zone** anywhere while the hero is up.
 3. **Load an activity** — drag a real export onto the hero (or click to browse and pick
    one), e.g. `fixtures/activity_23870166877.tcx`; dragging over it should tint the border.
-   The hero should be replaced by a control panel (Time/Distance switch + one row per metric
-   the file actually has — each with a colored dot, a checkbox, and max/min/avg/median
-   checkboxes) and the stacked line charts below it — and the compact drop control should
+   The hero should be replaced by the chart stack: a slim toolbar row at the top
+   (Time/Distance switch, then one checkbox with a coloured dot per metric the file actually
+   has), then the stacked line charts, each under its own head — an unfold arrow, the metric's
+   hue dot, its name, and an em dash where the value will go — and the compact drop control should
    now appear in the header, so a *different* activity can be loaded without leaving this
    view. The header's left-hand cluster should now read
    `⚡ ActivityMaxxer  <name> [Running] 1 Jan 2026, 09:00 · 30:00` — the activity's identity,
    pinned there rather than in the page body. Scroll down: the drop control and the two
    links fade away, that cluster stays, legible over chart ink inside one translucent chip.
    Hover the header — everything comes back, and the chip must not double-darken.
-4. **Synced crosshair/tooltip** — hover anywhere over any chart. Expect a vertical crosshair
-   and tooltip at the same x-position on *all* panels, with the tooltip header always showing
-   both elapsed time and distance regardless of mode.
-5. **Metric toggles** — uncheck "Cadence" → its panel disappears, others stay aligned.
-   Re-check it → it comes back.
-6. **Stat reference lines** — check "Heart rate max" → a dashed line + label appears in the
-   heart-rate panel only. Uncheck "avg" on any metric → its solid reference line disappears.
+4. **Synced crosshair and fixed labels** — hover anywhere over any chart. Expect a vertical
+   crosshair at the same x-position on *all* panels, and **every** panel's head to fill with
+   that sample's own value in its own unit — including the panels you are not hovering.
+   Nothing should follow the cursor, and no label should shift sideways as you move: they
+   update in place. The elapsed time and distance appear **once**, at the right-hand end of
+   the toolbar, regardless of x-axis mode. Move off the charts and each head goes back to
+   reading `Heart rate —`.
+5. **Metric toggles** — uncheck "Cadence" in the toolbar → its panel *and its head* disappear,
+   others stay aligned. Re-check it → both come back.
+6. **Per-graph settings** — click the arrow beside a metric's name → its
+   max/min/avg/median (plus `d/dt`, `d²/dt²` where offered) unfold **in flow**, pushing the
+   charts below down rather than floating over them. Check "max" on heart rate → a dashed
+   line appears in the heart-rate panel only, and its chip below it. Check `d/dt` → the
+   overlay, the right-hand axis and the checked box must all be the same colour. Fold it back
+   up and the charts below return to where they were.
 7. **X-axis mode** — click **Distance** → the bottom axis ticks switch from seconds to
    metres on every panel. Click **Time** to switch back.
 8. **Zoom** — hold **Ctrl** (or ⌘) and scroll over the charts, or pinch on a trackpad → all
@@ -515,7 +527,7 @@ path, though (see step 9 below).
     ticks read `0h · 1d0h · 2d0h` (not `259200`), avg speed is a plausible walking figure,
     and **both lines break visibly** at the 6-hour dropout and at each of the three nights
     in camp rather than running a straight diagonal across them. Hover anywhere: the
-    tooltip header shows elapsed time in days (e.g. `2d 4:15:30`). Ctrl+scroll into one day
+    toolbar's position readout shows elapsed time in days (e.g. `2d 4:15:30`). Ctrl+scroll into one day
     and confirm the crosshair still syncs across both panels, the ticks stay real dates
     rather than `NaN`, and the zoom doesn't hit its floor prematurely — the max-zoom limit is
     a fraction of the span, so a 3-day breadcrumb track zooms exactly as far as a 1 Hz watch
@@ -611,10 +623,12 @@ path, though (see step 9 below).
     - DevTools → Network throughout: every Strava request goes to **your own origin**
       (`/api/strava/*`), never to `strava.com` — and the response headers carry
       `X-ReadRateLimit-Usage`, which is how the shared daily budget is observed.
-15. **Responsive layout** — narrow the window below ~720px → the hero and header should both
-    stay readable with no horizontal overflow, each metric's toggle + stat-checkboxes row
-    should stack instead of staying side-by-side, **"Chart settings" should be collapsed**
-    (tap it to open; it stays open), and panel heights should drop ~25%. In the intervals.icu
+15. **Responsive layout** — narrow the window below ~720px, then all the way to 375px (iPhone
+    SE) → the hero and header should both stay readable with no horizontal overflow, the
+    chart toolbar should **wrap** onto two rows rather than overflow, each panel head should
+    stay legible at its indent (it keeps the full ~60px so the label still sits over the line
+    it names) with the unfolded stat boxes wrapping instead of spilling, and panel heights
+    should drop ~25%. In the intervals.icu
     view, activity rows should be comfortable thumb targets, the date filter's presets and
     fields should **wrap** onto their own rows rather than overflow (there is no second media
     query for them), and focusing the API-key field, **the search box or either date field**
@@ -623,8 +637,12 @@ path, though (see step 9 below).
     simulator alone.** Run `npm run dev -- --host` and open the printed LAN URL on an iPhone.
     - **Gestures:** two-finger pinch zooms; moving both fingers together pans; a one-finger
       vertical drag still scrolls the page; and the browser never page-zooms while the
-      gesture starts on a chart. (Known limit: a pinch *starting* on the control panel still
-      page-zooms — `touch-action` only governs gestures whose touches start in the element.)
+      gesture starts anywhere on the stack — including on the toolbar and the panel heads,
+      which now live inside it, closing the limit this step used to record.
+    - **The fixed labels on touch:** drag one finger across a chart → every panel's label
+      follows, in place. Lift → they stay put, so the numbers can be read. Then tap a
+      checkbox in a head → the readout must **not** blank; only touching another chart hands
+      the crosshair over.
     - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take
       one. It must show, in one translucent chip in the upper left, the bolt +
       "ActivityMaxxer" on the first row and the activity name, sport chip, start date/time

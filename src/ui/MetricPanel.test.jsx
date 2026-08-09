@@ -1,11 +1,13 @@
-import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MetricPanel } from './MetricPanel.jsx'
 import { extentOf, fullDomain } from '../domain/zoomDomain.js'
-import { metricRegistry } from '../metrics/metricRegistry.js'
+import { metricRegistry, statKindsFor } from '../metrics/metricRegistry.js'
 import { statsBasisFor } from '../stats/statsBasis.js'
-import { plotRectFromSurface, Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
+import { CHART_MARGIN, plotRectFromSurface, Y_AXIS_RIGHT_WIDTH, Y_AXIS_WIDTH } from './chartGeometry.js'
 import { derivativeStroke } from './derivativeStyle.js'
+import { statCheckboxLabel } from './StatCheckboxes.jsx'
 
 // Recharts path data looks like "M61,85L328,5L595,45" — one M/L command per
 // rendered point, in data order. Parsing it back out is the only way to
@@ -523,5 +525,109 @@ describe('MetricPanel', () => {
     // produces a cursor at all, i.e. a Tooltip is wired up.
     const { container } = renderPanel()
     expect(container.querySelector('.recharts-wrapper')).toBeInTheDocument()
+  })
+
+  // ── the panel head ──────────────────────────────────────────────────────
+  //
+  // The fixed label band above the chart: the metric's name, the crosshair's
+  // current value, and this graph's own settings behind the unfold arrow.
+  // Every case above renders from DEFAULT_PROPS, which passes neither of the
+  // head's two new props — that they all still pass is the check that both
+  // defaulted correctly, the same guarantee `rightInset = 0` carries.
+  describe('the head', () => {
+    it('names the metric in the head, above the chart', () => {
+      const { container } = renderPanel()
+      expect(container.querySelector('.metric-readout__label').textContent).toBe('Heart rate')
+      // Above, not below: the head is what the reader's eye is already on when
+      // the crosshair moves.
+      const head = container.querySelector('.metric-panel__head')
+      const chart = container.querySelector('.recharts-wrapper')
+      expect(head.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('carries the metric’s own hue, so the head and its toolbar checkbox read as one thing', () => {
+      const { container } = renderPanel()
+      expect(container.querySelector('.metric-readout').style.getPropertyValue('--metric-color')).toBe(
+        metricRegistry.heartRate.color,
+      )
+    })
+
+    it('indents the head to the plot’s own left edge, derived from chartGeometry', () => {
+      // Not a 60px literal: the gesture subtracts exactly these constants to
+      // find the plot, and a second copy in the stylesheet would be free to
+      // drift from the one the chart is laid out with.
+      const { container } = renderPanel()
+      expect(container.querySelector('.metric-panel').style.getPropertyValue('--plot-inset')).toBe(
+        `${Y_AXIS_WIDTH + CHART_MARGIN.left}px`,
+      )
+    })
+
+    it('leaves the value slot empty at rest, so CSS can render the at-rest dash', () => {
+      // React must never put children in this node — it is the portal target
+      // CrosshairReadout fills — which is what makes `:empty::after` a reliable
+      // "no crosshair anywhere" and keeps the dash out of JS entirely.
+      const { container } = renderPanel()
+      const slot = container.querySelector('.crosshair-slot')
+      expect(slot).not.toBeNull()
+      expect(slot).toBeEmptyDOMElement()
+    })
+
+    it('starts the settings folded away, leaving the graphs the screen', () => {
+      // jsdom 30 applies no UA hiding to a closed <details>, so a role query is
+      // NOT a proxy for "collapsed" — the `open` attribute is the observable.
+      const { container } = renderPanel()
+      expect(container.querySelector('details.metric-settings')).not.toHaveAttribute('open')
+    })
+
+    it('puts this metric’s stat boxes in its own head, addressable by their accessible names', () => {
+      const { container } = renderPanel()
+      const head = container.querySelector('.metric-panel__head')
+      for (const kind of statKindsFor(metricRegistry.heartRate)) {
+        const box = screen.getByRole('checkbox', { name: statCheckboxLabel(metricRegistry.heartRate, kind) })
+        expect(head.contains(box)).toBe(true)
+      }
+    })
+
+    it('offers derivative boxes only on a metric that declares one', () => {
+      // heartRate declares a derivative; cadence does not, so it gets the four
+      // scalar kinds and nothing else.
+      renderPanel({ metricId: 'cadence', enabledStats: [] })
+      expect(screen.getAllByRole('checkbox', { name: /^Cadence / })).toHaveLength(4)
+      expect(screen.queryByRole('checkbox', { name: 'Cadence ramp' })).not.toBeInTheDocument()
+    })
+
+    it('reflects enabledStats in the boxes rather than holding state of its own', () => {
+      renderPanel({ enabledStats: ['avg', 'max'] })
+      expect(screen.getByRole('checkbox', { name: 'Heart rate avg' })).toBeChecked()
+      expect(screen.getByRole('checkbox', { name: 'Heart rate max' })).toBeChecked()
+      expect(screen.getByRole('checkbox', { name: 'Heart rate min' })).not.toBeChecked()
+    })
+
+    it('reports a clicked box to onToggleStat, naming the metric it belongs to', async () => {
+      // The panel writes no state itself: the click goes back to ChartViewContext's
+      // toggleStat, which is what enforces at most one derivative per metric.
+      const onToggleStat = vi.fn()
+      renderPanel({ onToggleStat })
+
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Heart rate max' }))
+
+      expect(onToggleStat).toHaveBeenCalledWith('heartRate', 'max')
+    })
+
+    it('lights a checked derivative box in the colour of the line that panel draws', () => {
+      // The control and the mark are one thing only if they are literally one
+      // colour — see derivativeStyle.js. Asserted here rather than at the stack
+      // level now that the box and the line it draws are in the same component.
+      const { container } = renderPanel(withOverlay)
+      const ramp = screen.getByRole('checkbox', { name: 'Heart rate ramp' })
+      const drawn = container.querySelector('.deriv-line .recharts-curve').getAttribute('stroke')
+
+      expect(ramp.closest('.stat-checkbox')).toHaveClass('stat-checkbox--active')
+      expect(ramp.closest('.stat-checkbox').style.getPropertyValue('--deriv-hue')).toBe(drawn)
+      // The scalar kinds stay dim when checked: the tint means "derived".
+      expect(screen.getByRole('checkbox', { name: 'Heart rate max' }).closest('.stat-checkbox')).not.toHaveClass(
+        'stat-checkbox--active',
+      )
+    })
   })
 })

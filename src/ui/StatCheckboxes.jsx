@@ -1,11 +1,12 @@
 // Per-metric stat checkboxes: the four scalar reference lines, plus the two
 // derivative overlays on the metrics that offer them. See ARCHITECTURE.md
 // §10 — enabledStats is keyed per metric on purpose, so "avg heart rate" and
-// "avg pace" toggle independently. Each input carries an explicit aria-label
-// ("Heart rate max") since three checkboxes on the page are all just named
-// "max" visually — the metric name alone would collide across rows.
+// "avg pace" toggle independently. They live behind the unfold arrow in each
+// panel's own head now, one instance per graph, rather than stacked in a
+// single settings window. Each input still carries an explicit aria-label
+// ("Heart rate max") since every graph's head offers a box named just "max"
+// visually — the visible text alone would collide across panels.
 import { metricRegistry, statKindsFor } from '../metrics/metricRegistry.js'
-import { useChartView } from '../state/ChartViewContext.jsx'
 import { derivativeStroke } from './derivativeStyle.js'
 
 // Presentation only, and deliberately NOT in the registry — same category as
@@ -32,10 +33,21 @@ export function statCheckboxLabel(metric, kind) {
   return `${metric.label} ${spec ? spec.label : kind}`
 }
 
-export function StatCheckboxes({ metricId }) {
+/**
+ * PROP-DRIVEN, NOT CONTEXT-DRIVEN, since these boxes moved into the panel head.
+ * `MetricPanel` reads no context by design — its whole test file renders it
+ * bare — and `enabledStats` was already a prop there, so `toggleStat` comes
+ * down beside it from `ChartStack`, which is the component that does read
+ * `ChartViewContext`. `onToggle` must stay routed through that same
+ * `toggleStat`: it is what enforces at most one derivative per metric.
+ *
+ * @param {object} props
+ * @param {string} props.metricId
+ * @param {string[]} [props.enabled] - this metric's enabled stat kinds
+ * @param {(metricId: string, kind: string) => void} [props.onToggle]
+ */
+export function StatCheckboxes({ metricId, enabled = [], onToggle }) {
   const metric = metricRegistry[metricId]
-  const { enabledStats, toggleStat } = useChartView()
-  const enabled = enabledStats[metricId] ?? []
 
   return (
     <span className="stat-checkboxes">
@@ -58,7 +70,7 @@ export function StatCheckboxes({ metricId }) {
               type="checkbox"
               aria-label={statCheckboxLabel(metric, kind)}
               checked={checked}
-              onChange={() => toggleStat(metricId, kind)}
+              onChange={() => onToggle?.(metricId, kind)}
             />
             <span aria-hidden="true">{KIND_LABEL[kind] ?? kind}</span>
           </label>

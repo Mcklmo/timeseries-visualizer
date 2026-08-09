@@ -29,7 +29,13 @@
      cannot read a custom property; keep the two in step by hand. */
   --accent: #4cc9f0;
 
-  --panel-gap: 4px; /* tight — panels must read as one instrument */
+  /* Room for each panel's label band to sit clear of the chart above it. It was
+     4px while the only thing between two plots was whitespace; every panel now
+     carries a head with its name and the crosshair's value in it, and at 4px
+     that label crowded the line above. The panels still read as one instrument
+     because what makes them one is the pixel alignment of their plot areas
+     (§7), not the size of the gap. */
+  --panel-gap: 12px;
   /* A floor, not a measurement: .app-header's min-height, sized to the faded
      header with nothing loaded (12px padding × 2 + the 20px h1 line). With an
      activity loaded the pinned cluster makes it taller — two rows on a phone —

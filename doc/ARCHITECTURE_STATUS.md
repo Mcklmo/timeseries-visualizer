@@ -105,10 +105,10 @@ suite passed unchanged.
 flowchart TB
   subgraph UI["UI — React + Recharts"]
     Shell[App / AppShell<br/>composition root · view enum]
-    Ctl[ControlPanel]
+    Bar[ChartToolbar<br/>x-axis mode · metric toggles · shared position readout]
     Stack[ChartStack]
     Panel[MetricPanel xN]
-    Tip[SyncedTooltip]
+    Read[CrosshairReadout<br/>Tooltip content → portal into the panel head]
     Hdr[ActivityHeader]
     IPage[IntervalsPage<br/>copy + layout only]
     IHook[useIntervalsActivities<br/>read orchestration + search]
@@ -122,8 +122,9 @@ flowchart TB
     Fb[FeedbackWidget → Dialog → Form]
     Geo[chartGeometry<br/>pixels]
     Pinch[usePinchZoom<br/>events]
-    Shell --> Ctl & Stack & IPage & SPage & SCb & Fb & Hdr
-    Stack --> Panel --> Tip
+    Shell --> Stack & IPage & SPage & SCb & Fb & Hdr
+    Stack --> Bar
+    Stack --> Panel --> Read
     Stack --> Pinch --> Geo
     Panel --> Geo
     IPage --> IHook & IList & IConn & IDate
@@ -205,18 +206,18 @@ flowchart TB
   STV --> NORM
   MODEL --> AC
   PORT -.injected via ActivitySourceProvider.-> AC
-  AC --> Stack & Ctl & Hdr
+  AC --> Stack & Bar & Hdr
   VC --> Stack & Panel
   SB --> Stack & Panel & Hdr
   ZOOM --> VC & Pinch & SBF
   DERIV --> UDS --> Panel
-  UNITS --> REG & Tip & Hdr & Panel & IList
+  UNITS --> REG & Read & Hdr & Panel & IList
   IHook --> API & MAP
   SHook --> SAPI & MAP
   SCb --> SAPI
   SConn --> SAPI
   ROW --> IList
-  REG --> Panel & Ctl & Stack & UMS & UDS
+  REG --> Panel & Bar & Stack & UMS & UDS
   SBF --> AGG
   Fb --> SHARED
   SHARED --> WLIB
@@ -440,9 +441,11 @@ swapping Recharts.
 
 ### 7. One `visibleMetricsFor()` selector *(trivial)*
 
-The same predicate is written twice: `src/ui/ChartStack.jsx:44` (with `enabledMetrics`) and
-`src/ui/ControlPanel.jsx:25` (without). ChartStack's own comment warns that two copies "would be
-free to disagree" — it meant two copies *within* that file, but the cross-file pair is real today.
+The same predicate is written twice: `ChartStack` (with `enabledMetrics`) and `ChartToolbar`
+(without — deliberately, since a metric whose panel is off must keep its toggle). ChartStack's own
+comment warns that two copies "would be free to disagree" — it meant two copies *within* that file,
+but the cross-file pair is real today. It outlived the `ControlPanel` that used to be the second
+copy: the toolbar that replaced it inherited the predicate unchanged.
 
 → One exported selector beside `isMetricForSport` (`src/metrics/metricRegistry.js:192`).
 

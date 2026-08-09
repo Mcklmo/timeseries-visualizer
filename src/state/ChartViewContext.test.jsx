@@ -17,13 +17,14 @@ function Probe() {
       <div>zoomDomain:{JSON.stringify(view.zoomDomain)}</div>
       <div>enabledMetrics:{JSON.stringify(view.enabledMetrics)}</div>
       <div>enabledStats:{JSON.stringify(view.enabledStats)}</div>
-      <div>hoverIndex:{JSON.stringify(view.hoverIndex)}</div>
+      {/* The whole published surface, so a field that nothing reads cannot
+          quietly reappear — see the `hoverIndex` case below. */}
+      <div>keys:{Object.keys(view).sort().join(',')}</div>
       <button onClick={() => view.setXMode('distance')}>setXMode</button>
       <button onClick={() => view.setZoomDomain([10, 20])}>setZoomDomain</button>
       <button onClick={() => view.toggleMetric('pace')}>toggleMetricPace</button>
       <button onClick={() => view.toggleStat('heartRate', 'max')}>toggleHrMax</button>
       <button onClick={() => view.toggleStat('pace', 'avg')}>togglePaceAvg</button>
-      <button onClick={() => view.setHoverIndex(7)}>setHoverIndex</button>
     </div>
   )
 }
@@ -51,7 +52,6 @@ describe('ChartViewContext', () => {
     expect(screen.getByText('xMode:time')).toBeInTheDocument()
     expect(screen.getByText('zoomDomain:["dataMin","dataMax"]')).toBeInTheDocument()
     expect(screen.getByText(`enabledMetrics:${JSON.stringify(metricOrder)}`)).toBeInTheDocument()
-    expect(screen.getByText('hoverIndex:null')).toBeInTheDocument()
   })
 
   it('defaults every stat off, so a freshly opened activity shows no reference lines or chips', () => {
@@ -118,11 +118,16 @@ describe('ChartViewContext', () => {
     expect(screen.getByText(`enabledStats:${noStats}`)).toBeInTheDocument()
   })
 
-  it('setHoverIndex publishes the hovered sample index', async () => {
-    const user = userEvent.setup()
+  // `hoverIndex`/`setHoverIndex` used to be asserted here. They were the
+  // documented seam for an external readout and never had a reader; the fixed
+  // crosshair label that finally wanted one reads Recharts' own hover instead,
+  // so publishing it through this context would re-render every chart in the
+  // stack per mouse-move frame. See ui/CrosshairReadout.jsx.
+  it('publishes no hoverIndex, since nothing reads one', () => {
     renderProbe()
-    await user.click(screen.getByText('setHoverIndex'))
-    expect(screen.getByText('hoverIndex:7')).toBeInTheDocument()
+    expect(screen.getByText(/^keys:/).textContent).toBe(
+      'keys:enabledMetrics,enabledStats,setXMode,setZoomDomain,toggleMetric,toggleStat,xMode,zoomDomain',
+    )
   })
 
   it('throws a clear error when used outside a provider', () => {
