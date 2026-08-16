@@ -1,18 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import {
+  CONTEXT_MARGIN,
   clampDomain,
   extentOf,
   fractionOfValue,
   fullDomain,
   isFullDomain,
   minSpanFor,
+  moveWindowEdge,
   panByFraction,
-  pinchDomain,
   resolveDomain,
+  sameDomain,
   snapToFull,
-  solveAnchoredDomain,
+  toWindowDelta,
   valueAtFraction,
-  zoomAtFraction,
+  viewDomainFor,
+  windowFractions,
 } from './zoomDomain.js'
 
 describe('fullDomain / isFullDomain', () => {
@@ -110,6 +113,27 @@ describe('resolveDomain', () => {
   })
 })
 
+describe('sameDomain', () => {
+  it('holds for the sentinel pair, which is a fresh array every time', () => {
+    expect(sameDomain(fullDomain(), fullDomain())).toBe(true)
+  })
+
+  it('compares numeric pairs element-wise rather than by reference', () => {
+    expect(sameDomain([10, 20], [10, 20])).toBe(true)
+    expect(sameDomain([10, 20], [10, 21])).toBe(false)
+  })
+
+  it('never says two different KINDS of domain are the same', () => {
+    expect(sameDomain(fullDomain(), [0, 100])).toBe(false)
+  })
+
+  it('is total: null and non-arrays are just not equal to anything but themselves', () => {
+    expect(sameDomain(null, null)).toBe(true)
+    expect(sameDomain([10, 20], null)).toBe(false)
+    expect(sameDomain(undefined, [10, 20])).toBe(false)
+  })
+})
+
 describe('valueAtFraction / fractionOfValue', () => {
   const domain = /** @type {[number, number]} */ ([20, 60])
 
@@ -130,81 +154,6 @@ describe('valueAtFraction / fractionOfValue', () => {
   it('answers 0 for a zero-width domain instead of NaN or Infinity', () => {
     expect(fractionOfValue(5, [5, 5])).toBe(0)
     expect(Number.isFinite(fractionOfValue(9, [5, 5]))).toBe(true)
-  })
-})
-
-describe('solveAnchoredDomain', () => {
-  // THIS is the specification of the gesture: whatever window comes back must
-  // put both captured values back under both fingers. Every other property of
-  // zooming follows from it.
-  it('puts both anchored values back under their fingers (anchor invariance)', () => {
-    const cases = [
-      { f1: 0.25, f2: 0.75, f1b: 0.125, f2b: 0.875 }, // pinch out
-      { f1: 0.25, f2: 0.75, f1b: 0.4, f2b: 0.6 }, // pinch in
-      { f1: 0.1, f2: 0.9, f1b: 0.3, f2b: 0.95 }, // asymmetric
-      { f1: 0.25, f2: 0.75, f1b: 0.375, f2b: 0.875 }, // pure translation
-    ]
-    const start = /** @type {[number, number]} */ ([0, 100])
-
-    for (const { f1, f2, f1b, f2b } of cases) {
-      const v1 = valueAtFraction(f1, start)
-      const v2 = valueAtFraction(f2, start)
-      const result = solveAnchoredDomain({ value: v1, fraction: f1b }, { value: v2, fraction: f2b })
-      expect(result).not.toBeNull()
-      expect(valueAtFraction(f1b, result)).toBeCloseTo(v1, 9)
-      expect(valueAtFraction(f2b, result)).toBeCloseTo(v2, 9)
-    }
-  })
-
-  it('narrows the window when the fingers spread apart', () => {
-    const result = solveAnchoredDomain({ value: 25, fraction: 0.125 }, { value: 75, fraction: 0.875 })
-    expect(result[1] - result[0]).toBeLessThan(100)
-  })
-
-  it('widens the window when the fingers come together', () => {
-    const result = solveAnchoredDomain({ value: 25, fraction: 0.4 }, { value: 75, fraction: 0.6 })
-    expect(result[1] - result[0]).toBeGreaterThan(100)
-  })
-
-  // Documents the §B1 decision that two-finger pan is not a separate gesture:
-  // it is what this solve already does when both fractions shift together.
-  // Deleting the property would not fail any other test here, so it gets one
-  // of its own.
-  it('pans for free: shifting both fingers equally translates the window at identical width', () => {
-    const domain = /** @type {[number, number]} */ ([20, 60])
-    const f1 = 0.25
-    const f2 = 0.75
-    const shift = 0.125
-    const result = solveAnchoredDomain(
-      { value: valueAtFraction(f1, domain), fraction: f1 + shift },
-      { value: valueAtFraction(f2, domain), fraction: f2 + shift },
-    )
-    expect(result[1] - result[0]).toBeCloseTo(40, 9) // width bit-identical
-    expect(result[0]).toBeCloseTo(15, 9)
-    expect(result[1]).toBeCloseTo(55, 9)
-  })
-
-  it('returns null for crossed fingers rather than flipping the chart inside out', () => {
-    // Signed separation: the pointers are ordered by their START fraction, so
-    // dragging them past each other gives a negative df. Holding the last good
-    // domain beats inverting the axis mid-gesture.
-    expect(solveAnchoredDomain({ value: 25, fraction: 0.8 }, { value: 75, fraction: 0.2 })).toBeNull()
-  })
-
-  it('returns null for coincident or near-coincident fingers instead of Infinity', () => {
-    expect(solveAnchoredDomain({ value: 25, fraction: 0.5 }, { value: 75, fraction: 0.5 })).toBeNull()
-    expect(solveAnchoredDomain({ value: 25, fraction: 0.5 }, { value: 75, fraction: 0.51 })).toBeNull()
-  })
-
-  it('returns null when a value would give a non-positive width', () => {
-    expect(solveAnchoredDomain({ value: 75, fraction: 0.25 }, { value: 25, fraction: 0.75 })).toBeNull()
-  })
-
-  it('is total: any NaN or missing pointer gives null, never a throw', () => {
-    expect(solveAnchoredDomain({ value: NaN, fraction: 0.25 }, { value: 75, fraction: 0.75 })).toBeNull()
-    expect(solveAnchoredDomain({ value: 25, fraction: NaN }, { value: 75, fraction: 0.75 })).toBeNull()
-    expect(solveAnchoredDomain(null, { value: 75, fraction: 0.75 })).toBeNull()
-    expect(solveAnchoredDomain(undefined, undefined)).toBeNull()
   })
 })
 
@@ -285,76 +234,6 @@ describe('snapToFull', () => {
   })
 })
 
-describe('pinchDomain', () => {
-  const extent = /** @type {[number, number]} */ ([0, 100])
-
-  it('snaps back to the sentinel when pinched out past the full extent', () => {
-    // Pinching OUT is fingers coming together while holding values far apart:
-    // 80 units of data squeezed into a tenth of the plot implies a 800-wide
-    // window. Proves snap composes after clamp — the solve overshoots, clamp
-    // pins it to the extent, and snap turns that back into "unzoomed".
-    const result = pinchDomain({ value: 10, fraction: 0.45 }, { value: 90, fraction: 0.55 }, extent)
-    expect(result).toEqual(fullDomain())
-  })
-
-  it('stops at the max-zoom floor when pinched in past it', () => {
-    const result = pinchDomain({ value: 49.9, fraction: 0.01 }, { value: 50.1, fraction: 0.99 }, extent)
-    expect(result[1] - result[0]).toBeCloseTo(minSpanFor(100), 9)
-  })
-
-  it('produces a real intermediate zoom that keeps both anchors under both fingers', () => {
-    const result = pinchDomain({ value: 25, fraction: 0.125 }, { value: 75, fraction: 0.875 }, extent)
-    expect(valueAtFraction(0.125, result)).toBeCloseTo(25, 6)
-    expect(valueAtFraction(0.875, result)).toBeCloseTo(75, 6)
-  })
-
-  it('passes null straight through for an unusable frame', () => {
-    expect(pinchDomain({ value: 25, fraction: 0.8 }, { value: 75, fraction: 0.2 }, extent)).toBeNull()
-  })
-})
-
-describe('zoomAtFraction', () => {
-  const extent = /** @type {[number, number]} */ ([0, 100])
-
-  it('holds the left edge still at fraction 0', () => {
-    expect(zoomAtFraction([0, 40], extent, 0, 0.5)).toEqual([0, 20])
-  })
-
-  it('holds the right edge still at fraction 1', () => {
-    expect(zoomAtFraction([20, 60], extent, 1, 0.5)).toEqual([40, 60])
-  })
-
-  it('holds the midpoint still at fraction 0.5', () => {
-    const result = zoomAtFraction([20, 60], extent, 0.5, 0.5)
-    expect((result[0] + result[1]) / 2).toBeCloseTo(40, 9)
-    expect(result[1] - result[0]).toBeCloseTo(20, 9)
-  })
-
-  it('zooms out from the sentinel without needing it resolved first', () => {
-    expect(zoomAtFraction(fullDomain(), extent, 0.5, 0.5)).toEqual([25, 75])
-  })
-
-  it('widens without snapping while the result still fits inside the extent', () => {
-    expect(zoomAtFraction([40, 60], extent, 0.5, 4)).toEqual([10, 90])
-  })
-
-  it('clamps to the extent AND returns the sentinel when zoomed out past full', () => {
-    // 20 × 8 = 160, wider than the 100-unit activity.
-    expect(zoomAtFraction([40, 60], extent, 0.5, 8)).toEqual(fullDomain())
-  })
-
-  it('respects the max-zoom floor', () => {
-    const result = zoomAtFraction([49, 51], extent, 0.5, 0.1)
-    expect(result[1] - result[0]).toBeCloseTo(minSpanFor(100), 9)
-  })
-
-  it('is total: a non-finite fraction or scale gives null', () => {
-    expect(zoomAtFraction([0, 40], extent, NaN, 0.5)).toBeNull()
-    expect(zoomAtFraction([0, 40], extent, 0.5, NaN)).toBeNull()
-    expect(zoomAtFraction([0, 40], extent, 0.5, 0)).toBeNull()
-  })
-})
-
 describe('panByFraction', () => {
   const extent = /** @type {[number, number]} */ ([0, 100])
 
@@ -403,5 +282,143 @@ describe('panByFraction', () => {
     expect(panByFraction([20, 60], extent, NaN)).toBeNull()
     expect(panByFraction([20, 60], extent, Infinity)).toBeNull()
     expect(panByFraction([20, 60], extent, 0)).toBeNull()
+  })
+})
+
+describe('viewDomainFor', () => {
+  const extent = /** @type {[number, number]} */ ([0, 100])
+
+  it('pads the window by CONTEXT_MARGIN of its own span on each side', () => {
+    // 40-wide window → 10 of shoulder each side at the default 0.25.
+    expect(viewDomainFor([40, 80], extent)).toEqual([30, 90])
+    expect(CONTEXT_MARGIN).toBe(0.25)
+  })
+
+  it('clamps against the extent, so a shoulder exists only where data does', () => {
+    // Pinned to the start: no left shoulder at all, full right shoulder.
+    expect(viewDomainFor([0, 40], extent)).toEqual([0, 50])
+    expect(viewDomainFor([60, 100], extent)).toEqual([50, 100])
+  })
+
+  it('passes the sentinel straight through, so unzoomed plots exactly what it did', () => {
+    expect(isFullDomain(viewDomainFor(fullDomain(), extent))).toBe(true)
+  })
+
+  it('returns the sentinel once the padded view covers the whole activity', () => {
+    // A window nearly the full width pads out past both edges; snapToFull is
+    // what keeps "unzoomed" to one representation and hides the reset control.
+    expect(isFullDomain(viewDomainFor([1, 99], extent))).toBe(true)
+  })
+
+  it('is total: no extent, a garbage extent or a garbage margin all yield something usable', () => {
+    expect(isFullDomain(viewDomainFor([10, 20], null))).toBe(true)
+    expect(isFullDomain(viewDomainFor([10, 20], [5, 5]))).toBe(true)
+    expect(isFullDomain(viewDomainFor([10, 20], [NaN, 100]))).toBe(true)
+    // A garbage margin degrades to no padding rather than to NaN bounds.
+    expect(viewDomainFor([40, 80], extent, NaN)).toEqual([40, 80])
+  })
+})
+
+describe('windowFractions', () => {
+  const extent = /** @type {[number, number]} */ ([0, 100])
+
+  it('reports where the window sits across the plotted view', () => {
+    // Window [40,80] inside view [30,90]: 10/60 and 50/60.
+    const [f0, f1] = windowFractions([40, 80], [30, 90], extent)
+    expect(f0).toBeCloseTo(1 / 6, 9)
+    expect(f1).toBeCloseTo(5 / 6, 9)
+  })
+
+  it('agrees with viewDomainFor: an unclamped window always sits at 1/6 … 5/6', () => {
+    // The property §2.2's runaway argument depends on — the handles are at a
+    // FIXED plot fraction whenever the shoulders are unclamped, which is why
+    // the view has to be frozen during a drag.
+    const win = /** @type {[number, number]} */ ([40, 80])
+    const [f0, f1] = windowFractions(win, viewDomainFor(win, extent), extent)
+    expect(f0).toBeCloseTo(1 / 6, 9)
+    expect(f1).toBeCloseTo(5 / 6, 9)
+  })
+
+  it('is asymmetric when a shoulder is clamped away', () => {
+    const win = /** @type {[number, number]} */ ([0, 40])
+    expect(windowFractions(win, viewDomainFor(win, extent), extent)).toEqual([0, 0.8])
+  })
+
+  it('resolves a SENTINEL view rather than short-circuiting on it', () => {
+    // A reachable state, not a curiosity: a window wider than ⅔ of the activity
+    // pads out past both ends, so snapToFull hands back the sentinel view while
+    // the window inside it is still a real zoom with shoulders to draw. Short-
+    // circuiting here would park both handles on the plot edges while the Reset
+    // control was still on screen.
+    expect(windowFractions([10, 90], fullDomain(), extent)).toEqual([0.1, 0.9])
+  })
+
+  it('is [0, 1] whenever there is no zoom to describe', () => {
+    expect(windowFractions(fullDomain(), fullDomain(), extent)).toEqual([0, 1])
+    expect(windowFractions(fullDomain(), [30, 90], extent)).toEqual([0, 1])
+    expect(windowFractions([40, 80], [30, 90], null)).toEqual([0, 1])
+    expect(windowFractions([40, 80], [50, 50], extent)).toEqual([0, 1])
+  })
+})
+
+describe('toWindowDelta', () => {
+  it('scales travel by the window\'s share of the plot, so a swipe stays 1:1', () => {
+    // An eighth of the plot is an eighth of the VIEW, which is 3/16 of a window
+    // occupying ⅔ of it — panByFraction multiplies by the window's span, so it
+    // has to be handed the larger number.
+    expect(toWindowDelta(0.125, [1 / 6, 5 / 6])).toBeCloseTo(0.1875, 9)
+  })
+
+  it('has no offset term, unlike toWindowFraction — a translation has no origin', () => {
+    expect(toWindowDelta(0, [1 / 6, 5 / 6])).toBe(0)
+    expect(toWindowDelta(-0.125, [1 / 6, 5 / 6])).toBeCloseTo(-0.1875, 9)
+  })
+
+  it('is the identity when unzoomed, and total otherwise', () => {
+    expect(toWindowDelta(0.125, [0, 1])).toBe(0.125)
+    expect(toWindowDelta(0.125, [0.5, 0.5])).toBe(0.125)
+    expect(toWindowDelta(0.125, null)).toBe(0.125)
+  })
+})
+
+describe('moveWindowEdge', () => {
+  const extent = /** @type {[number, number]} */ ([0, 100])
+  const view = /** @type {[number, number]} */ ([30, 90])
+
+  it('moves the named edge and leaves the other one exactly where it was', () => {
+    expect(moveWindowEdge([40, 80], 'start', 50, view, extent)).toEqual([50, 80])
+    expect(moveWindowEdge([40, 80], 'end', 70, view, extent)).toEqual([40, 70])
+  })
+
+  it('clamps into the VIEW, not the extent — the handle cannot leave the plot', () => {
+    expect(moveWindowEdge([40, 80], 'start', 0, view, extent)).toEqual([30, 80])
+    expect(moveWindowEdge([40, 80], 'end', 200, view, extent)).toEqual([40, 90])
+  })
+
+  it('holds the min-span floor instead of letting the edges cross', () => {
+    const minSpan = minSpanFor(100)
+    // Dragging start past end stops one floor short of it, both ways.
+    expect(moveWindowEdge([40, 80], 'start', 95, view, extent, { minSpan })).toEqual([80 - minSpan, 80])
+    expect(moveWindowEdge([40, 80], 'end', 10, view, extent, { minSpan })).toEqual([40, 40 + minSpan])
+  })
+
+  it('snaps back to the sentinel when an edge is dragged out to the full extent', () => {
+    // Which is how the Reset control disappears — by the rule it already
+    // follows, rather than by a rule of this function's own.
+    expect(isFullDomain(moveWindowEdge([0, 60], 'end', 100, extent, extent))).toBe(true)
+    expect(isFullDomain(moveWindowEdge([40, 100], 'start', 0, extent, extent))).toBe(true)
+  })
+
+  it('treats a sentinel window as the whole extent, so a first drag works', () => {
+    // Unzoomed, both handles are parked on the plot edges; dragging one is how
+    // a trim is started.
+    expect(moveWindowEdge(fullDomain(), 'start', 25, fullDomain(), extent)).toEqual([25, 100])
+  })
+
+  it('is total: no extent, a degenerate view or a non-finite value never throws or yields NaN', () => {
+    expect(isFullDomain(moveWindowEdge([40, 80], 'start', 50, view, null))).toBe(true)
+    expect(moveWindowEdge([40, 80], 'start', NaN, view, extent)).toEqual([40, 80])
+    expect(moveWindowEdge([40, 80], 'start', 50, [50, 50], extent)).toEqual([40, 80])
+    expect(moveWindowEdge([40, 80], 'start', 50, view, extent, { minSpan: NaN })).toEqual([50, 80])
   })
 })

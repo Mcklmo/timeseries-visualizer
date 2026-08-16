@@ -1,7 +1,12 @@
-// All the arithmetic behind pinch-to-zoom. No React, no DOM, no pixels — the
-// hook (ui/usePinchZoom.js) converts fingers into fractions across the plot
-// and hands them here; everything about *what window we end up looking at*
-// lives in this file, where it can be tested as plain functions.
+// All the arithmetic behind the zoom window. No React, no DOM, no pixels — the
+// hooks (ui/useEdgeDrag.js for the drag that zooms, ui/useWheelPan.js for the
+// sideways pan) convert pointers into fractions across the plot and hand them
+// here; everything about *what window we end up looking at* lives in this file,
+// where it can be tested as plain functions.
+//
+// This module used to carry a two-pointer anchored solve as well, for the pinch
+// and ctrl/⌘+wheel gestures. Those were deleted, along with everything only they
+// used; ui/useWheelPan.js's header records why.
 //
 // This is also the single definition of "unzoomed": zoomDomain (§10) is a
 // Recharts domain, and its unzoomed value is the sentinel pair
@@ -11,8 +16,8 @@
 // representation ever does.
 //
 // Every export here is total: garbage in yields a usable domain or null, never
-// a throw and never NaN. The hook runs these on every animation frame of a
-// live gesture, where a thrown error would leave the chart wedged mid-pinch.
+// a throw and never NaN. The hooks run these on every animation frame of a
+// live gesture, where a thrown error would leave the chart wedged mid-drag.
 
 /** The unzoomed x-domain. A factory, not a shared constant: the array goes
  *  straight into Recharts as a prop, and a shared one would be aliased into
@@ -77,6 +82,19 @@ export function resolveDomain(domain, fullExtent) {
   return start <= end ? [start, end] : [end, start]
 }
 
+/** Are these the same domain? Reference equality first, then element-wise, so
+ *  it holds for the sentinel pair as well as for numbers. Both hooks dedupe
+ *  their per-frame emissions with it: a gesture frame that solves to the domain
+ *  already on screen must not write state, because that re-renders every panel.
+ *  @param {unknown} a
+ *  @param {unknown} b
+ *  @returns {boolean} */
+export function sameDomain(a, b) {
+  if (a === b) return true
+  if (!Array.isArray(a) || !Array.isArray(b)) return false
+  return a[0] === b[0] && a[1] === b[1]
+}
+
 /** Value at a fraction across a domain. Deliberately unclamped: a finger can
  *  land on the y-axis strip, which is a negative fraction, and extrapolating
  *  there is the honest answer — clamping would lie about where the finger is
@@ -99,53 +117,8 @@ export function fractionOfValue(value, domain) {
   return (value - domain[0]) / span
 }
 
-// Two fingers less than this far apart (as a fraction of plot width) can't
-// specify a window: the solve divides by their separation, so a near-zero
-// denominator turns finger tremor into enormous jumps in span.
-const MIN_FRACTION_SEPARATION = 0.02
-
-/** How far in the deepest pinch can go, as a multiple of the full span. */
+/** How far in the deepest zoom can go, as a multiple of the full span. */
 export const MAX_ZOOM = 50
-
-/**
- * The two-pointer anchored solve — the heart of the gesture.
- *
- * Each pointer carries the x `value` that sat under it when the gesture
- * started, plus its live `fraction` across the plot. The window we want is the
- * one that puts both values back under both fingers, i.e. solving
- * `start + f·width = value` for both pointers at once:
- *
- *   width = (b.value - a.value) / (b.fraction - a.fraction)
- *   start = a.value - a.fraction · width
- *
- * Two-finger *pan* falls out of this for free and is not a separate gesture:
- * shift both fractions by δ and the denominator is unchanged, so `width` is
- * bit-identical and the window simply translates by −δ·width. Panning and
- * zooming therefore compose continuously within one gesture. There is a unit
- * test pinning this so nobody "simplifies" it away.
- *
- * @param {{value: number, fraction: number}} a - pointer with the lower start fraction
- * @param {{value: number, fraction: number}} b
- * @returns {[number, number] | null} null for any frame that can't specify a window
- */
-export function solveAnchoredDomain(a, b) {
-  if (!a || !b) return null
-  if (![a.value, a.fraction, b.value, b.fraction].every(Number.isFinite)) return null
-
-  // SIGNED, not absolute. Pointers arrive ordered by their *start* fraction,
-  // so crossed fingers give a negative df. Returning null there (rather than
-  // swapping them) means the hook keeps holding the last good domain instead
-  // of flipping the chart inside out mid-gesture.
-  const df = b.fraction - a.fraction
-  if (df < MIN_FRACTION_SEPARATION) return null
-
-  const width = (b.value - a.value) / df
-  if (!Number.isFinite(width) || width <= 0) return null
-
-  const start = a.value - a.fraction * width
-  if (!Number.isFinite(start)) return null
-  return [start, start + width]
-}
 
 /**
  * The narrowest window we'll allow, as a fraction of the full span.
@@ -175,8 +148,8 @@ export function minSpanFor(fullSpan, maxZoom = MAX_ZOOM) {
  * @param {[number, number]} domain
  * @param {[number, number]} fullExtent
  * @param {{minSpan?: number, anchorFraction?: number}} [opts] anchorFraction is
- *   the pinch centre — where in the window to hold still if the span has to
- *   change out from under the user.
+ *   where in the window to hold still if the span has to change out from under
+ *   the user.
  * @returns {[number, number]}
  */
 export function clampDomain(domain, fullExtent, { minSpan = 0, anchorFraction = 0.5 } = {}) {
@@ -194,7 +167,7 @@ export function clampDomain(domain, fullExtent, { minSpan = 0, anchorFraction = 
   if (span > fullSpan) span = fullSpan
 
   if (span !== end - start) {
-    // Re-anchor about the pinch centre instead of pinning `start`. Pinning it
+    // Re-anchor about that fraction instead of pinning `start`. Pinning it
     // makes the window visibly walk leftward on every frame the user keeps
     // pushing past the limit, which reads as the chart drifting under a
     // stationary finger.
@@ -234,51 +207,167 @@ export function snapToFull(domain, fullExtent, eps = 1e-6) {
   return domain
 }
 
-/**
- * solve → clamp → snap. What the pinch path calls once per animation frame.
- *
- * @param {{value: number, fraction: number}} a
- * @param {{value: number, fraction: number}} b
- * @param {[number, number]} fullExtent
- * @param {{maxZoom?: number}} [opts]
- * @returns {[number, number] | ['dataMin', 'dataMax'] | null}
- */
-export function pinchDomain(a, b, fullExtent, { maxZoom = MAX_ZOOM } = {}) {
-  const solved = solveAnchoredDomain(a, b)
-  if (solved === null) return null
-  const fullSpan = fullExtent[1] - fullExtent[0]
-  const clamped = clampDomain(solved, fullExtent, {
-    minSpan: minSpanFor(fullSpan, maxZoom),
-    anchorFraction: (a.fraction + b.fraction) / 2,
-  })
-  return snapToFull(clamped, fullExtent)
+// ── The window and the view ────────────────────────────────────────────────
+//
+// Zooming used to plot exactly the window, so everything outside it was clipped
+// away and nothing on the chart said where the window's edges were. The plotted
+// range is now the window PLUS a context margin on each side; the margin draws
+// faded (ui/ZoomWindowOverlay.jsx), so a zoom is legible on the chart itself.
+//
+//   zoomDomain — THE WINDOW. Unchanged meaning, unchanged name, so everything
+//                downstream of it (stats/statsBasis.js, the header's duration,
+//                MapPanel's bright segment, the reset control) is untouched.
+//   viewDomain — WHAT IS PLOTTED: the window padded by CONTEXT_MARGIN each
+//                side and clamped into fullExtent. Every <XAxis domain> reads
+//                this one.
+//
+// Unzoomed stays byte-identical: the sentinel window yields the sentinel view,
+// shoulders of zero width, and an identity fraction remap in the gesture.
+
+/** Shoulder width on each side, as a fraction of the window's span. */
+export const CONTEXT_MARGIN = 0.25
+
+/** True only for a usable numeric extent. Everything below is total, and every
+ *  one of them starts by asking this. */
+function usableExtent(fullExtent) {
+  if (!Array.isArray(fullExtent) || fullExtent.length !== 2) return false
+  const span = fullExtent[1] - fullExtent[0]
+  return Number.isFinite(span) && span > 0
+}
+
+/** [0,1] clamp. Inlined rather than imported from ui/chartGeometry.js on
+ *  purpose: this module has no imports at all, and pixels have no business
+ *  here. */
+function clamp01(fraction) {
+  if (!Number.isFinite(fraction)) return 0
+  return Math.min(1, Math.max(0, fraction))
 }
 
 /**
- * Single-anchor variant: hold the value at `fraction` still and scale the span
- * by `scale` about it. What the ctrl/⌘+wheel path calls.
+ * The range to plot for a given window: the window padded by `margin` of its own
+ * span each side, clamped into the extent.
  *
- * @param {unknown} domain - current zoomDomain, sentinel or numeric
- * @param {[number, number]} fullExtent
- * @param {number} fraction - where the cursor sits across the plot
- * @param {number} scale - <1 zooms in, >1 zooms out
- * @param {{maxZoom?: number}} [opts]
- * @returns {[number, number] | ['dataMin', 'dataMax'] | null}
+ * A SHOULDER EXISTS ONLY WHERE DATA EXISTS. With the window pinned against the
+ * start of the activity the clamp bites and the left shoulder is zero width —
+ * the honest picture, and what keeps "window == full extent" from ever drawing
+ * as though there were more activity beyond the edge.
+ *
+ * Note what this does to the effective on-screen magnification: the view is
+ * (1 + 2·margin) = 1.5× the window, so the deepest visible magnification is
+ * MAX_ZOOM / 1.5 ≈ 33×. MAX_ZOOM stays 50 — it caps the WINDOW, which is the
+ * quantity minSpanFor documents itself as bounding and the quantity the stats
+ * and the header duration report on.
+ *
+ * @param {unknown} zoomDomain - the window, sentinel or numeric
+ * @param {[number, number] | null} fullExtent
+ * @param {number} [margin]
+ * @returns {[number, number] | ['dataMin', 'dataMax']}
  */
-export function zoomAtFraction(domain, fullExtent, fraction, scale, { maxZoom = MAX_ZOOM } = {}) {
-  if (!Number.isFinite(fraction) || !Number.isFinite(scale) || scale <= 0) return null
-  const current = resolveDomain(domain, fullExtent)
-  const anchorValue = valueAtFraction(fraction, current)
-  const span = (current[1] - current[0]) * scale
-  if (!Number.isFinite(span) || span <= 0) return null
+export function viewDomainFor(zoomDomain, fullExtent, margin = CONTEXT_MARGIN) {
+  if (isFullDomain(zoomDomain) || !usableExtent(fullExtent)) return fullDomain()
+  const [fullMin, fullMax] = fullExtent
+  const pad = Number.isFinite(margin) && margin > 0 ? margin : 0
+  const [start, end] = resolveDomain(zoomDomain, fullExtent)
+  const shoulder = (end - start) * pad
+  const view = [Math.max(fullMin, start - shoulder), Math.min(fullMax, end + shoulder)]
+  return snapToFull(view, fullExtent)
+}
 
-  const start = anchorValue - fraction * span
-  const fullSpan = fullExtent[1] - fullExtent[0]
-  const clamped = clampDomain([start, start + span], fullExtent, {
-    minSpan: minSpanFor(fullSpan, maxZoom),
-    anchorFraction: fraction,
-  })
-  return snapToFull(clamped, fullExtent)
+/**
+ * Where the window's two edges sit across the plotted view, as fractions.
+ *
+ * TWO CONSUMERS, DELIBERATELY ONE FUNCTION: the overlay positions its shoulders
+ * and handles from these, and useWheelPan re-expresses a swipe's plot travel
+ * against the window with them. Two derivations would be free to disagree, and
+ * the symptom would be a handle that does not sit where the drag thinks it
+ * does.
+ *
+ * Only the WINDOW's sentinel short-circuits to [0, 1]. A sentinel VIEW is
+ * resolved like any other domain, because it is a real and reachable state: a
+ * window wider than 1/(1 + 2·margin) of the activity pads out past both ends and
+ * snapToFull turns the view back into the sentinel, while the window inside it
+ * is still a genuine zoom with shoulders to draw.
+ *
+ * @param {unknown} zoomDomain - the window
+ * @param {unknown} viewDomain - what is plotted
+ * @param {[number, number] | null} fullExtent
+ * @returns {[number, number]} [0, 1] whenever there is no zoom to describe
+ */
+export function windowFractions(zoomDomain, viewDomain, fullExtent) {
+  if (isFullDomain(zoomDomain) || !usableExtent(fullExtent)) return [0, 1]
+  const view = resolveDomain(viewDomain, fullExtent)
+  if (view[1] - view[0] <= 0) return [0, 1]
+  const win = resolveDomain(zoomDomain, fullExtent)
+  return [clamp01(fractionOfValue(win[0], view)), clamp01(fractionOfValue(win[1], view))]
+}
+
+/**
+ * Re-express travel across the PLOT as travel across the WINDOW — what the
+ * trackpad pan needs.
+ *
+ * A DISTANCE, not a position, which is why it divides by the window's share of
+ * the plot and does not subtract an origin: a translation has no origin.
+ * Without this, a swipe would move the content by the window's share of the
+ * plot (⅔ of the finger's travel at the default margin) instead of 1:1, which
+ * is the property panByFraction's own comment says it exists to hold. Unzoomed
+ * the fractions are [0, 1] and this is the identity.
+ *
+ * @param {number} plotDelta - travel as a fraction of the PLOT's width
+ * @param {[number, number]} fractions - from windowFractions
+ * @returns {number} travel as a fraction of the WINDOW's width
+ */
+export function toWindowDelta(plotDelta, fractions) {
+  if (!Array.isArray(fractions) || !Number.isFinite(plotDelta)) return plotDelta
+  const span = fractions[1] - fractions[0]
+  if (!Number.isFinite(span) || span <= 0) return plotDelta
+  return plotDelta / span
+}
+
+/**
+ * Put one edge of the window at `value` — what dragging a handle solves.
+ *
+ * The edge is clamped into the VIEW rather than into the extent, because the
+ * view is what is on screen and the handle cannot be dragged past it. The other
+ * edge does not move. snapToFull at the end is what makes dragging an edge all
+ * the way back out restore the sentinel, so the Reset control disappears by the
+ * rule it already follows rather than by a rule of this function's own.
+ *
+ * @param {unknown} zoomDomain - the current window
+ * @param {'start' | 'end'} edge
+ * @param {number} value
+ * @param {unknown} viewDomain - the plotted range the drag happens inside
+ * @param {[number, number] | null} fullExtent
+ * @param {{minSpan?: number}} [opts]
+ * @returns {[number, number] | ['dataMin', 'dataMax']}
+ */
+export function moveWindowEdge(zoomDomain, edge, value, viewDomain, fullExtent, { minSpan = 0 } = {}) {
+  if (!usableExtent(fullExtent)) return fullDomain()
+  const view = resolveDomain(viewDomain, fullExtent)
+  const current = resolveDomain(zoomDomain, fullExtent)
+  const viewSpan = view[1] - view[0]
+  if (!Number.isFinite(value) || viewSpan <= 0) return snapToFull(current, fullExtent)
+
+  // Never wider than the view can hold, so an activity shorter than the floor
+  // stays draggable rather than pinning both edges — same ordering rule as
+  // clampDomain, where fullSpan wins over minSpan.
+  const floor = Number.isFinite(minSpan) && minSpan > 0 ? Math.min(minSpan, viewSpan) : 0
+  const target = Math.min(view[1], Math.max(view[0], value))
+
+  let [start, end] = current
+  if (edge === 'start') {
+    start = Math.min(target, end - floor)
+    if (start < view[0]) {
+      start = view[0]
+      end = Math.min(view[1], Math.max(end, start + floor))
+    }
+  } else {
+    end = Math.max(target, start + floor)
+    if (end > view[1]) {
+      end = view[1]
+      start = Math.max(view[0], Math.min(start, end - floor))
+    }
+  }
+  return snapToFull([start, end], fullExtent)
 }
 
 /**

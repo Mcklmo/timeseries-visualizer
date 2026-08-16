@@ -38,7 +38,7 @@ export function StatsBasisProvider({ children }) {
   // gesture the deferred value therefore never commits at all — it settles
   // when the fingers pause, not a frame later.
   //
-  // fullExtent stays OFF the deferred path on purpose: usePinchZoom reads it
+  // fullExtent stays OFF the deferred path on purpose: useEdgeDrag reads it
   // every animation frame of a live gesture, so it is memoized on
   // samples/xKey and never on zoomDomain.
   const statsZoomDomain = useDeferredValue(zoomDomain)

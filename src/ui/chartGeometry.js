@@ -29,6 +29,15 @@ export const Y_AXIS_RIGHT_WIDTH = 44
 /** Fed to <LineChart margin>. */
 export const CHART_MARGIN = { top: 8, right: 12, bottom: 16, left: 4 }
 
+/** Height of the x-axis band, fed to <XAxis height> on the panel that shows one.
+ *  This is Recharts' own default made explicit, so it changes nothing about the
+ *  layout — it exists to be READ. ui/ZoomWindowOverlay.jsx insets itself by this
+ *  number so the faded shoulders stop at the plot floor instead of dimming the
+ *  tick labels below it, and the same rule as the rest of this module applies:
+ *  the number the chart lays out with and the number the overlay measures with
+ *  are one number. */
+export const X_AXIS_HEIGHT = 30
+
 /**
  * Where the plot area starts, measured in from a panel's left edge: exactly the
  * sum `plotRectFromSurface` subtracts on that side.

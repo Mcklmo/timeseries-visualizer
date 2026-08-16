@@ -44,41 +44,44 @@
 //     `CategoricalChart` passes a fixed prop list and never forwards it.
 //   - Reaching the store directly. Recharts exports read-only hooks only; there
 //     is no public dispatch.
+//
+// The dispatch loop itself lives in ui/crosshairDispatch.js: useEdgeDrag needs
+// the same release, and it cannot get it from here because its own pointerdown
+// lands on a handle OUTSIDE every .recharts-wrapper, which is exactly the case
+// the guard below bails on.
 import { useCallback } from 'react'
+import { releaseOtherHovers } from './crosshairDispatch.js'
 
 export function useTouchHoverHandoff() {
   return useCallback((node) => {
     if (!node) return undefined
 
     function handleTouchStart(e) {
-      // Two or more fingers is a pinch, owned by usePinchZoom — it suppresses
-      // Recharts' tooltip pipeline itself and nothing here should interfere.
+      // Two or more fingers is the browser's page zoom; useTouchScrub keeps
+      // Recharts' tooltip pipeline out of it and nothing here should interfere.
       if (e.touches.length > 1) return
-      const wrappers = [...node.querySelectorAll('.recharts-wrapper')]
       // A touch that lands on chrome rather than on a chart hands the crosshair
       // to nobody, so it releases nobody. The stack contains real controls now
       // — the toolbar row and every panel's head — and without this, tapping a
       // checkbox would clear the readout the previous touch placed, which is
       // the very thing the frozen-after-lift behaviour below exists to keep.
-      if (!wrappers.some((wrapper) => wrapper.contains(e.target))) return
-      for (const wrapper of wrappers) {
-        // The panel being touched keeps its hover: clearing it too would wipe
-        // the readout on a tap that never moves, since no touchmove would
-        // follow to restore it.
-        if (wrapper.contains(e.target)) continue
-        wrapper.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: node }))
-      }
+      // It is also what keeps this hook out of useEdgeDrag's way: a touch on a
+      // zoom handle is outside every wrapper, so the drag does its own release.
+      const touched = [...node.querySelectorAll('.recharts-wrapper')].find((wrapper) => wrapper.contains(e.target))
+      if (!touched) return
+      releaseOtherHovers(node, touched)
     }
 
-    // Capture phase is safe alongside usePinchZoom's handleMultiTouch, which is
-    // registered on this same node with capture and calls stopPropagation() at
-    // ≥2 touches: stopPropagation does not affect other listeners on the same
-    // target, and we bail at >1 touch anyway. `passive` is honest — this
-    // handler never calls preventDefault.
+    // Capture phase is safe alongside useTouchScrub, which is registered on this
+    // same node with capture and calls stopPropagation() at ≥2 touches:
+    // stopPropagation does not affect other listeners on the same target, and we
+    // bail at >1 touch anyway. `passive` is honest — this handler never calls
+    // preventDefault.
     node.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true })
 
     return () => node.removeEventListener('touchstart', handleTouchStart, { capture: true })
-    // A CALLBACK ref, for the same reason as usePinchZoom: ChartStack
+    // A CALLBACK ref, for the same reason as the other hooks on this node:
+    // ChartStack
     // early-returns null before an activity loads, so an effect keyed on []
     // would run once against a div that doesn't exist and never re-run.
   }, [])

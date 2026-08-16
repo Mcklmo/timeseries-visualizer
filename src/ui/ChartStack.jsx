@@ -2,11 +2,20 @@
 // controlled x-domain so panels read as one instrument. See ARCHITECTURE.md
 // §7. It also carries the chart's whole chrome now — the ChartToolbar row
 // above the panels, and, through each panel's head, that graph's own settings.
-// There is no separate settings window any more. Zooming is a two-finger pinch (or ctrl/⌘+scroll) anywhere on the stack,
-// handled by usePinchZoom, which writes the one zoomDomain every panel's XAxis
-// reads — so all panels zoom and pan together by construction.
+// There is no separate settings window any more. Zooming is dragging one of the
+// window's edge handles (useEdgeDrag, drawn by ZoomWindowOverlay) and nothing
+// else; a sideways scroll pans it (useWheelPan). Both write the one zoomDomain
+// every panel's XAxis reads — so all panels zoom and pan together by
+// construction.
 import { useCallback } from 'react'
-import { fullDomain, isFullDomain } from '../domain/zoomDomain.js'
+import {
+  fullDomain,
+  isFullDomain,
+  minSpanFor,
+  moveWindowEdge,
+  viewDomainFor,
+  windowFractions,
+} from '../domain/zoomDomain.js'
 import { derivativeKindFor, isMetricForSport, metricOrder, metricRegistry } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
@@ -16,8 +25,9 @@ import { Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
 import { MapPanel } from './MapPanel.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
-import { usePinchZoom } from './usePinchZoom.js'
+import { useEdgeDrag } from './useEdgeDrag.js'
 import { useTouchHoverHandoff } from './useTouchHoverHandoff.js'
+import { useWheelPan } from './useWheelPan.js'
 import { useTouchScrub } from './useTouchScrub.js'
 
 const FIRST_PANEL_HEIGHT = 200
@@ -44,8 +54,18 @@ const NARROW_MAP_PANEL_HEIGHT = 180
  */
 export function ChartStack({ positionSlot = null }) {
   const { activity } = useActivity()
-  const { xMode, zoomDomain, enabledMetrics, enabledStats, showMap, basemap, setZoomDomain, setBasemap, toggleStat } =
-    useChartView()
+  const {
+    xMode,
+    zoomDomain,
+    viewDomain,
+    enabledMetrics,
+    enabledStats,
+    showMap,
+    basemap,
+    setZoom,
+    setBasemap,
+    toggleStat,
+  } = useChartView()
   const isNarrow = useIsNarrow()
 
   // Both the extent the gesture solves against and the window the chips report
@@ -56,7 +76,7 @@ export function ChartStack({ positionSlot = null }) {
   const { fullExtent, basis: statsBasis } = useStatsBasis()
 
   // Hoisted ABOVE the `if (!activity)` guard, with `activity?.`, because the
-  // gutter width below feeds usePinchZoom and a hook cannot be called
+  // gutter width below feeds the gesture hooks and a hook cannot be called
   // conditionally. Optional chaining rather than a second copy of the filter
   // further down: two copies would be free to disagree about which panels are
   // on screen, and the gutter has to be reserved on exactly the ones that are.
@@ -76,30 +96,72 @@ export function ChartStack({ positionSlot = null }) {
     ? Y_AXIS_RIGHT_WIDTH
     : 0
 
-  const { ref: pinchRef, wheelHint } = usePinchZoom({
+  // ONE derivation of where the window's edges sit across the plot, for the
+  // whole stack: every panel's overlay draws its handles from these, and the
+  // pan re-expresses its travel against them. Two derivations would be free to
+  // disagree, and the symptom would be a handle that does not sit where
+  // dragging it thinks it does.
+  const fractions = windowFractions(zoomDomain, viewDomain, fullExtent)
+
+  const { ref: wheelPanRef } = useWheelPan({
+    // THE WINDOW, still: the pan's arithmetic is all about the window, and
+    // `windowFractions` is the one thing it needs to know about the wider range
+    // now being plotted around it.
     domain: zoomDomain,
+    windowFractions: fractions,
     fullExtent,
-    onZoomChange: setZoomDomain,
+    onZoomChange: (next) => setZoom(next, viewDomainFor(next, fullExtent)),
     rightInset,
   })
   const handoffRef = useTouchHoverHandoff()
   const scrubRef = useTouchScrub({ rightInset })
 
-  // Three callback refs, one node. All three return a React 19 cleanup, so all
-  // three have to be collected and all three have to run — dropping any leaks
-  // its listeners on every remount. All are useCallback(…, []), so this stays
-  // stable too and the listeners are never torn down mid-gesture. Their ORDER
-  // does not matter, even though two of them call stopPropagation():
-  // stopPropagation never affects other listeners on the same target, which is
-  // already why the pinch guard and the handoff coexist here.
+  // Dragging a window edge — the only way to zoom. The view is deliberately NOT
+  // re-fitted per frame: the hook hands back the view the drag is using, which
+  // is the frozen one while the pointer is inside the plot, because a view that
+  // tracked the window live would run away under the pointer. The one exception
+  // is a pointer held at the plot edge, where the hook grows that view itself
+  // and the window with it. Both arguments are in useEdgeDrag.js's header. It
+  // re-fits symmetrically exactly once, on release.
+  const { ref: edgeDragRef, onEdgePointerDown } = useEdgeDrag({
+    zoomDomain,
+    viewDomain,
+    fullExtent,
+    rightInset,
+    onWindowChange: (next, view) => setZoom(next, view),
+    onWindowCommit: (next) => setZoom(next, viewDomainFor(next, fullExtent)),
+  })
+
+  // The keyboard route into the same edit. It solves against the FULL EXTENT
+  // rather than the view — a discrete press is not tracking a pointer, so
+  // nothing constrains it to what is currently on screen, and Home/End would
+  // otherwise stop at the shoulder instead of at the activity's own end.
+  const onEdgeKeyMove = useCallback(
+    (edge, value) => {
+      if (!fullExtent) return
+      const next = moveWindowEdge(zoomDomain, edge, value, fullDomain(), fullExtent, {
+        minSpan: minSpanFor(fullExtent[1] - fullExtent[0]),
+      })
+      setZoom(next, viewDomainFor(next, fullExtent))
+    },
+    [zoomDomain, fullExtent, setZoom],
+  )
+
+  // Four callback refs, one node. All four return a React 19 cleanup, so all
+  // four have to be collected and all four have to run — dropping any leaks its
+  // listeners on every remount. All are useCallback(…, []), so this stays stable
+  // too and the listeners are never torn down mid-gesture. Their ORDER does not
+  // matter, even though two of them call stopPropagation(): stopPropagation
+  // never affects other listeners on the same target, which is already why the
+  // scrub guard and the handoff coexist here.
   const stackRef = useCallback(
     (node) => {
-      const cleanups = [pinchRef(node), handoffRef(node), scrubRef(node)]
+      const cleanups = [wheelPanRef(node), handoffRef(node), scrubRef(node), edgeDragRef(node)]
       return () => {
         for (const cleanup of cleanups) cleanup?.()
       }
     },
-    [pinchRef, handoffRef, scrubRef],
+    [wheelPanRef, handoffRef, scrubRef, edgeDragRef],
   )
 
   if (!activity) return null
@@ -108,20 +170,20 @@ export function ChartStack({ positionSlot = null }) {
     <div
       className="chart-stack"
       ref={stackRef}
-      // Documents the touch gesture as well as the desktop one, and costs
-      // nothing in a screenshot — unlike a permanent hint line under the stack.
+      // THE ONLY IN-PRODUCT DOCUMENTATION OF THE ZOOM, now that there is no
+      // hint line and no gesture to guess at, so it has to name the handles AND
+      // the hold-at-the-edge expansion — that is the half nobody discovers by
+      // trying. Costs nothing in a screenshot, unlike a permanent hint line.
       // role="group" is what makes the aria-label reachable at all: a bare div
       // is `generic`, and an accessible name on a generic element is dropped.
       role="group"
-      title="Pinch, or Ctrl + scroll, to zoom. While zoomed, scroll sideways to pan. Swipe one finger sideways to move the crosshair"
-      aria-label="Activity charts. Pinch, or Ctrl and scroll, to zoom the time axis. While zoomed, scroll sideways to pan. Swipe one finger sideways to move the crosshair, which follows the swipe rather than jumping to the finger."
+      title="Drag the window edges to zoom — hold one at the edge of the plot to keep widening. While zoomed, scroll sideways to pan. Swipe one finger sideways to move the crosshair"
+      aria-label="Activity charts. Drag the window edges to zoom the time axis, trimming the start or end of the activity; the faded shoulders show what is outside the window. Hold an edge against the edge of the plot to keep widening the window back out. While zoomed, scroll sideways to pan. Swipe one finger sideways to move the crosshair, which follows the swipe rather than jumping to the finger."
     >
-      {/* Inside the stack, not in App.jsx, so `touch-action: pan-y` below covers
-          this row too — which is what closed the limit ARCHITECTURE.md §13
-          recorded ("a pinch begun on the ControlPanel still page-zooms"). That
-          is now the only reason: the position slot it used to hold moved to the
-          app header, so reachability from a panel's readout bridge no longer
-          keeps it here. */}
+      {/* Inside the stack so it shares the stack's touch-action and its
+          positioning context. The position slot it used to hold moved to the app
+          header, so reachability from a panel's readout bridge no longer keeps
+          it here. */}
       <ChartToolbar />
       {/* FIRST in the stack, above every chart: the route is the frame the
           numbers below are read inside, and it is also the one panel with no
@@ -134,7 +196,7 @@ export function ChartStack({ positionSlot = null }) {
           activity={activity}
           xMode={xMode}
           zoomDomain={zoomDomain}
-          // The SAME extent usePinchZoom solves against, from one basis above
+          // The SAME extent the edge drag solves against, from one basis above
           // this component, so the bright window and the charts cannot disagree
           // about where the edges of the zoom are.
           fullExtent={fullExtent}
@@ -157,6 +219,11 @@ export function ChartStack({ positionSlot = null }) {
             metricId={metricId}
             xMode={xMode}
             zoomDomain={zoomDomain}
+            viewDomain={viewDomain}
+            windowFractions={fractions}
+            fullExtent={fullExtent}
+            onEdgePointerDown={onEdgePointerDown}
+            onEdgeKeyMove={onEdgeKeyMove}
             statsBasis={statsBasis}
             enabledStats={enabledStats[metricId] ?? []}
             onToggleStat={toggleStat}
@@ -175,26 +242,17 @@ export function ChartStack({ positionSlot = null }) {
           />
         )
       })}
-      {/* With no double-tap and no one-finger pan, unwinding a 50× zoom takes
-          three or four successive pinch-outs — so there is an explicit way
-          back. Rendered only while zoomed, which keeps it out of an idle
-          screenshot, and absolutely positioned over the plot rather than added
-          to the toolbar row above: it acts on what the user is looking at, and
-          a conditional control in that always-present row would change its
-          height and reflow every chart below it on the first pinch. */}
+      {/* An explicit way back, kept even though holding an edge at the plot edge
+          also unwinds a 50× zoom: that takes ~4s and this is instant. Rendered
+          only while zoomed, which keeps it out of an idle screenshot, and
+          absolutely positioned over the plot rather than added to the toolbar
+          row above: it acts on what the user is looking at, and a conditional
+          control in that always-present row would change its height and reflow
+          every chart below it on the first zoom. */}
       {!isFullDomain(zoomDomain) && (
-        <button type="button" className="zoom-reset" onClick={() => setZoomDomain(fullDomain())}>
+        <button type="button" className="zoom-reset" onClick={() => setZoom(fullDomain(), fullDomain())}>
           Reset zoom
         </button>
-      )}
-      {/* Appears exactly when the user's mental model says "I expected that to
-          zoom" — on a plain scroll over the charts — and never again once
-          they've zoomed successfully. A permanent hint line under the stack
-          was rejected: it would be clutter in every screenshot. */}
-      {wheelHint && (
-        <p className="zoom-hint" role="status">
-          Use Ctrl + scroll to zoom
-        </p>
       )}
     </div>
   )

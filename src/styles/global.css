@@ -556,17 +556,20 @@ main {
      positioned over the plot rather than added to the toolbar row — it acts on
      what the user is looking at, and a conditional control in that
      always-present row would change its height and reflow every chart below it
-     on the first pinch. */
+     on the first zoom. */
   position: relative;
-  /* One-finger vertical page scroll still works; pinch is NOT permitted under
-     pan-y, which is exactly what suppresses iOS Safari's own page zoom and
-     leaves the gesture to usePinchZoom. Not inherited, but the effective value
-     is the intersection up the ancestor chain, so this one declaration covers
-     every panel inside — and, since the toolbar and the panel heads moved in
-     here, all of the chart's chrome as well. That closes the limit this comment
-     used to record, where a pinch begun on the ControlPanel page-zoomed because
-     touch-action only governs gestures whose touches START in the element. */
-  touch-action: pan-y;
+  /* One-finger vertical page scroll, plus the BROWSER'S OWN pinch-zoom. The
+     app used to claim that gesture (`pan-y` alone forbids it, which is what
+     suppressed iOS Safari's page zoom) to drive its own pinch-to-zoom. That
+     gesture is gone — the window's edge handles are the only zoom now — so
+     magnifying the page over a chart should work exactly like it does anywhere
+     else on it. Not inherited, but the effective value is the intersection up
+     the ancestor chain, so this one declaration covers every panel inside and,
+     since the toolbar and the panel heads moved in here, all of the chart's
+     chrome as well. `.zoom-handle` below opts back out with `touch-action:
+     none`, which is now what keeps an edge drag from being stolen by this same
+     page gesture. */
+  touch-action: pan-y pinch-zoom;
 }
 
 /* Sits over the top-right of the plot, only while zoomed. Opaque --panel
@@ -593,22 +596,107 @@ main {
   border-color: var(--metric-pace);
 }
 
-/* Transient, and deliberately not interactive: it must never eat the scroll
-   it is a reaction to. */
-.zoom-hint {
+/* The zoom window: faded shoulders on either side of what you zoomed to, and a
+   draggable handle on each boundary. See ui/ZoomWindowOverlay.jsx — the geometry
+   is all percentages of the plot area, so nothing here re-measures anything. */
+
+/* The positioning context. It wraps the chart ALONE, so the overlay's 0% and
+   100% are the chart's own edges rather than the panel's — the head above and
+   the stat chips below must not be inside it. */
+.metric-panel__plot {
+  position: relative;
+}
+
+/* Inset to exactly the plot area: --plot-inset and --plot-right-inset come from
+   JS (the same numbers the gesture subtracts, ui/chartGeometry.js), top and
+   bottom are set inline because the bottom one depends on whether this panel
+   carries the shared x-axis. The same pattern, for the same reason, as
+   .map-panel__canvases above.
+
+   pointer-events: none on the container, auto on the handles only: the shoulders
+   must not eat a hover, so the crosshair still reads the faded part of the
+   trace. */
+.zoom-window {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  margin: 0;
+  inset: 0;
+  margin-left: var(--plot-inset, 0);
+  margin-right: var(--plot-right-inset, 0);
   pointer-events: none;
-  font-size: 14px;
-  color: var(--text);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  border: 1px solid var(--grid);
-  border-radius: var(--radius);
-  padding: 10px 16px;
+  z-index: 1;
+}
+
+/* A wash of the app's own ground over the lines outside the window. Zero-width
+   when unzoomed, which is why the overlay is unconditional. */
+.zoom-window__shoulder {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--zoom-scrim);
+}
+
+/* A 44px hit strip — the touch-target floor .zoom-reset already sets — centred
+   on the boundary, with the visible 1px rule drawn by ::before. touch-action
+   overrides .chart-stack's `pan-y pinch-zoom` so a drag is neither scrolled nor
+   page-zoomed away from us; declarative, so no non-passive touchmove listener
+   is needed anywhere. This is the ONE place on the stack that still takes a
+   gesture off the browser, and it is the only zoom the app has left. */
+.zoom-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* Narrower where the pointer is precise: two 44px strips would otherwise block
+   hovering the line anywhere near an edge, and a mouse does not need the floor. */
+@media (pointer: fine) {
+  .zoom-handle {
+    width: 16px;
+  }
+}
+
+/* The mark itself: a full-height rule so the boundary is visible against the
+   trace it sits on, with a grip block at the top where the hand goes. --text
+   rather than --stat-line, because this is a control and the reference lines
+   are not. */
+.zoom-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--text);
+  opacity: 0.55;
+}
+
+.zoom-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 3px;
+  height: 14px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.zoom-handle:hover::before,
+.zoom-handle:focus-visible::before {
+  opacity: 1;
+}
+
+/* Visible focus, since the handles are the keyboard's only route to the window
+   (arrow keys, Page Up/Down, Home/End — ui/ZoomWindowOverlay.jsx). */
+.zoom-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .metric-panel .recharts-cartesian-axis-tick text,

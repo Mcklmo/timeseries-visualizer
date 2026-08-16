@@ -41,7 +41,7 @@ describe('plotRectFromSurface', () => {
   })
 
   it('defaults rightInset to 0, so a stack with no overlay measures as it always did', () => {
-    // MetricPanel and usePinchZoom both rely on this default: the no-derivative
+    // MetricPanel and the gestures both rely on this default: the no-derivative
     // render has to stay byte-identical to the pre-feature one.
     expect(plotRectFromSurface({ left: 100, width: 800 })).toEqual(
       plotRectFromSurface({ left: 100, width: 800 }, 0),

@@ -41,6 +41,10 @@ const DEFAULT_PROPS = {
   metricId: 'heartRate',
   xMode: 'time',
   zoomDomain: fullDomain(),
+  // The window and the plotted view are separate props now (see
+  // domain/zoomDomain.js). Unzoomed they are the same sentinel, which is the
+  // state almost every test in this file wants.
+  viewDomain: fullDomain(),
   enabledStats: ['avg'],
   showXAxis: true,
   height: 200,
@@ -53,10 +57,9 @@ const DEFAULT_PROPS = {
 function renderPanel(props = {}) {
   const merged = { ...DEFAULT_PROPS, ...props }
   const xKey = merged.xMode === 'distance' ? 'd' : 't'
-  const statsBasis =
-    merged.statsBasis ??
-    statsBasisFor(merged.activity, xKey, merged.zoomDomain, extentOf(merged.activity.samples, xKey))
-  return render(<MetricPanel {...merged} statsBasis={statsBasis} />)
+  const fullExtent = merged.fullExtent ?? extentOf(merged.activity.samples, xKey)
+  const statsBasis = merged.statsBasis ?? statsBasisFor(merged.activity, xKey, merged.zoomDomain, fullExtent)
+  return render(<MetricPanel {...merged} statsBasis={statsBasis} fullExtent={fullExtent} />)
 }
 
 describe('MetricPanel', () => {
@@ -115,8 +118,12 @@ describe('MetricPanel', () => {
   // out to the data extent unless allowDataOverflow is set, so without that
   // prop this axis would still read 0:00–0:40 and every pinch in the app
   // would do nothing at all — with no error anywhere.
-  it('narrows the x-axis to a numeric zoomDomain (allowDataOverflow, or the domain is ignored)', () => {
-    const { container } = renderPanel({ zoomDomain: [10, 30] })
+  //
+  // It is the VIEW that is asserted here, not the window: the plot draws the
+  // window plus its faded shoulders, and the window is what the overlay and the
+  // stats report on.
+  it('narrows the x-axis to a numeric viewDomain (allowDataOverflow, or the domain is ignored)', () => {
+    const { container } = renderPanel({ zoomDomain: [15, 25], viewDomain: [10, 30] })
     const labels = [
       ...container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value tspan'),
     ].map((el) => el.textContent)

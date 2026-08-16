@@ -15,13 +15,16 @@ function Probe() {
     <div>
       <div>xMode:{view.xMode}</div>
       <div>zoomDomain:{JSON.stringify(view.zoomDomain)}</div>
+      <div>viewDomain:{JSON.stringify(view.viewDomain)}</div>
       <div>enabledMetrics:{JSON.stringify(view.enabledMetrics)}</div>
       <div>enabledStats:{JSON.stringify(view.enabledStats)}</div>
       {/* The whole published surface, so a field that nothing reads cannot
           quietly reappear — see the `hoverIndex` case below. */}
       <div>keys:{Object.keys(view).sort().join(',')}</div>
       <button onClick={() => view.setXMode('distance')}>setXMode</button>
-      <button onClick={() => view.setZoomDomain([10, 20])}>setZoomDomain</button>
+      {/* The window and the plotted view are written together, always: see
+          setZoom in the provider for why they may never be committed apart. */}
+      <button onClick={() => view.setZoom([10, 20], [5, 25])}>setZoom</button>
       <button onClick={() => view.toggleMetric('pace')}>toggleMetricPace</button>
       <button onClick={() => view.toggleStat('heartRate', 'max')}>toggleHrMax</button>
       <button onClick={() => view.toggleStat('pace', 'avg')}>togglePaceAvg</button>
@@ -66,23 +69,35 @@ describe('ChartViewContext', () => {
     expect(screen.getByText('xMode:distance')).toBeInTheDocument()
   })
 
-  it('setZoomDomain replaces the controlled domain wholesale', async () => {
+  it('setZoom replaces the controlled window wholesale', async () => {
     const user = userEvent.setup()
     renderProbe()
-    await user.click(screen.getByText('setZoomDomain'))
+    await user.click(screen.getByText('setZoom'))
     expect(screen.getByText('zoomDomain:[10,20]')).toBeInTheDocument()
   })
 
-  it('setXMode resets zoomDomain to the full range', async () => {
+  it('setZoom commits the window and the plotted view in ONE update', async () => {
+    // The reason this is one setter and not two: a render landing between them
+    // would draw a window outside its own plotted range, i.e. a drag handle off
+    // the edge of the chart.
+    const user = userEvent.setup()
+    renderProbe()
+    await user.click(screen.getByText('setZoom'))
+    expect(screen.getByText('zoomDomain:[10,20]')).toBeInTheDocument()
+    expect(screen.getByText('viewDomain:[5,25]')).toBeInTheDocument()
+  })
+
+  it('setXMode resets both the window and the view to the full range', async () => {
     // A numeric zoomDomain from one mode (e.g. seconds) is meaningless in
     // the other (metres) — carrying it across would silently misclip the
     // axis, so switching modes resets zoom instead.
     const user = userEvent.setup()
     renderProbe()
-    await user.click(screen.getByText('setZoomDomain'))
+    await user.click(screen.getByText('setZoom'))
     expect(screen.getByText('zoomDomain:[10,20]')).toBeInTheDocument()
     await user.click(screen.getByText('setXMode'))
     expect(screen.getByText('zoomDomain:["dataMin","dataMax"]')).toBeInTheDocument()
+    expect(screen.getByText('viewDomain:["dataMin","dataMax"]')).toBeInTheDocument()
   })
 
   it('toggleMetric removes an enabled metric, then re-adds it on a second toggle', async () => {
@@ -126,8 +141,8 @@ describe('ChartViewContext', () => {
   it('publishes no hoverIndex, since nothing reads one', () => {
     renderProbe()
     expect(screen.getByText(/^keys:/).textContent).toBe(
-      'keys:basemap,enabledMetrics,enabledStats,setBasemap,setXMode,setZoomDomain,showMap,toggleMap,toggleMetric,' +
-        'toggleStat,xMode,zoomDomain',
+      'keys:basemap,enabledMetrics,enabledStats,setBasemap,setXMode,setZoom,showMap,toggleMap,toggleMetric,' +
+        'toggleStat,viewDomain,xMode,zoomDomain',
     )
   })
 
@@ -213,12 +228,15 @@ describe('ChartViewContext per-activity memory', () => {
   it('does not remember the zoom window: a domain in seconds means nothing next time', async () => {
     const user = userEvent.setup()
     const first = await renderLoaded(activityA)
-    await user.click(screen.getByText('setZoomDomain'))
+    await user.click(screen.getByText('setZoom'))
     expect(screen.getByText('zoomDomain:[10,20]')).toBeInTheDocument()
     first.unmount()
 
     await renderLoaded(activityA)
     expect(await screen.findByText('zoomDomain:["dataMin","dataMax"]')).toBeInTheDocument()
+    // The view is not remembered either — it is derived from a window that
+    // means nothing in the next activity.
+    expect(await screen.findByText('viewDomain:["dataMin","dataMax"]')).toBeInTheDocument()
   })
 
   it('remembers nothing while no activity is loaded, rather than writing a stray entry', async () => {

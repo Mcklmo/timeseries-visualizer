@@ -3,6 +3,10 @@
 > **Audience:** anyone about to change the system — no prior reading required.
 > **Status:** as-built description, verified against the working tree on 2026-08-09 (branch `derivatives`),
 > with Strava stages 0a–2 landed. §9 records what shipped and what is still outstanding.
+> **Since then:** the zoom window (faded shoulders + draggable edge handles) landed and the
+> pinch/ctrl+wheel zoom was deleted — dragging an edge is the only zoom now, and what is left of
+> `usePinchZoom` is `ui/useWheelPan.js`. See ARCHITECTURE.md §0 (2026-08-16) and §7; the gesture
+> boxes below are renamed but the rest of this document has not been re-verified against it.
 > **Companion:** `ARCHITECTURE.md` is the *decision record*. This document is the *current map*.
 
 ---
@@ -121,12 +125,12 @@ flowchart TB
     IDate[ActivityDateFilter<br/>provider-neutral]
     Fb[FeedbackWidget → Dialog → Form]
     Geo[chartGeometry<br/>pixels]
-    Pinch[usePinchZoom<br/>events]
+    Drag[useEdgeDrag + useWheelPan<br/>events]
     Scrub[useTouchScrub<br/>events]
     Shell --> Stack & IPage & SPage & SCb & Fb & Hdr
     Stack --> Bar
     Stack --> Panel --> Read
-    Stack --> Pinch --> Geo
+    Stack --> Drag --> Geo
     Stack --> Scrub --> Geo
     Panel --> Geo
     IPage --> IHook & IList & IConn & IDate
@@ -211,7 +215,7 @@ flowchart TB
   AC --> Stack & Bar & Hdr
   VC --> Stack & Panel
   SB --> Stack & Panel & Hdr
-  ZOOM --> VC & Pinch & SBF
+  ZOOM --> VC & Drag & SBF
   DERIV --> UDS --> Panel
   UNITS --> REG & Read & Hdr & Panel & IList
   IHook --> API & MAP
@@ -260,8 +264,8 @@ document, these are the deltas:
 
 1. **No `BrushControl`.** It was deleted; zoom is now gesture- and wheel-driven.
 2. **The gesture triad is shown explicitly** — `zoomDomain` (math) → `chartGeometry` (pixels) →
-   `usePinchZoom` (events). The spec collapsed this into one box; it is the best-factored part of
-   the repo and deserves to be visible.
+   `useEdgeDrag`/`useWheelPan` (events). The spec collapsed this into one box; it is the
+   best-factored part of the repo and deserves to be visible.
 3. **`StatsBasisContext` sits between `ChartViewContext` and the UI.** It did not exist in the
    spec's diagram at all.
 4. **Two dotted inversion edges** (`REG -.-> AGG`, `REG -.-> VP`) record dependencies that run
@@ -299,8 +303,8 @@ boundaries that are genuinely well-drawn, and the first is the template the rest
 keeps pointing back to.
 
 **The gesture triad — the best boundary in the repo.** `domain/zoomDomain.js` is pure interval
-math with no DOM. `ui/chartGeometry.js` converts pixels to domain values. `ui/usePinchZoom.js`
-handles events. Each is unit-tested independently, and the hard part — the maths — is tested
+math with no DOM. `ui/chartGeometry.js` converts pixels to domain values. `ui/useEdgeDrag.js`
+and `ui/useWheelPan.js` handle events. Each is unit-tested independently, and the hard part — the maths — is tested
 without simulating a single touch. Every item in §7 is imitating this shape: *pure core, thin
 adapter, tests on the core.*
 

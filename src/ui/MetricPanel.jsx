@@ -12,15 +12,16 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import { insertGapBreaks } from '../domain/insertGapBreaks.js'
 import { gapThresholdFor } from '../domain/samplingInterval.js'
 import { makeDistanceTickFormatter, makeElapsedTickFormatter } from '../domain/units.js'
-import { isFullDomain } from '../domain/zoomDomain.js'
+import { fullDomain, isFullDomain, resolveDomain } from '../domain/zoomDomain.js'
 import { derivativeKindFor, metricRegistry, metricUnit, scalarStatKinds } from '../metrics/metricRegistry.js'
 import { computeYDomain } from '../stats/aggregate.js'
 import { useDerivativeSeries } from '../stats/useDerivativeSeries.js'
 import { useMetricStats } from '../stats/useMetricStats.js'
-import { CHART_MARGIN, PLOT_INSET, Y_AXIS_WIDTH } from './chartGeometry.js'
+import { CHART_MARGIN, PLOT_INSET, X_AXIS_HEIGHT, Y_AXIS_WIDTH } from './chartGeometry.js'
 import { CrosshairReadout } from './CrosshairReadout.jsx'
 import { derivativeStroke } from './derivativeStyle.js'
 import { StatCheckboxes } from './StatCheckboxes.jsx'
+import { ZoomWindowOverlay } from './ZoomWindowOverlay.jsx'
 
 // Y_AXIS_WIDTH and CHART_MARGIN are imported, not declared here, because the
 // pinch gesture measures the plot area by subtracting exactly these numbers
@@ -138,7 +139,25 @@ export function MetricPanel({
   activity,
   metricId,
   xMode,
+  // THE WINDOW. It is no longer what the axis plots — `viewDomain` is — but it
+  // is still what the stats, the header and the map report on, and it is what
+  // the overlay's bright band means. See domain/zoomDomain.js.
   zoomDomain,
+  // WHAT THE AXIS PLOTS: the window plus a faded context margin each side.
+  // Defaults to the sentinel for the same reason `rightInset` defaults to 0 —
+  // the ~35 tests in this file render the panel from a bare DEFAULT_PROPS
+  // object, and `domain={undefined}` would quietly hand Recharts its own
+  // auto-domain instead of the unzoomed render this panel is supposed to give.
+  viewDomain = fullDomain(),
+  // Where the window's two edges sit across the plot, from windowFractions —
+  // computed ONCE for the whole stack, so every panel's handles line up and the
+  // overlay cannot disagree with the pinch gesture about where they are.
+  windowFractions = [0, 1],
+  // Read only by the overlay's sliders, to say what value each edge sits at.
+  // Null rather than a guess: a panel rendered bare has no extent to name.
+  fullExtent = null,
+  onEdgePointerDown,
+  onEdgeKeyMove,
   statsBasis,
   enabledStats,
   // MUST default to 0. ChartStack always passes it, but ~fifteen panel tests
@@ -258,7 +277,15 @@ export function MetricPanel({
   return (
     <div
       className="metric-panel"
-      style={{ minHeight: height, '--plot-inset': `${PLOT_INSET}px`, ...(hasOverlay && { '--deriv-hue': derivColor }) }}
+      style={{
+        minHeight: height,
+        '--plot-inset': `${PLOT_INSET}px`,
+        // The other edge of the plot area, for the zoom overlay to inset itself
+        // by — the SAME expression MapPanel uses on its canvases, built from the
+        // same constants the gesture subtracts.
+        '--plot-right-inset': `${CHART_MARGIN.right + rightInset}px`,
+        ...(hasOverlay && { '--deriv-hue': derivColor }),
+      }}
     >
       <PanelHead
         metric={metric}
@@ -267,136 +294,161 @@ export function MetricPanel({
         enabledStats={enabledStats}
         onToggleStat={onToggleStat}
       />
-      <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} syncId={SYNC_ID} margin={CHART_MARGIN}>
-          <CartesianGrid stroke="var(--grid)" vertical={false} />
-          <XAxis
-            type="number"
-            dataKey={xKey}
-            domain={zoomDomain}
-            hide={!showXAxis}
-            interval={0}
-            tickFormatter={xTickFormatter}
-            // WITHOUT THIS, A NUMERIC domain DOES NOTHING. Recharts'
-            // extendDomain() (util/isDomainSpecifiedByUser.js) widens any
-            // user-supplied domain back out to the data extent unless
-            // allowDataOverflow is set — silently, with no error. Same reason
-            // the YAxis below sets it. It also switches on Recharts' plot-rect
-            // clipPath, so the line clips at the plot edge instead of drawing
-            // into the axis gutter.
-            //
-            // Conditional rather than unconditional so the unzoomed render
-            // stays byte-identical to what it was before zoom existed.
-            allowDataOverflow={!isFullDomain(zoomDomain)}
-          />
-          <YAxis
-            yAxisId={VALUE_AXIS}
-            width={Y_AXIS_WIDTH}
-            reversed={!!metric.invertAxis}
-            tickFormatter={metric.format}
-            interval={0}
-            domain={yDomain}
-            // Without this, Recharts silently re-expands an explicit domain to cover
-            // any out-of-range plotted point (e.g. a paused cadence=0 sample, excluded
-            // from yDomain's calc but still present in `data`), which would undo the zoom.
-            allowDataOverflow={yDomain != null}
-          />
-          {/* Rendered off the STACK-WIDE `rightInset`, not off this panel's own
-              overlay: a panel with no derivative still has to reserve the same
-              gutter, or its plot area would be 44px wider than its siblings'
-              and the synced crosshair would land on a different screen x in
-              each. Ticks and axis line are what switch off when this
-              particular panel has nothing to label — Recharts' right-offset
-              arithmetic (selectRightAxesOffset) sums `width` over every
-              non-hidden, non-mirrored right axis and never reads `tick` or
-              `axisLine`, so a tick-less axis still claims its width. `hide`
-              and `mirror` are the two props that WOULD drop it; neither is
-              passed. `width` must stay numeric for the same reason: the
-              re-measure path bails on anything but "auto", so a number is
-              fixed forever, while "auto" would let tick text decide the gutter
-              and desync the panels. */}
-          {rightInset > 0 && (
-            <YAxis
-              yAxisId={DERIV_AXIS}
-              orientation="right"
-              width={rightInset}
-              domain={derivDomain}
-              allowDataOverflow={derivDomain != null}
-              // Tinted to the overlay's own stroke: this is what tells the
-              // reader which of the two axes the pale line reads against. It
-              // is also the discoverability cue the 4.5px casing was reaching
-              // for — and it costs no ink inside the plot area.
-              tick={hasOverlay ? { fill: derivColor } : false}
-              tickLine={hasOverlay ? { stroke: derivColor } : false}
-              axisLine={hasOverlay ? { stroke: derivColor } : false}
-              tickFormatter={derivSpec?.format}
+      {/* The overlay is a SIBLING of the chart, in a relative wrapper of its
+          own — not a child of the Recharts surface. It positions itself in
+          percentages of the plot area, so it needs an element whose box is the
+          chart's box; and nothing inside the surface can be given
+          pointer-events without fighting the tooltip pipeline. */}
+      <div className="metric-panel__plot">
+        <ResponsiveContainer width="100%" height={height}>
+          <LineChart data={data} syncId={SYNC_ID} margin={CHART_MARGIN}>
+            <CartesianGrid stroke="var(--grid)" vertical={false} />
+            <XAxis
+              type="number"
+              dataKey={xKey}
+              // THE VIEW, not the window: the plot draws the zoom window plus a
+              // context margin each side, and ZoomWindowOverlay fades the margin
+              // so the zoom is legible on the chart itself. Unzoomed the two are
+              // the same sentinel, so this is unchanged there.
+              domain={viewDomain}
+              hide={!showXAxis}
               interval={0}
+              // Recharts' own default, stated so the overlay can inset itself by
+              // the same number (ui/chartGeometry.js) and stop its shoulders at
+              // the plot floor instead of dimming the tick labels.
+              height={X_AXIS_HEIGHT}
+              tickFormatter={xTickFormatter}
+              // WITHOUT THIS, A NUMERIC domain DOES NOTHING. Recharts'
+              // extendDomain() (util/isDomainSpecifiedByUser.js) widens any
+              // user-supplied domain back out to the data extent unless
+              // allowDataOverflow is set — silently, with no error. Same reason
+              // the YAxis below sets it. It also switches on Recharts' plot-rect
+              // clipPath, so the line clips at the plot edge instead of drawing
+              // into the axis gutter.
+              //
+              // Conditional rather than unconditional so the unzoomed render
+              // stays byte-identical to what it was before zoom existed. Keyed to
+              // the VIEW, since the view is what this axis is asked to plot.
+              allowDataOverflow={!isFullDomain(viewDomain)}
             />
-          )}
-          {/* Still a <Tooltip>, and that is load-bearing: syncId and the touch
-              handoff both ride on this pipeline. Its `content` no longer draws a
-              box that follows the cursor — it portals the value up into the head
-              above. See CrosshairReadout.jsx. */}
-          <Tooltip
-            content={
-              <CrosshairReadout
-                metric={metric}
-                sport={activity.sport}
-                derivative={hasOverlay ? { key: derivKey, spec: derivSpec } : null}
-                valueSlot={valueSlot}
-                positionSlot={positionSlot}
-                primary={primary}
-              />
-            }
-            cursor={{ stroke: 'var(--stat-line)' }}
-            isAnimationActive={false}
-          />
-          {statEntries.map(({ kind, value }) => (
-            <ReferenceLine
-              key={kind}
+            <YAxis
               yAxisId={VALUE_AXIS}
-              y={value}
-              stroke="var(--stat-line)"
-              strokeDasharray={STAT_DASH[kind]}
+              width={Y_AXIS_WIDTH}
+              reversed={!!metric.invertAxis}
+              tickFormatter={metric.format}
+              interval={0}
+              domain={yDomain}
+              // Without this, Recharts silently re-expands an explicit domain to cover
+              // any out-of-range plotted point (e.g. a paused cadence=0 sample, excluded
+              // from yDomain's calc but still present in `data`), which would undo the zoom.
+              allowDataOverflow={yDomain != null}
             />
-          ))}
-          {/* The zero crossing is the landmark the overlay exists to show:
-              where the heart rate stops climbing, where the ascent tops out. */}
-          {hasOverlay && <ReferenceLine yAxisId={DERIV_AXIS} y={0} stroke="var(--stat-line)" />}
-          {/* Painted BEFORE the main line — Recharts paints children in order,
-              so the metric a rate is derived FROM occludes it, not the reverse.
-              A lighter step of that metric's own hue and a thinner stroke: §9
-              allows one hue per metric, and this IS that metric, seen as a
-              rate. Solid — a derivative is noisy by construction (see
-              DERIV_DOMAIN_QUANTILE above) and a dash on a high-frequency trace
-              turns to mush; the previous 3 3 dash is one of the three reasons
-              this line could not be found at all. The same colour tints the
-              right-hand axis it reads against and the d/dt checkbox that
-              switched it on. */}
-          {hasOverlay && (
+            {/* Rendered off the STACK-WIDE `rightInset`, not off this panel's own
+                overlay: a panel with no derivative still has to reserve the same
+                gutter, or its plot area would be 44px wider than its siblings'
+                and the synced crosshair would land on a different screen x in
+                each. Ticks and axis line are what switch off when this
+                particular panel has nothing to label — Recharts' right-offset
+                arithmetic (selectRightAxesOffset) sums `width` over every
+                non-hidden, non-mirrored right axis and never reads `tick` or
+                `axisLine`, so a tick-less axis still claims its width. `hide`
+                and `mirror` are the two props that WOULD drop it; neither is
+                passed. `width` must stay numeric for the same reason: the
+                re-measure path bails on anything but "auto", so a number is
+                fixed forever, while "auto" would let tick text decide the gutter
+                and desync the panels. */}
+            {rightInset > 0 && (
+              <YAxis
+                yAxisId={DERIV_AXIS}
+                orientation="right"
+                width={rightInset}
+                domain={derivDomain}
+                allowDataOverflow={derivDomain != null}
+                // Tinted to the overlay's own stroke: this is what tells the
+                // reader which of the two axes the pale line reads against. It
+                // is also the discoverability cue the 4.5px casing was reaching
+                // for — and it costs no ink inside the plot area.
+                tick={hasOverlay ? { fill: derivColor } : false}
+                tickLine={hasOverlay ? { stroke: derivColor } : false}
+                axisLine={hasOverlay ? { stroke: derivColor } : false}
+                tickFormatter={derivSpec?.format}
+                interval={0}
+              />
+            )}
+            {/* Still a <Tooltip>, and that is load-bearing: syncId and the touch
+                handoff both ride on this pipeline. Its `content` no longer draws a
+                box that follows the cursor — it portals the value up into the head
+                above. See CrosshairReadout.jsx. */}
+            <Tooltip
+              content={
+                <CrosshairReadout
+                  metric={metric}
+                  sport={activity.sport}
+                  derivative={hasOverlay ? { key: derivKey, spec: derivSpec } : null}
+                  valueSlot={valueSlot}
+                  positionSlot={positionSlot}
+                  primary={primary}
+                />
+              }
+              cursor={{ stroke: 'var(--stat-line)' }}
+              isAnimationActive={false}
+            />
+            {statEntries.map(({ kind, value }) => (
+              <ReferenceLine
+                key={kind}
+                yAxisId={VALUE_AXIS}
+                y={value}
+                stroke="var(--stat-line)"
+                strokeDasharray={STAT_DASH[kind]}
+              />
+            ))}
+            {/* The zero crossing is the landmark the overlay exists to show:
+                where the heart rate stops climbing, where the ascent tops out. */}
+            {hasOverlay && <ReferenceLine yAxisId={DERIV_AXIS} y={0} stroke="var(--stat-line)" />}
+            {/* Painted BEFORE the main line — Recharts paints children in order,
+                so the metric a rate is derived FROM occludes it, not the reverse.
+                A lighter step of that metric's own hue and a thinner stroke: §9
+                allows one hue per metric, and this IS that metric, seen as a
+                rate. Solid — a derivative is noisy by construction (see
+                DERIV_DOMAIN_QUANTILE above) and a dash on a high-frequency trace
+                turns to mush; the previous 3 3 dash is one of the three reasons
+                this line could not be found at all. The same colour tints the
+                right-hand axis it reads against and the d/dt checkbox that
+                switched it on. */}
+            {hasOverlay && (
+              <Line
+                className="deriv-line"
+                yAxisId={DERIV_AXIS}
+                dataKey={derivKey}
+                stroke={derivColor}
+                strokeWidth={DERIV_STROKE_WIDTH}
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
             <Line
-              className="deriv-line"
-              yAxisId={DERIV_AXIS}
-              dataKey={derivKey}
-              stroke={derivColor}
-              strokeWidth={DERIV_STROKE_WIDTH}
+              className="metric-line"
+              yAxisId={VALUE_AXIS}
+              dataKey={metricId}
+              stroke={metric.color}
+              strokeWidth={MAIN_STROKE_WIDTH}
               dot={false}
               isAnimationActive={false}
               connectNulls={false}
             />
-          )}
-          <Line
-            className="metric-line"
-            yAxisId={VALUE_AXIS}
-            dataKey={metricId}
-            stroke={metric.color}
-            strokeWidth={MAIN_STROKE_WIDTH}
-            dot={false}
-            isAnimationActive={false}
-            connectNulls={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+          </LineChart>
+        </ResponsiveContainer>
+        <ZoomWindowOverlay
+          fractions={windowFractions}
+          showXAxis={showXAxis}
+          windowValues={fullExtent ? resolveDomain(zoomDomain, fullExtent) : [NaN, NaN]}
+          fullExtent={fullExtent}
+          xMode={xMode}
+          onEdgePointerDown={onEdgePointerDown}
+          onEdgeKeyMove={onEdgeKeyMove}
+        />
+      </div>
       <StatSummary metric={metric} entries={statEntries} sport={activity.sport} />
     </div>
   )

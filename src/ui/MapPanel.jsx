@@ -11,10 +11,9 @@
 //    map. That is what makes every per-frame cost here trivial: the projection
 //    (domain/buildTrack.js), the decimation (domain/simplifyTrack.js) and the
 //    tile set are all functions of the fit, so all three are resize-time work.
-//  · **Input is slaved.** There is no independent pan or zoom. A pinch over the
-//    map zooms the shared time axis exactly like a pinch over any other panel,
-//    because this panel sits inside `.chart-stack` and usePinchZoom is bound
-//    there.
+//  · **Input is slaved.** There is no independent pan or zoom, and no gesture
+//    of its own: the zoom is dragging a window edge on a chart below, and this
+//    panel just redraws the bright segment the shared zoomDomain names.
 //  · **Hand-rolled canvas 2D.** No Leaflet, no MapLibre, no new runtime
 //    dependency. The fixed fit is what makes that a few hundred lines rather
 //    than a mapping library.
@@ -24,12 +23,12 @@
 // ⚠️ **This panel renders canvases, NOT a `.recharts-surface`.** That is load
 // bearing and is the reason it is safe to put a panel above the charts at all:
 // `plotRectOf` (chartGeometry.js) measures the FIRST `.recharts-surface` in the
-// stack and applies that one rect to gestures anywhere on it, so the pinch
-// arithmetic still measures the first MetricPanel and is untouched by the map
-// being above it. There is a system test pinning that rather than a memory of
-// it. The one edge case: with every metric toggled off and only the map
-// showing, there is no surface at all and the pinch no-ops — which is already
-// what a zero-panel stack does.
+// stack and applies that one rect to gestures anywhere on it, so the edge-drag
+// and pan arithmetic still measures the first MetricPanel and is untouched by
+// the map being above it. There is a system test pinning that rather than a
+// memory of it. The one edge case: with every metric toggled off and only the
+// map showing, there is no surface at all and both gestures no-op — which is
+// already what a zero-panel stack does.
 import { useCallback, useEffect, useId, useRef } from 'react'
 import { indexAtX } from '../domain/sliceSamples.js'
 import { keptIndexAtOrAfter, simplifyTrack } from '../domain/simplifyTrack.js'
@@ -436,10 +435,10 @@ export function MapPanel({
   }, [relayout])
 
   // Deliberately NOT rAF-coalesced, despite this being the layer that redraws
-  // during a live gesture. The only writer of zoomDomain is usePinchZoom, which
-  // already coalesces its emissions to one per animation frame, so a second
-  // rAF here would buy nothing and cost a frame of latency plus the
-  // cancellation bookkeeping to go with it.
+  // during a live gesture. Every writer of zoomDomain — useEdgeDrag, and
+  // useWheelPan through a wheel event — emits at most once per animation frame
+  // already, so a second rAF here would buy nothing and cost a frame of latency
+  // plus the cancellation bookkeeping to go with it.
   useEffect(() => {
     paintWindow()
   }, [paintWindow])

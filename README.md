@@ -35,8 +35,8 @@ This project is **functional end-to-end, including real Garmin file upload** —
   recording carries GPS — every ingestion path already did, the coordinates were simply
   being discarded during normalization. It fits the whole route **once** and never re-fits:
   zooming the charts brightens the corresponding sub-segment over a dimmed whole rather than
-  moving the map, and there is no independent pan or zoom — a pinch over the map zooms the
-  shared time axis like a pinch anywhere else. The shared crosshair moves a marker along it,
+  moving the map, and there is no independent pan or zoom — the map has no gesture of its
+  own and simply follows the shared time axis. The shared crosshair moves a marker along it,
   driven over a module-level pub/sub (`crosshairBus`) rather than React state, so a hover
   frame re-renders nothing. Hand-rolled canvas 2D on three stacked layers, no mapping
   library. **The map background is off by default and is the only opt-in here that touches
@@ -48,15 +48,20 @@ This project is **functional end-to-end, including real Garmin file upload** —
   while each graph's
   `max/min/avg/median` and derivative boxes (`StatCheckboxes`) fold out of that graph's own
   head — also verified against real rendered Recharts SVG output, not just context state.
-- Zooming is a **two-finger pinch** anywhere on the chart stack, or **ctrl/⌘ + scroll** on a
-  desktop, writing one shared controlled `zoomDomain` so every panel zooms and pans in sync.
-  Moving both fingers together pans, and on a desktop a **two-finger horizontal swipe**
-  (or **Shift + scroll**) pans the zoomed window sideways at constant width; a **Reset
-  zoom** button appears only while zoomed;
+- Zooming is **dragging one of the zoom window's two edge handles** — the only zoom gesture
+  there is — writing one shared controlled `zoomDomain` so every panel zooms and pans in
+  sync. The window's faded shoulders show what falls outside it, and **holding a handle
+  against the edge of the plot keeps widening the window**, live, at a steady rate (~4s from
+  the deepest zoom back to the whole activity), which is what makes one handle enough to get
+  all the way back out. A **two-finger horizontal swipe** (or **Shift + scroll**) pans the
+  zoomed window sideways at constant width; a **Reset zoom** button appears only while
+  zoomed; **a two-finger pinch over the charts is the browser's own page zoom** — the app
+  deliberately claims no multi-touch gesture;
   switching x-axis mode resets the zoom (a numeric range in seconds is meaningless once
   re-read as metres). Verified by simulating real pointer sequences against rendered SVG
   output, not just calling the state setter directly. This replaced Recharts' `Brush`, whose
-  ~5px drag handles were unusable on touch — see ARCHITECTURE.md §13 Route B.
+  ~5px drag handles were unusable on touch, by way of a two-finger pinch that then collided
+  with the handles on touch and was itself removed — see ARCHITECTURE.md §13 Route B.
 - `App.jsx` is wired end-to-end: drop a file on the idle page's `EmptyState` hero (or on the
   compact control that takes its place in the header once something is loaded), watch
   `ActivityContext` cycle through `loading`, and land on `ChartStack` — which carries its own
@@ -525,7 +530,7 @@ path, though (see step 9 below).
    Check four things by eye. The route is **whole and correctly proportioned** — an
    out-and-back should retrace itself, not come back lopsided (that failure is a lost
    Mercator projection). Hovering any chart moves a **dot along the route**, and it stops
-   being drawn where the recording lost its fix. Pinching the charts **brightens the
+   being drawn where the recording lost its fix. Zooming the charts **brightens the
    corresponding stretch** while the rest stays dim, and the map itself must **not move or
    re-fit** while you do it. And the **Route** checkbox in the toolbar hides and restores the
    panel. Then unfold the map's own head: **Background** should be on **None**, and switching
@@ -542,10 +547,14 @@ path, though (see step 9 below).
    up and the charts below return to where they were.
 7. **X-axis mode** — click **Distance** → the bottom axis ticks switch from seconds to
    metres on every panel. Click **Time** to switch back.
-8. **Zoom** — hold **Ctrl** (or ⌘) and scroll over the charts, or pinch on a trackpad → all
-   panels zoom to the same range together, anchored under the cursor, and the crosshair keeps
-   tracking. A **Reset zoom** button appears at the top-right of the stack only while zoomed;
-   click it to go back to the full range. **The header's duration must follow the window** —
+8. **Zoom** — drag the **window's start handle** inward → all panels trim to the same range
+   together, every panel's head reports **at the boundary** while you drag, and the graph
+   itself does **not** rescale under your hand; on release the view re-fits once and the
+   readout stays on screen. Then drag that handle back to the **left edge of the plot and
+   hold** → the window keeps widening, the chart reels out live, the handle stays under the
+   pointer, and it stops the instant the pointer moves back inside; hold long enough and the
+   whole activity comes back. A **Reset zoom** button appears at the top-right of the stack
+   only while zoomed; click it to go back to the full range instantly. **The header's duration must follow the window** —
    it drops to the window's span, settling a frame behind the line exactly like the stat
    chips; cross-check it against the x-axis end labels, and confirm the date beside it does
    *not* move (that is the activity's identity, not the window's). On the **Distance** axis,
@@ -553,8 +562,9 @@ path, though (see step 9 below).
    restores the activity's total. Zoom in hard and check the line **clips at the plot
    edge** rather than bleeding into the axis gutter — that clipping is `allowDataOverflow`,
    and its absence is the tell that the numeric-domain path has regressed (ARCHITECTURE.md
-   §7). Scroll **without** Ctrl → the page scrolls normally and a centred "Use Ctrl + scroll
-   to zoom" hint appears **once**, not on every scroll past the charts. While zoomed, switch
+   §7). **Ctrl/⌘ + scroll and a trackpad pinch over the charts must do nothing to the
+   zoom** — they are the browser's page magnification now — and a plain vertical scroll must
+   still scroll the page with no hint appearing anywhere. While zoomed, switch
    Time ⇄ Distance → zoom should reset to full range (not carry over a stale numeric range).
    Then, still zoomed, **swipe two fingers left and right** (or hold **Shift** and scroll) →
    all panels slide together at a window width that never changes, the crosshair keeps
@@ -562,7 +572,7 @@ path, though (see step 9 below).
    worth checking every time — **no browser back-navigation** throwing the activity away.
    Scroll vertically over a zoomed chart → the page scrolls and the window must not drift
    sideways with it. Swipe sideways while **unzoomed** → nothing happens, and again the
-   browser does not navigate back. Ctrl + a diagonal scroll → still zooms, never pans.
+   browser does not navigate back.
 9. **Swap and error paths** — with charts up, drop `fixtures/23870166877_ACTIVITY.fit` on the
    **header** control → it swaps to the FIT activity (a Power panel appears, since the FIT
    file carries Stryd power the TCX export drops). Then drop a non-TCX file (or a `.tcx` with
@@ -580,7 +590,8 @@ path, though (see step 9 below).
     in camp rather than running a straight diagonal across them. **The route on the map must
     break in the same places** — a dropout is a gap, not a line drawn straight across
     country, and this is the fixture that shows it. Hover anywhere: the
-    toolbar's position readout shows elapsed time in days (e.g. `2d 4:15:30`). Ctrl+scroll into one day
+    toolbar's position readout shows elapsed time in days (e.g. `2d 4:15:30`). Drag both
+    window edges in to one day
     and confirm the crosshair still syncs across both panels, the ticks stay real dates
     rather than `NaN`, and the zoom doesn't hit its floor prematurely — the max-zoom limit is
     a fraction of the span, so a 3-day breadcrumb track zooms exactly as far as a 1 Hz watch
@@ -688,10 +699,11 @@ path, though (see step 9 below).
     must **not** zoom the page on an iPhone.
 16. **On a real phone — the acceptance test for the mobile work, and it cannot be done in the
     simulator alone.** Run `npm run dev -- --host` and open the printed LAN URL on an iPhone.
-    - **Gestures:** two-finger pinch zooms; moving both fingers together pans; a one-finger
-      vertical drag still scrolls the page; and the browser never page-zooms while the
-      gesture starts anywhere on the stack — including on the toolbar and the panel heads,
-      which now live inside it, closing the limit this step used to record.
+    - **Gestures:** one finger on a **window handle** drags that edge and must not scroll
+      the page; holding it at the edge of the plot keeps widening the window; a one-finger
+      vertical drag still scrolls the page; and **two fingers now zoom the PAGE**, anywhere
+      on the stack including the toolbar and the panel heads — the app claims no multi-touch
+      gesture, and the crosshair must not jump to the fingers while the page magnifies.
     - **The fixed labels on touch:** drag one finger across a chart → every panel's label
       follows, in place. Lift → they stay put, so the numbers can be read. Then tap a
       checkbox in a head → the readout must **not** blank; only touching another chart hands
@@ -705,7 +717,8 @@ path, though (see step 9 below).
       header's `12:05 · 2.34 km` follow. **Lift** → it stays put. **Swipe hard past either
       end** → it stops on the last sample and stays **visible**, never blanking. A
       **vertical** drag on a chart still scrolls the page. Start a one-finger scrub and then
-      add a second finger → it becomes a pinch without the crosshair skittering. And
+      add a second finger → the page zooms and the crosshair stays exactly where the scrub
+      left it, without skittering to the fingers. And
       **swipe right-to-left starting near the screen edge** → **no back-navigation**; the
       loaded activity survives (there is no history gesture in jsdom either).
     - **Screenshots, the whole point of the frame work:** scroll down mid-activity and take

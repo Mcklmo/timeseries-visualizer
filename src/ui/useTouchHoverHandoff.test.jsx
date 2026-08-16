@@ -75,7 +75,7 @@ describe('useTouchHoverHandoff', () => {
     expect(event.relatedTarget).toBe(stack)
   })
 
-  it('ignores a two-finger touch, which is a pinch owned by usePinchZoom', () => {
+  it('ignores a two-finger touch, which is the browser\'s page zoom', () => {
     const { container, getByTestId } = render(<Stack />)
     const counts = spyOnWrappers(container)
 

@@ -42,17 +42,19 @@ function Loader() {
   return null
 }
 
-// Drives the zoom the way the pinch gesture does — by writing the one
-// zoomDomain — without needing a real gesture over a chart that isn't
-// rendered here.
+// Drives the zoom the way the pinch gesture does — by writing the window —
+// without needing a real gesture over a chart that isn't rendered here. The
+// header reports on the WINDOW, which is exactly why the plotted view beside it
+// is irrelevant to this suite: it is passed along only because setZoom writes
+// the two together.
 function ZoomTo({ domain }) {
-  const { setZoomDomain } = useChartView()
-  return <button onClick={() => setZoomDomain(domain)}>zoom</button>
+  const { setZoom } = useChartView()
+  return <button onClick={() => setZoom(domain, domain)}>zoom</button>
 }
 
 function ResetZoom() {
-  const { setZoomDomain } = useChartView()
-  return <button onClick={() => setZoomDomain(fullDomain())}>reset</button>
+  const { setZoom } = useChartView()
+  return <button onClick={() => setZoom(fullDomain(), fullDomain())}>reset</button>
 }
 
 function SwitchXMode({ mode }) {
@@ -161,7 +163,7 @@ describe('ActivityHeader', () => {
   //
   // The waitFor this used to need is gone, since the duration no longer comes
   // off the deferred basis. Do NOT read that as the regression guard, though:
-  // a single setZoomDomain inside act() settles a deferred render too, so this
+  // a single setZoom inside act() settles a deferred render too, so this
   // would stay green either way. What the live path actually buys is only
   // visible under a *continuous* stream of urgent updates, and is pinned by
   // 'updates the header duration mid-gesture, ahead of the chips' in

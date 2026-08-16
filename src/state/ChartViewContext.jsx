@@ -33,7 +33,16 @@ function initialState(prefs) {
     // One definition of "unzoomed" (domain/zoomDomain.js), shared with
     // ChartStack, MetricPanel and the reset control, rather than this literal
     // written out in four places.
+    //
+    // TWO DOMAINS, ONE ZOOM. `zoomDomain` is THE WINDOW — unchanged meaning,
+    // which is why nothing downstream of it (statsBasis, the header duration,
+    // the map's bright segment) knows this split exists. `viewDomain` is WHAT
+    // IS PLOTTED: the window plus a context margin each side, so the shoulders
+    // draw faded and a zoom is legible on the chart itself. They are written
+    // together by setZoom below and are never persisted or carried over — see
+    // consequence 2 in the header, which covers both.
     zoomDomain: fullDomain(),
+    viewDomain: fullDomain(),
     enabledMetrics: prefs?.enabledMetrics ?? [...metricOrder],
     // Every stat off until asked for: a freshly opened activity should show
     // the athlete's own data, not four reference lines and a chip row nobody
@@ -101,10 +110,18 @@ export function ChartViewProvider({ children }) {
   // A numeric zoomDomain is meaningless across modes (seconds vs metres), so
   // switching axes resets zoom rather than silently misreading stale bounds.
   const setXMode = useCallback(
-    (xMode) => setState((s) => ({ ...s, xMode, zoomDomain: fullDomain() })),
+    (xMode) => setState((s) => ({ ...s, xMode, zoomDomain: fullDomain(), viewDomain: fullDomain() })),
     [],
   )
-  const setZoomDomain = useCallback((zoomDomain) => setState((s) => ({ ...s, zoomDomain })), [])
+  // ONE setState FOR BOTH, and that is the reason this is a single setter
+  // rather than two: the window must never be committed without the view it
+  // sits inside. Two setters — even called back to back — would let a render
+  // land between them and draw a window outside its own plotted range, which
+  // is a handle off the edge of the chart.
+  const setZoom = useCallback(
+    (zoomDomain, viewDomain) => setState((s) => ({ ...s, zoomDomain, viewDomain })),
+    [],
+  )
 
   const toggleMetric = useCallback(
     (metricId) =>
@@ -149,7 +166,7 @@ export function ChartViewProvider({ children }) {
   const value = {
     ...state,
     setXMode,
-    setZoomDomain,
+    setZoom,
     toggleMetric,
     toggleStat,
     toggleMap,

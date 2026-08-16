@@ -73,25 +73,42 @@ function SwitchXMode({ mode }) {
   return <button onClick={() => setXMode(mode)}>switch-x-{mode}</button>
 }
 
-// Pinches the stack: two touch pointers down, then both moved, then a frame.
+// Drags one edge of the zoom window — THE only way to zoom, since the pinch and
+// ctrl/⌘+wheel gestures were deleted (ui/useWheelPan.js's header says why).
 // setupTests.js hard-assigns one fixed {left:0, width:800} rect to EVERY
 // element, so the plot area is {left: 60, width: 728} — and 728 = 8 × 91, so
-// eighth-fractions land on integer clientX: 0.125→151, 0.25→242, 0.5→424,
-// 0.75→606, 0.875→697.
+// eighth-fractions land on integer clientX: 0.25→242, 0.5→424, 0.75→606, and
+// the plot's own edges on 60 and 788.
 //
-// Pointer (not Touch) events, because jsdom 30 has no Touch constructor —
-// which is one of the reasons the gesture is built on Pointer Events in the
-// first place. See usePinchZoom.test.jsx for the gesture's own coverage.
-async function pinchStack(container, { from, to }) {
-  const stack = container.querySelector('.chart-stack')
-  const touch = (clientX, pointerId) => ({ pointerId, pointerType: 'touch', clientX, clientY: 100 })
-  fireEvent.pointerDown(stack, touch(from[0], 1))
-  fireEvent.pointerDown(stack, touch(from[1], 2))
-  fireEvent.pointerMove(window, touch(to[0], 1))
-  fireEvent.pointerMove(window, touch(to[1], 2))
-  // Emission is rAF-coalesced (usePinchZoom), so nothing has been written to
-  // zoomDomain until a frame passes.
+// `from` should be where the handle actually is, since pointerdown emits a
+// frame of its own; the drag is then direct, so `to` names the value the edge
+// lands on through the CURRENTLY PLOTTED view. `release` commits it, which is
+// what re-fits the view symmetrically — leave it off to inspect a live gesture.
+async function dragWindowEdge(container, { edge, from, to, release = true }) {
+  const panel = container.querySelector('.metric-panel')
+  const handle = [...panel.querySelectorAll('.zoom-handle')][edge === 'start' ? 0 : 1]
+  const at = (clientX) => ({ clientX, pointerId: 1 })
+  fireEvent.pointerDown(handle, at(from))
+  // Emission is rAF-coalesced, so nothing has been written to zoomDomain until
+  // a frame passes.
   await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  fireEvent.pointerMove(window, at(to))
+  await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+  if (!release) return
+  fireEvent.pointerUp(window, at(to))
+  await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+}
+
+// The reference window for every test that reads the window's CONTENTS: both
+// edges pulled in until the window holds exactly the 10/20/30 s samples and
+// excludes the 0 s and 40 s ones. The start edge lands on 10 s exactly (a
+// quarter across the unzoomed 0–40 s view) and the end edge inside (30, 40),
+// which is all the stats and the header duration depend on.
+async function trimToMidWindow(container) {
+  await dragWindowEdge(container, { edge: 'start', from: 60, to: 242 })
+  // The view has re-fitted to [2.5, 40] around the new window, so the end
+  // handle is still parked on the plot's right edge — and 606 now reads 30.6 s.
+  await dragWindowEdge(container, { edge: 'end', from: 788, to: 606 })
 }
 
 // The x coordinates of the rendered curve, read back out of the path `d`.
@@ -111,20 +128,6 @@ function pathXs(panel) {
 function xSpread(panel) {
   const xs = pathXs(panel)
   return Math.max(...xs) - Math.min(...xs)
-}
-
-// The elapsed time the chart is CURRENTLY drawing under a given screen x, read
-// back out of the rendered path. The fixture's samples are evenly spaced in t
-// (0…40s) and the axis is linear, so the first and last rendered points define
-// the mapping exactly — no interpolation table needed.
-//
-// This is how the anchored-pinch invariant becomes observable: "the value under
-// a stationary finger does not move" is the defining property of the gesture,
-// and it is the property that breaks when the gesture measures a plot of a
-// different width than the one Recharts drew.
-function tAtClientX(panel, clientX) {
-  const xs = pathXs(panel)
-  return ((clientX - xs[0]) / (xs.at(-1) - xs[0])) * 40
 }
 
 function tickLabels(panel) {
@@ -162,6 +165,9 @@ function cursorXs(container) {
 // (see the note at the top of useTouchScrub.test.jsx). clientY 100 is the
 // vertical middle of every element under setupTests.js's fixed rect.
 const touchAt = (clientX, clientY = 100) => ({ touches: [{ clientX, clientY }] })
+// Two fingers is the browser's page zoom now. The app's only job is to keep out
+// of its way, which is what the handoff test below asserts.
+const twoFingerTouch = { touches: [{ clientX: 242, clientY: 100 }, { clientX: 606, clientY: 100 }] }
 const lifted = { touches: [] }
 
 // Puts the crosshair somewhere with the mouse, so a touch scrub has something
@@ -295,12 +301,12 @@ describe('ChartStack', () => {
   })
 
   // THE derivative-overlay invariant (ARCHITECTURE.md §7). The right-hand axis
-  // narrows the plot, and the pinch gesture measures ONE .recharts-surface —
-  // the first in the stack — then applies that rect to gestures anywhere on it.
-  // So the gutter has to be reserved on every visible panel the moment any one
-  // of them has an overlay. Reserve it per panel instead and the failures are
-  // silent: lines horizontally offset between panels, and a pinch that drifts
-  // 44px out from under the fingers.
+  // narrows the plot, and the gestures measure ONE .recharts-surface — the first
+  // in the stack — then apply that rect to gestures anywhere on it. So the
+  // gutter has to be reserved on every visible panel the moment any one of them
+  // has an overlay. Reserve it per panel instead and the failures are silent:
+  // lines horizontally offset between panels, and a dragged edge that lands
+  // 44px out from under the pointer.
   it('reserves the derivative gutter on every panel, so plot areas stay aligned', async () => {
     const { container } = await renderStack({
       extra: <ToggleStat metricId="heartRate" statKind="d1" />,
@@ -631,25 +637,29 @@ describe('ChartStack', () => {
     expect([...container.querySelectorAll('.crosshair-slot')].every((s) => s.textContent !== '')).toBe(true)
   })
 
-  it('hands a scrub over to the pinch when a second finger lands', async () => {
-    // One finger does exactly one thing, and a second finger means zoom. The
-    // scrub must not swallow the pinch usePinchZoom is waiting for.
+  it('hands a scrub over to the browser when a second finger lands', async () => {
+    // One finger does exactly one thing, and a second finger is now the PAGE
+    // zoom — the app's own pinch is gone. So the scrub abandons, and nothing
+    // the app draws may move in response.
     const { container } = await renderStack()
     await anchorCrosshair(container)
-    const panels = [...container.querySelectorAll('.metric-panel')]
-    const spreadBefore = panels.map(xSpread)
+    const before = [...container.querySelectorAll('.metric-panel')].map(pathXs)
 
     const wrapper = container.querySelector('.recharts-wrapper')
     fireEvent.touchStart(wrapper, touchAt(606))
     fireEvent.touchMove(wrapper, touchAt(788))
     await settleHover()
+    const scrubbedTo = cursorXs(container)
 
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    fireEvent.touchStart(wrapper, twoFingerTouch)
+    fireEvent.touchMove(wrapper, twoFingerTouch)
+    await settleHover()
 
-    await waitFor(() => {
-      const panelsNow = [...container.querySelectorAll('.metric-panel')]
-      panelsNow.forEach((panel, i) => expect(xSpread(panel)).toBeGreaterThan(spreadBefore[i]))
-    })
+    // No zoom, and — the half the app has to provide itself, since Recharts
+    // would otherwise drag the crosshair to the fingers — no crosshair move.
+    expect([...container.querySelectorAll('.metric-panel')].map(pathXs)).toEqual(before)
+    expect(cursorXs(container)).toEqual(scrubbedTo)
+    expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
   })
 
   it('drops a panel when its metric is toggled off via ChartViewContext', async () => {
@@ -666,21 +676,21 @@ describe('ChartStack', () => {
   })
 
   // Kept as a negative regression guard rather than deleted: the Brush was
-  // replaced by pinch-to-zoom because its ~5px travellers are unusable on
-  // touch (ARCHITECTURE.md §13 Route B), and a stray `showBrush` prop
-  // creeping back in would otherwise go unnoticed.
+  // replaced because its ~5px travellers are unusable on touch
+  // (ARCHITECTURE.md §13 Route B), and a stray `showBrush` prop creeping back
+  // in would otherwise go unnoticed.
   it('renders no Brush on any panel', async () => {
     const { container } = await renderStack()
     expect(container.querySelectorAll('.recharts-brush')).toHaveLength(0)
   })
 
-  it('pinching narrows the x-domain identically across every panel', async () => {
+  it('dragging an edge narrows the x-domain identically across every panel', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
     const spreadBefore = panels.map(xSpread)
 
-    // Fingers spread from the quarter points out towards the edges.
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    // The start edge in to a quarter across the plot, i.e. t = 10 s.
+    await dragWindowEdge(container, { edge: 'start', from: 60, to: 242 })
 
     await waitFor(() => {
       const panelsNow = [...container.querySelectorAll('.metric-panel')]
@@ -696,17 +706,19 @@ describe('ChartStack', () => {
   })
 
   // THE regression the whole gutter design exists to prevent, and the one
-  // manual check that could be automated. `pinchStack`'s documented clientX
-  // constants assume rightInset === 0 (plot {left: 60, width: 728}); with an
-  // overlay on the plot is {left: 60, width: 684}, so this test asserts the
-  // invariant rather than pixel constants.
+  // manual check that could be automated. It broke the pinch in exactly the
+  // same way it would break the drag, which is why this pair was ported rather
+  // than dropped with the gesture it was written for.
   //
-  // A finger held still must keep the same instant under it. Route rightInset
-  // past `usePinchZoom` and the gesture solves against a 728px plot while
-  // Recharts draws a 684px one: the anchors are captured at the wrong
-  // fractions, and the error grows with distance from the left edge — ~1px at
-  // the quarter point, over a second of drift for a finger near the right.
-  it('keeps the instant under a stationary finger pinned while an overlay is on', async () => {
+  // The edge must land where the pointer is. Route rightInset past the drag and
+  // it solves against a 728px plot while Recharts draws a 684px one: the
+  // fraction is read at the wrong width, and the error grows with distance from
+  // the left edge — nothing at the left, over a second of drift near the right.
+  //
+  // Asserted through the window itself (aria-valuenow, in seconds) rather than
+  // through pixel constants, because the two cases have different plot widths
+  // BY CONSTRUCTION and that is the whole point.
+  it('lands the edge on the value under the pointer while an overlay is on', async () => {
     const { container } = await renderStack({
       extra: <ToggleStat metricId="heartRate" statKind="d1" />,
     })
@@ -715,36 +727,30 @@ describe('ChartStack', () => {
     fireEvent.click(screen.getByText('toggle-heartRate-d1'))
     await waitFor(() => expect(panel().querySelectorAll('.recharts-yAxis')).toHaveLength(2))
 
-    // Anchored near the RIGHT edge, where a mis-measured plot width does the
-    // most damage — at the left edge the error is nearly zero either way.
-    const pinnedAt = 697
-    const before = tAtClientX(panel(), pinnedAt)
+    // Three quarters across the NARROWED plot ({left: 60, width: 684}), and
+    // near the right edge, where a mis-measured width does the most damage.
+    await dragWindowEdge(container, { edge: 'start', from: 60, to: 60 + 0.75 * 684 })
 
-    await pinchStack(container, { from: [606, pinnedAt], to: [515, pinnedAt] })
-
-    await waitFor(() => expect(xSpread(panel())).toBeGreaterThan(0))
-    expect(tAtClientX(panel(), pinnedAt)).toBeCloseTo(before, 6)
+    // 0.75 of the unzoomed 0–40 s view. Measured at 728px it would read 28.2.
+    await waitFor(() => expect(handlesOf(panel())[0]).toHaveAttribute('aria-valuenow', '30'))
   })
 
-  it('keeps that same finger pinned with no overlay, so the gutter is what changed', async () => {
+  it('lands it on the same value with no overlay, so the gutter is what changed', async () => {
     // The control. Identical gesture at rightInset === 0 — if this failed too,
     // the test above would be measuring the gesture in general, not the gutter.
     const { container } = await renderStack()
     const panel = () => [...container.querySelectorAll('.metric-panel')][0]
-    const pinnedAt = 697
-    const before = tAtClientX(panel(), pinnedAt)
 
-    await pinchStack(container, { from: [606, pinnedAt], to: [515, pinnedAt] })
+    await dragWindowEdge(container, { edge: 'start', from: 60, to: 60 + 0.75 * 728 })
 
-    await waitFor(() => expect(xSpread(panel())).toBeGreaterThan(0))
-    expect(tAtClientX(panel(), pinnedAt)).toBeCloseTo(before, 6)
+    await waitFor(() => expect(handlesOf(panel())[0]).toHaveAttribute('aria-valuenow', '30'))
   })
 
   it('a horizontal trackpad swipe translates the zoomed curve without rescaling it', async () => {
     const { container } = await renderStack()
     const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
 
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await trimToMidWindow(container)
     await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
     const before = pathXs(bottomPanel())
 
@@ -772,7 +778,7 @@ describe('ChartStack', () => {
     // Absent at rest, so it never lands in an idle screenshot.
     expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
 
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await trimToMidWindow(container)
     await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
 
     fireEvent.click(screen.getByRole('button', { name: /reset zoom/i }))
@@ -795,13 +801,13 @@ describe('ChartStack', () => {
     // (120 + 130 + 150 + 140) × 10 / 40 = 135.
     await waitFor(() => expect(hrChip()).toContain('AVG 135 bpm'))
 
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await trimToMidWindow(container)
 
     // waitFor rather than a sync getBy: aggregation runs behind
     // useDeferredValue, so the chips settle a frame or two after the line
     // moves, by design.
     await waitFor(() => {
-      // The pinch lands on ≈6.7–33.3s, i.e. the samples at 10/20/30s:
+      // The window holds the samples at 10/20/30 s:
       // (130 + 150) × 10 / 20 = 140.
       expect(hrChip()).toContain('AVG 140 bpm')
     })
@@ -832,14 +838,16 @@ describe('ChartStack', () => {
     await waitFor(() => expect(hrChip()).toContain('AVG 135 bpm'))
     expect(duration()).toBe('0:40')
 
-    // The pinch lands on ≈6.7–33.3 s, i.e. the samples at 10/20/30 s.
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    // Left LIVE, no pointerup: the window holds the samples at 10/20/30 s and
+    // the hand is still on the handle.
+    await dragWindowEdge(container, { edge: 'start', from: 60, to: 242 })
+    await dragWindowEdge(container, { edge: 'end', from: 788, to: 606, release: false })
 
     // NO waitFor: one frame after the gesture emitted, the duration already
     // reports the window. Under a sustained gesture this is the whole feature
-    // — emit()'s urgent update restarts the deferred render every frame, so a
+    // — the urgent update restarts the deferred render every frame, so a
     // deferred duration does not lag by a frame, it does not move at all until
-    // the fingers stop.
+    // the hand comes off.
     expect(duration()).toBe('0:20')
 
     // And the chips still settle behind it, deliberately: making them live
@@ -866,11 +874,149 @@ describe('ChartStack', () => {
     expect(screen.queryByRole('button', { name: /reset zoom/i })).not.toBeInTheDocument()
   })
 
+  // ── The zoom window's faded shoulders and its two draggable edges ─────────
+  //
+  // The overlay's own geometry is unit-tested in ZoomWindowOverlay.test.jsx and
+  // the gesture in useEdgeDrag.test.jsx; these are the integration facts — that
+  // every panel gets handles, that dragging one trims the window the stats and
+  // the header report, and that the plot does not rescale under the hand.
+
+  const handlesOf = (panel) => [...panel.querySelectorAll('.zoom-handle')]
+
+  it('parks a handle on each plot edge when unzoomed, with no shoulder drawn', async () => {
+    // Unconditional, deliberately: parked handles are the affordance for
+    // STARTING a trim. At zero width nothing is dimmed, so an idle chart still
+    // looks exactly as it did before any of this existed.
+    const { container } = await renderStack()
+    for (const panel of container.querySelectorAll('.metric-panel')) {
+      expect(handlesOf(panel).map((h) => h.style.left)).toEqual(['0%', '100%'])
+      expect(panel.querySelector('.zoom-window__shoulder').style.width).toBe('0%')
+    }
+  })
+
+  it('shows the window against its faded shoulders on every panel once zoomed', async () => {
+    const { container } = await renderStack()
+
+    await trimToMidWindow(container)
+
+    await waitFor(() => {
+      const lefts = [...container.querySelectorAll('.metric-panel')].map((p) => handlesOf(p)[0].style.left)
+      // Every panel agrees, because the fractions are computed once for the
+      // whole stack — and the window is genuinely inside the plotted view.
+      expect(new Set(lefts).size).toBe(1)
+      expect(Number.parseFloat(lefts[0])).toBeGreaterThan(0)
+      expect(Number.parseFloat(lefts[0])).toBeLessThan(50)
+    })
+  })
+
+  it('trims the window from the start when the start handle is dragged inward', async () => {
+    const withTotalTime = { ...fixtureActivity, totalTime: 40, name: 'Test run' }
+    const { container } = await renderStack({ activity: withTotalTime })
+    const duration = () => container.querySelector('.activity-duration').textContent
+    expect(duration()).toBe('0:40')
+
+    const startHandle = handlesOf([...container.querySelectorAll('.metric-panel')][0])[0]
+    fireEvent.pointerDown(startHandle, { clientX: 60 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    // Half way across the plot of an unzoomed 0–40 s activity.
+    fireEvent.pointerMove(window, { clientX: 424 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+
+    // The header reports the WINDOW, live, exactly as it does mid-pinch.
+    expect(duration()).toBe('0:20')
+    fireEvent.pointerUp(window, { clientX: 424 })
+    await waitFor(() => expect(duration()).toBe('0:20'))
+  })
+
+  it('does NOT rescale the plot while an edge is being dragged, and re-fits once on release', async () => {
+    // §2.2's runaway: a view that tracked the window live would redraw the
+    // handle at a fixed plot fraction every frame, always on the far side of
+    // the pointer, and the window would shrink without converging. The freeze
+    // is what makes the drag land where the pointer is — and it is invisible in
+    // any test that only looks at the window, hence this one looks at the line.
+    const { container } = await renderStack()
+    const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
+    const before = pathXs(bottomPanel())
+
+    const startHandle = handlesOf([...container.querySelectorAll('.metric-panel')][0])[0]
+    fireEvent.pointerDown(startHandle, { clientX: 60 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    fireEvent.pointerMove(window, { clientX: 424 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+
+    // The graph has not moved under the hand, though the window has changed.
+    expect(pathXs(bottomPanel())).toEqual(before)
+    expect(screen.getByRole('button', { name: /reset zoom/i })).toBeInTheDocument()
+
+    fireEvent.pointerUp(window, { clientX: 424 })
+    await waitFor(() => expect(pathXs(bottomPanel())).not.toEqual(before))
+  })
+
+  it('gives back one shoulder per outward drag, and Reset zoom is the way back to all of it', async () => {
+    // A drag is clamped into the PLOTTED VIEW, so what a single outward drag can
+    // restore is exactly the context on screen — the faded shoulder is the
+    // affordance for how much. Widening past it would mean either a hidden gain
+    // on the pointer or a live view, and a live view is the runaway above.
+    // Getting the whole activity back in one action is what Reset zoom is for;
+    // that control exists for the same reason on the pinch side, where unwinding
+    // a deep zoom otherwise takes several gestures.
+    const withTotalTime = { ...fixtureActivity, totalTime: 40, name: 'Test run' }
+    const { container } = await renderStack({ activity: withTotalTime })
+    const duration = () => container.querySelector('.activity-duration').textContent
+    const startHandle = () => handlesOf([...container.querySelectorAll('.metric-panel')][0])[0]
+
+    fireEvent.pointerDown(startHandle(), { clientX: 60 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    fireEvent.pointerMove(window, { clientX: 424 })
+    fireEvent.pointerUp(window, { clientX: 424 })
+    await waitFor(() => expect(duration()).toBe('0:20'))
+
+    // The window is 20–40 s inside a view of 15–40 s: one shoulder of context.
+    expect(startHandle()).toHaveAttribute('aria-valuenow', '20')
+
+    // Back out to the left edge of the plot: the window grows to the start of
+    // the view it was drawn in, i.e. by exactly that shoulder, and no further.
+    // (The duration is unchanged at 0:20 — this fixture samples every 10 s, so
+    // 5 s of extra window contains nothing new to report. The window did move.)
+    fireEvent.pointerDown(startHandle(), { clientX: 424 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    fireEvent.pointerMove(window, { clientX: 0 })
+    fireEvent.pointerUp(window, { clientX: 0 })
+    await waitFor(() => expect(startHandle()).toHaveAttribute('aria-valuenow', '15'))
+    expect(screen.getByRole('button', { name: /reset zoom/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /reset zoom/i }))
+    await waitFor(() => expect(duration()).toBe('0:40'))
+    expect(handlesOf([...container.querySelectorAll('.metric-panel')][0]).map((h) => h.style.left)).toEqual([
+      '0%',
+      '100%',
+    ])
+  })
+
+  it('reads the crosshair out at the boundary while an edge is dragged', async () => {
+    // Trimming is done by watching the numbers, so the panels have to report at
+    // the edge being moved — and they must still be reporting after the hand
+    // comes off, the same choice useTouchScrub makes.
+    const { container } = await renderStack()
+
+    const startHandle = handlesOf([...container.querySelectorAll('.metric-panel')][0])[0]
+    fireEvent.pointerDown(startHandle, { clientX: 60 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    fireEvent.pointerMove(window, { clientX: 424 })
+    await act(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    await settleHover()
+
+    await waitFor(() => expect(cursorXs(container)).toEqual(['424', '424', '424', '424']))
+    fireEvent.pointerUp(window, { clientX: 424 })
+    await settleHover()
+    expect(container.querySelectorAll('.recharts-tooltip-cursor')).toHaveLength(4)
+  })
+
   it('resets the zoom to the full domain when the x-axis mode switches', async () => {
     const { container } = await renderStack({ extra: <SwitchXMode mode="distance" /> })
     const bottomPanel = () => [...container.querySelectorAll('.metric-panel')].at(-1)
 
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await trimToMidWindow(container)
     await waitFor(() => expect(tickSeconds(tickLabels(bottomPanel()).at(-1))).toBeLessThan(40))
 
     fireEvent.click(screen.getByText('switch-x-distance'))
@@ -948,12 +1094,12 @@ describe('ChartStack with a route', () => {
   // charts precisely because it renders canvases and no surface — so the first
   // surface is still the first MetricPanel and the arithmetic is unchanged. If
   // the map ever grows an SVG chart of its own, this is what fails.
-  it('still zooms on a pinch, with the map above the charts', async () => {
+  it('still zooms on an edge drag, with the map above the charts', async () => {
     const { container } = await renderStack({ activity: routedActivity })
     const panels = [...container.querySelectorAll('.metric-panel')]
     const spreadBefore = panels.map(xSpread)
 
-    await pinchStack(container, { from: [242, 606], to: [151, 697] })
+    await dragWindowEdge(container, { edge: 'start', from: 60, to: 242 })
 
     await waitFor(() => {
       const panelsNow = [...container.querySelectorAll('.metric-panel')]
@@ -963,7 +1109,7 @@ describe('ChartStack with a route', () => {
     })
   })
 
-  it('renders no .recharts-surface of its own, which is why the pinch is safe', async () => {
+  it('renders no .recharts-surface of its own, which is why the drag is safe', async () => {
     const { container } = await renderStack({ activity: routedActivity })
     expect(mapPanel(container).querySelector('.recharts-surface')).toBeNull()
     // And the first surface in the whole stack is still a metric panel's.

@@ -505,7 +505,8 @@ Decisions that are load-bearing and easy to undo by accident.
 - `npm run build` — clean.
 - `npm run lint` — **one pre-existing failure**, `src/ui/usePinchZoom.js:320`
   (`react-hooks/exhaustive-deps` rule not found — an ESLint plugin/config version problem).
-  It predates this work and is unrelated to anything here. *(`doc/FEEDBACK_SETUP.md` names
+  It predates this work and is unrelated to anything here. *(Since resolved: that file was
+  deleted with the pinch gesture — ARCHITECTURE.md §0, 2026-08-16 — and lint is clean.)* *(`doc/FEEDBACK_SETUP.md` names
   `src/stats/useMetricStats.js` for this; that reference is stale — the failure moved with
   the code. Same root cause.)* ESLint is also configured for `**/*.{ts,tsx}` only, so none of
   the project's `.js`/`.jsx` — including all of `worker/` and `scripts/` — is linted at all.

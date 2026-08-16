@@ -8,6 +8,13 @@
   --text-dim: #8b93a3;
   --stat-line: #6f7889;
 
+  /* The wash over the zoom window's shoulders — the context on either side of
+     what you zoomed to (ui/ZoomWindowOverlay.jsx). A translucent layer of the
+     app's OWN ground, not a tint: the faded part of the trace has to read as
+     receding, and any hue here would read as a state ("selected", "warning")
+     rather than as distance. */
+  --zoom-scrim: color-mix(in srgb, var(--bg) 62%, transparent);
+
   --metric-pace: #4cc9f0;
   --metric-heartrate: #ef476f;
   --metric-power: #ffd166;

@@ -5,8 +5,8 @@
 // real Recharts crosshair actually moves by the finger's distance — lives in
 // ChartStack.test.jsx.
 //
-// jsdom 30 has no Touch constructor (the reason the pinch is built on Pointer
-// events), but fireEvent.touchStart/Move/End accept plain objects in `touches`,
+// jsdom 30 has no Touch constructor, but fireEvent.touchStart/Move/End accept
+// plain objects in `touches`,
 // which is all these handlers read. setupTests.js hard-assigns one fixed
 // {left: 0, width: 800} rect to EVERY element, so the plot under any wrapper
 // here is {left: 60, width: 728} — the same numbers ChartStack.test.jsx uses.
@@ -203,7 +203,7 @@ describe('useTouchScrub', () => {
   })
 
   it('abandons a scrub the moment a second finger lands, and stays abandoned', () => {
-    // A pinch belongs to usePinchZoom. `off` is terminal until every finger
+    // A pinch is the browser's page zoom. `off` is terminal until every finger
     // lifts, so raising one finger of a pinch cannot decay back into a scrub.
     const { container, getByTestId } = render(<Stack />)
     const moves = spyOnMoves(container)
@@ -221,11 +221,29 @@ describe('useTouchScrub', () => {
     expect(moves()).toEqual([242, 424])
   })
 
+  it('keeps a two-finger gesture away from Recharts without cancelling the page zoom', () => {
+    // usePinchZoom used to stop these in the capture phase as a side effect of
+    // owning the pinch, and it is gone — without this, Recharts' own
+    // onTouchMove drags the crosshair to the fingers while the page magnifies.
+    // The preventDefault half must NOT come with it: cancelling here would kill
+    // the browser zoom, which is now the whole point of a two-finger gesture.
+    const { getByTestId } = render(<Stack />)
+    const seen = vi.fn()
+    getByTestId('a').addEventListener('touchmove', seen)
+
+    const event = new Event('touchmove', { bubbles: true, cancelable: true })
+    event.touches = twoFingers.touches
+    getByTestId('a-svg').dispatchEvent(event)
+
+    expect(seen).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
   it('stops touchmove in the capture phase, so Recharts never sees the finger', () => {
     // Jump path (1): React's onTouchMove on .recharts-wrapper dispatches
     // setMouseOverAxisIndex AT THE FINGER, which is what makes a held finger
-    // drag the crosshair under itself. Capture-phase stopping is the same
-    // mechanism usePinchZoom's handleMultiTouch uses.
+    // drag the crosshair under itself. Capture-phase stopping is what keeps it
+    // from reaching React's root delegation at all.
     const { getByTestId } = render(<Stack />)
     const seen = vi.fn()
     getByTestId('a').addEventListener('touchmove', seen)
@@ -306,7 +324,7 @@ describe('useTouchScrub', () => {
   })
 })
 
-// HONESTY NOTE, the sibling of the one at the foot of usePinchZoom.test.jsx:
+// HONESTY NOTE, the sibling of the one at the foot of useWheelPan.test.jsx:
 // jsdom implements no passive-listener semantics, synthesizes no compatibility
 // mouse events after a tap, and has no history gesture. So of the two jump
 // paths this hook closes, only the first is covered above.
