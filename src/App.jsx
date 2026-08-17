@@ -1,13 +1,12 @@
 // Composition root. See ARCHITECTURE.md §5: swapping the ActivitySource is
 // exactly changing the `source` instance passed to AppProviders below —
 // nothing else in the tree touches a concrete adapter.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
 import { createDefaultSource } from './data/sourceRegistry.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
 import { BrandMark } from './ui/BrandMark.jsx'
-import { ChartStack } from './ui/ChartStack.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { ErrorState } from './ui/ErrorState.jsx'
 import { FeedbackWidget } from './ui/FeedbackWidget.jsx'
@@ -16,6 +15,13 @@ import { IntervalsPage } from './ui/IntervalsPage.jsx'
 import { StravaPage } from './ui/StravaPage.jsx'
 import { useIsScrolled } from './ui/useIsScrolled.js'
 import { useStravaOAuthCallback } from './ui/useStravaOAuthCallback.js'
+
+// Recharts — and the @reduxjs/toolkit / immer / d3 tree it drags in, ~400 kB of the
+// bundle — is reachable through this component and nowhere else, and this component
+// renders only once an activity is parsed. Splitting here keeps the whole charting
+// stack out of a first paint whose only content is a drop zone. Warmed in loadRef
+// below so the fetch overlaps the parse instead of following it.
+const ChartStack = lazy(() => import('./ui/ChartStack.jsx').then((m) => ({ default: m.ChartStack })))
 
 // Exported (not just default-exported App) so tests can drive states the
 // real parsers never produce on demand — e.g. a load stuck pending — by
@@ -56,6 +62,10 @@ export function AppShell() {
 
   const loadRef = useCallback(
     (ref) => {
+      // Fire-and-forget: starts the ChartStack chunk downloading alongside the parse
+      // rather than after it. The promise is deliberately unused — React.lazy dedupes
+      // the request, so this only moves the fetch earlier, never duplicates it.
+      import('./ui/ChartStack.jsx')
       lastRef.current = ref
       load(ref)
     },
@@ -168,7 +178,17 @@ export function AppShell() {
                 settings window that used to sit above the stack is gone too:
                 ChartStack carries its own chrome, a toolbar row plus one
                 foldable head per graph. */}
-            {status === 'ready' && activity && <ChartStack positionSlot={positionSlot} />}
+            {status === 'ready' && activity && (
+              <Suspense
+                fallback={
+                  <p className="loading-indicator" role="status">
+                    Loading activity…
+                  </p>
+                }
+              >
+                <ChartStack positionSlot={positionSlot} />
+              </Suspense>
+            )}
           </>
         )}
       </main>
