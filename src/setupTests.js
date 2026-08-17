@@ -105,6 +105,37 @@ Element.prototype.getBoundingClientRect = function () {
   return { x: 0, y: 0, top: 0, left: 0, bottom: 200, right: 800, width: 800, height: 200, toJSON() {} }
 }
 
+// jsdom implements neither URL.createObjectURL nor URL.revokeObjectURL (both
+// are `undefined`), which is everything lib/downloadBytes.js is built out of —
+// `Blob` and HTMLAnchorElement.prototype.click *do* exist, so the rest of that
+// path works untouched.
+//
+// Same philosophy as the canvas stub below: returning a working stub rather
+// than letting the code take an early-return branch is the point. The real
+// download path then runs under test, and because this one RECORDS what it was
+// handed, a test can assert on the actual Blob — its size, its bytes, its type
+// — rather than merely that a function was called. `revoked` is recorded too,
+// so the leak this app would otherwise have (a live object URL pinning a whole
+// FIT file for the session) stays assertable.
+const objectUrls = []
+URL.createObjectURL = function (blob) {
+  const url = `blob:mock/${objectUrls.length}`
+  objectUrls.push({ url, blob, revoked: false })
+  return url
+}
+URL.revokeObjectURL = function (url) {
+  const entry = objectUrls.find((e) => e.url === url)
+  if (entry) entry.revoked = true
+}
+// Tests read this rather than spying — it survives the module-level assignment
+// above and needs no per-suite setup. Emptied between tests for the same reason
+// the DOM is: jsdom's environment is per *file*, so one test's download would
+// otherwise still be the "last" one the next test reads.
+globalThis.__objectUrls = objectUrls
+afterEach(() => {
+  objectUrls.length = 0
+})
+
 // jsdom implements no canvas at all: `getContext('2d')` returns null and logs
 // "Not implemented" noise. Neither `canvas` (a native build) nor
 // `vitest-canvas-mock` is installed, and neither is worth its weight here —

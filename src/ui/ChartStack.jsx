@@ -22,6 +22,7 @@ import { useChartView } from '../state/ChartViewContext.jsx'
 import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
 import { ChartToolbar } from './ChartToolbar.jsx'
 import { Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
+import { ExportFitButton } from './ExportFitButton.jsx'
 import { MapPanel } from './MapPanel.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
@@ -242,17 +243,27 @@ export function ChartStack({ positionSlot = null }) {
           />
         )
       })}
-      {/* An explicit way back, kept even though holding an edge at the plot edge
-          also unwinds a 50× zoom: that takes ~4s and this is instant. Rendered
-          only while zoomed, which keeps it out of an idle screenshot, and
-          absolutely positioned over the plot rather than added to the toolbar
-          row above: it acts on what the user is looking at, and a conditional
-          control in that always-present row would change its height and reflow
-          every chart below it on the first zoom. */}
+      {/* The window's own actions, clustered over the top-right of the plot.
+          Both are conditional on being zoomed, which keeps them out of an idle
+          screenshot, and both are absolutely positioned over the plot rather
+          than added to the toolbar row above: they act on what the user is
+          looking at, and a conditional control in that always-present row would
+          change its height and reflow every chart below it on the first zoom.
+          Being inside .chart-stack also gets them the right gesture behaviour
+          for free — useTouchScrub.js abandons any touch that didn't land in a
+          .recharts-wrapper, and names Reset zoom as the precedent. */}
       {!isFullDomain(zoomDomain) && (
-        <button type="button" className="zoom-reset" onClick={() => setZoom(fullDomain(), fullDomain())}>
-          Reset zoom
-        </button>
+        <div className="zoom-actions">
+          {/* An explicit way back, kept even though holding an edge at the plot
+              edge also unwinds a 50× zoom: that takes ~4s and this is instant. */}
+          <button type="button" className="zoom-reset" onClick={() => setZoom(fullDomain(), fullDomain())}>
+            Reset zoom
+          </button>
+          {/* Renders nothing unless the activity came from a .fit FILE — see
+              its own FIT-ness gate. So on a Strava sync or a .gpx drop this
+              cluster is exactly the single button it has always been. */}
+          <ExportFitButton />
+        </div>
       )}
     </div>
   )

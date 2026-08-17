@@ -5,11 +5,12 @@ import { ActivitySourceProvider } from '../data/ActivitySource.js'
 import { ActivityProvider, useActivity } from './ActivityContext.jsx'
 
 function Probe() {
-  const { activity, status, error, load } = useActivity()
+  const { activity, ref, status, error, load } = useActivity()
   return (
     <div>
       <div>status:{status}</div>
       <div>activity:{activity ? activity.id : 'none'}</div>
+      <div>ref:{ref ? ref.id : 'none'}</div>
       <div>error:{error ? error.message : 'none'}</div>
       <button onClick={() => load({ type: 'id', id: 'anything' })}>load</button>
     </div>
@@ -31,6 +32,7 @@ describe('ActivityContext', () => {
     renderProbe({ kind: 'mock', load: () => Promise.resolve() })
     expect(screen.getByText('status:idle')).toBeInTheDocument()
     expect(screen.getByText('activity:none')).toBeInTheDocument()
+    expect(screen.getByText('ref:none')).toBeInTheDocument()
     expect(screen.getByText('error:none')).toBeInTheDocument()
   })
 
@@ -54,7 +56,18 @@ describe('ActivityContext', () => {
 
     await waitFor(() => expect(screen.getByText('status:error')).toBeInTheDocument())
     expect(screen.getByText('activity:none')).toBeInTheDocument()
+    expect(screen.getByText('ref:none')).toBeInTheDocument()
     expect(screen.getByText('error:boom')).toBeInTheDocument()
+  })
+
+  it('publishes the ref that produced the activity, so consumers can tell a dropped file from a sync', async () => {
+    const user = userEvent.setup()
+    renderProbe({ kind: 'mock', load: () => Promise.resolve({ id: 'run-1' }) })
+
+    await user.click(screen.getByText('load'))
+
+    await waitFor(() => expect(screen.getByText('status:ready')).toBeInTheDocument())
+    expect(screen.getByText('ref:anything')).toBeInTheDocument()
   })
 
   it('calls the injected source.load with the given ref', async () => {

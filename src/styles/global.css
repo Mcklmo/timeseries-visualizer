@@ -572,15 +572,29 @@ main {
   touch-action: pan-y pinch-zoom;
 }
 
-/* Sits over the top-right of the plot, only while zoomed. Opaque --panel
-   rather than a translucent chip, since it lands directly on top of the line
-   it's offering to reset. 44px min-height is the touch-target floor — this is
-   the escape hatch from a deep pinch, so it must not be fiddly. */
-.zoom-reset {
+/* The window's actions — Reset zoom, and Export on a FIT file — sitting over
+   the top-right of the plot, only while zoomed. The positioning lives on the
+   cluster rather than on either button so they can never disagree about where
+   they are; `align-items: flex-start` keeps a wrapped error message from
+   stretching the buttons' height. Laid out right-to-left (row-reverse would
+   reorder them; this doesn't) — the DOM order is Reset then Export, and the
+   flex row keeps that reading order. */
+.zoom-actions {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* Opaque --panel rather than a translucent chip, since these land directly on
+   top of the line they're offering to act on. 44px min-height is the
+   touch-target floor — Reset is the escape hatch from a deep zoom, so it must
+   not be fiddly, and a second button beside it has no excuse to be smaller. */
+.zoom-reset,
+.export-fit {
   min-height: 44px;
   font: inherit;
   font-size: 13px;
@@ -592,8 +606,25 @@ main {
   cursor: pointer;
 }
 
-.zoom-reset:hover {
+.zoom-reset:hover,
+.export-fit:hover {
   border-color: var(--metric-pace);
+}
+
+.export-fit:disabled {
+  color: var(--text-dim);
+  cursor: progress;
+}
+
+/* Inline beside the button, not in place of the chart: a failed export leaves
+   a perfectly good activity on screen. Wrapped and width-capped so a long
+   adapter message doesn't run off the plot. */
+.export-fit__error {
+  max-width: 24ch;
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
 }
 
 /* The zoom window: faded shoulders on either side of what you zoomed to, and a
