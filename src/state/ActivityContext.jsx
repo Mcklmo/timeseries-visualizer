@@ -19,7 +19,7 @@ export function ActivityProvider({ children }) {
         // The ref that PRODUCED this activity, published alongside it. Until
         // now it was thrown away, so nothing downstream could tell a dropped
         // .fit from a Strava sync — which is exactly the question the FIT
-        // export has to answer before it offers a button (ui/ExportFitButton).
+        // export has to answer before it offers a button (ui/ExportWindowButton).
         //
         // It belongs here and not on Activity: Activity is domain/'s type,
         // produced by normalizeActivity, which has never seen a file, and

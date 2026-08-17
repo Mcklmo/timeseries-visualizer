@@ -45,9 +45,32 @@ import { createContext, createElement, useContext } from 'react'
  */
 
 /**
+ * The port. `load` is the whole contract for reading; the two export methods
+ * are the whole contract for writing a window back out.
+ *
+ * **Both export methods are OPTIONAL, and every call site must treat them so**
+ * — `source.canExportWindow?.(ref) ?? false`, i.e. a source that does not
+ * answer cannot export. That is a concession to test doubles, not a hole in
+ * production: there are ~17 inline `{kind:'mock', load}` sources across the UI
+ * suites, and the only source App.jsx ever publishes is the registry, which
+ * always implements both. An unguarded call would turn every one of those
+ * doubles into a TypeError the moment its tree reached the export button.
+ *
+ * `canExportWindow` is **synchronous** because it is asked during render, to
+ * decide whether the button exists at all. It therefore answers from the ref
+ * alone — a filename for a dropped file, a provider for a synced one — and
+ * never from the bytes. ExportWindowButton.jsx argues that trade in full.
+ *
+ * `readOriginalBytes` returns **inflated** bytes, so a caller never has to know
+ * whether they came off disk gzipped or off the wire. It is allowed to reject:
+ * a provider with no original-file endpoint (Strava) declines explicitly rather
+ * than by omission, and a network provider's own error codes propagate.
+ *
  * @typedef {object} ActivitySource
  * @property {'tcx'|'fit'|'gpx'|'intervals'|'strava'|'registry'|'mock'} kind
  * @property {(ref: ActivityRef) => Promise<import('../domain/types.js').Activity>} load
+ * @property {(ref: ActivityRef) => boolean} [canExportWindow]
+ * @property {(ref: ActivityRef) => Promise<Uint8Array>} [readOriginalBytes]
  */
 
 const ActivitySourceContext = createContext(undefined)

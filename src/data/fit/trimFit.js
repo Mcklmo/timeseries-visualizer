@@ -3,7 +3,7 @@
 // direction of parseFit.js, which is why it lives beside it.
 //
 // Nothing here knows about Activity, samples or the zoom — bytes and two Dates
-// in, bytes out. The caller (ui/ExportFitButton.jsx) is what turns the zoom
+// in, bytes out. The caller (ui/ExportWindowButton.jsx) is what turns the zoom
 // window into that pair of Dates; see ARCHITECTURE.md §0 for why the mapping is
 // a one-liner (`activity.startTime + sample.t * 1000`).
 //

@@ -112,4 +112,40 @@ export class StravaActivitySource {
     // live fallback rather than dead code.
     return ref.name ? { ...activity, name: ref.name } : activity
   }
+
+  /**
+   * **No, and this is a decision rather than an omission.**
+   *
+   * As the class header says: *Strava has no original-file endpoint at all;
+   * streams are the only telemetry route.* Exporting a window would therefore
+   * mean SYNTHESIZING a file out of `Activity.samples`, which this codebase has
+   * already ruled against (trimFit.js:109-121, and ARCHITECTURE.md §3's
+   * dependency rule). It would require inverting, per sport and per source
+   * format, every derivation the read path applies — cadence doubling, speed
+   * derivation and its 9 s smoothing, the distance axis's monotonic clamp and
+   * haversine substitution, the Web Mercator projection whose inverse
+   * webMercator.js does not have — and `Sample` carries no marker
+   * distinguishing a recorded value from a derived one, so there is no honest
+   * way to write back only what the device actually measured.
+   *
+   * Written out explicitly, rather than left absent, because an omission is
+   * indistinguishable from "not implemented yet". This is what moves the
+   * exclusion out of the UI and into the adapter that knows why.
+   */
+  canExportWindow() {
+    return false
+  }
+
+  /**
+   * Unreachable through the button, which asks `canExportWindow` first. Present
+   * so that a future caller reaching past the gate gets the reason rather than
+   * an `undefined is not a function`.
+   *
+   * A plain Error, not a StravaApiError: nothing was requested and Strava said
+   * nothing. There is no `.code` for the picker to switch on, and inventing one
+   * would put a value in StravaErrorCode that no response can ever produce.
+   */
+  async readOriginalBytes() {
+    throw new Error("Strava doesn't provide the original file for an activity, so a zoom window can't be exported from it")
+  }
 }

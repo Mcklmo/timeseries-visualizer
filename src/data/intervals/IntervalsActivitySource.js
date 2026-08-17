@@ -51,6 +51,49 @@ export class IntervalsActivitySource {
    * @returns {Promise<import('../../domain/types.js').Activity>}
    */
   async load(ref) {
+    // The guard, the credential check and the inflate all live in
+    // `readOriginalBytes` now — one download-and-inflate path, so load and
+    // export cannot come to disagree about what "the original file" is.
+    const bytes = await this.readOriginalBytes(ref)
+    const parsed = await parseDownload(bytes)
+
+    const activity = normalizeActivity(parsed)
+    // The real title from intervals.icu wins over the inferred one, when the
+    // picker had one to pass. It often won't — a stub row carries no name —
+    // so the derived name stays the fallback rather than becoming dead code.
+    return ref.name ? { ...activity, name: ref.name } : activity
+  }
+
+  /**
+   * **Always true, deliberately, with no pre-flight check.**
+   *
+   * The format of the original upload is unknowable until the download lands —
+   * this app does not trust `file_type` (fileFormat.js:8-17 says why), and a
+   * HEAD request to find out would cost the same round trip the export itself
+   * costs. So the button always shows while zoomed, and the rare
+   * unsupported-format failure renders inline beside it.
+   *
+   * That failure is close to unreachable in practice: `unsupportedReason`
+   * (toActivityRow.js:27-42) already greys out picker rows with no usable
+   * original, so an intervals activity that is ON SCREEN loaded from a file
+   * that already parsed once.
+   */
+  canExportWindow() {
+    return true
+  }
+
+  /**
+   * The athlete's ORIGINAL uploaded file, inflated.
+   *
+   * `GET /activity/{id}/file`, not `/fit-file` — the second is a regenerated
+   * FIT that would lose whatever the athlete actually uploaded. This is the
+   * same call `load` makes, which is the point: an export is a second download
+   * of the exact bytes the chart on screen was built from.
+   *
+   * @param {import('../ActivitySource.js').ActivityRef} ref
+   * @returns {Promise<Uint8Array>}
+   */
+  async readOriginalBytes(ref) {
     if (ref.type !== 'id') {
       throw new Error('IntervalsActivitySource can only load an id reference')
     }
@@ -68,14 +111,7 @@ export class IntervalsActivitySource {
       activityId: ref.id,
       fetchImpl: this.fetchImpl,
     })
-    const bytes = await gunzipIfNeeded(downloaded)
-    const parsed = await parseDownload(bytes)
-
-    const activity = normalizeActivity(parsed)
-    // The real title from intervals.icu wins over the inferred one, when the
-    // picker had one to pass. It often won't — a stub row carries no name —
-    // so the derived name stays the fallback rather than becoming dead code.
-    return ref.name ? { ...activity, name: ref.name } : activity
+    return gunzipIfNeeded(downloaded)
   }
 }
 

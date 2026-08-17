@@ -135,3 +135,57 @@ describe('IntervalsActivitySource', () => {
     })
   })
 })
+
+// The export path's half of the adapter. `load` was rewritten to go through
+// `readOriginalBytes`, so these two are now provably the same download.
+describe('IntervalsActivitySource — the export port', () => {
+  it('always says the window is exportable, with no pre-flight request', () => {
+    const { source, fetchImpl } = sourceServing(encoder.encode(validTcxXml))
+
+    // The format of the original upload is unknowable until it lands, so the
+    // button always shows and an unsupported format fails inline instead.
+    expect(source.canExportWindow({ type: 'id', id: 'i123' })).toBe(true)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('hands back the original file\'s bytes', async () => {
+    const { source, fetchImpl } = sourceServing(encoder.encode(validTcxXml))
+
+    const bytes = await source.readOriginalBytes({ type: 'id', id: 'i123' })
+
+    expect(new TextDecoder().decode(bytes)).toBe(validTcxXml)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('inflates a gzipped original, so the caller never learns it was compressed', async () => {
+    const gzipped = new Uint8Array(
+      await new Response(
+        new Response(encoder.encode(validTcxXml)).body.pipeThrough(new CompressionStream('gzip')),
+      ).arrayBuffer(),
+    )
+    const { source } = sourceServing(gzipped)
+
+    const bytes = await source.readOriginalBytes({ type: 'id', id: 'i123' })
+
+    expect(new TextDecoder().decode(bytes)).toBe(validTcxXml)
+  })
+
+  it('applies the same credential guard load does, and issues no request without one', async () => {
+    const fetchImpl = vi.fn()
+    const source = new IntervalsActivitySource({ getApiKey: () => null, fetchImpl })
+
+    const error = await source.readOriginalBytes({ type: 'id', id: 'i123' }).catch((e) => e)
+
+    expect(error).toBeInstanceOf(IntervalsApiError)
+    expect(error.code).toBe('unauthorized')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('rejects a file ref, exactly as load does', async () => {
+    const { source } = sourceServing(encoder.encode(validTcxXml))
+
+    await expect(
+      source.readOriginalBytes({ type: 'file', file: new File(['x'], 'run.tcx') }),
+    ).rejects.toThrow(/can only load an id reference/i)
+  })
+})

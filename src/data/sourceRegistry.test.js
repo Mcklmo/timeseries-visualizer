@@ -109,6 +109,79 @@ describe('sourceFor — id refs dispatch on the provider, never on the id', () =
   })
 })
 
+describe('canExportWindow — is there a recorded original file behind this ref?', () => {
+  const canExport = (ref) => createDefaultSource().canExportWindow(ref)
+
+  it.each(['run.fit', 'run.tcx', 'run.gpx', 'RUN.FIT'])('says yes to %s', (name) => {
+    expect(canExport(fileRef(name))).toBe(true)
+  })
+
+  // ⚠️ The regression this exists for. `sourceFor` returns NULL for a
+  // `.fit.gz` — SOURCE_BY_EXTENSION has no entry for it, and `load` rescues it
+  // by sniffing — so routing the gate through `sourceFor` would silently take
+  // the Export button away from a file that has always had one.
+  it.each(['activity.fit.gz', 'run.tcx.gz', 'run.gpx.gz'])('still says yes to %s', (name) => {
+    expect(canExport(fileRef(name))).toBe(true)
+  })
+
+  it('says no to a name it cannot place, and to no ref at all', () => {
+    expect(canExport(fileRef('run.kml'))).toBe(false)
+    expect(canExport(fileRef('run'))).toBe(false)
+    expect(canExport(undefined)).toBe(false)
+  })
+
+  it('delegates an id ref to its provider — yes for intervals.icu, no for Strava', () => {
+    // intervals.icu hands back the athlete's original upload; Strava has no
+    // original-file endpoint at all and declines in its own adapter.
+    expect(canExport({ type: 'id', provider: 'intervals', id: 'i1' })).toBe(true)
+    expect(canExport({ type: 'id', provider: 'strava', id: 's1' })).toBe(false)
+  })
+
+  // Synchronous, unlike everything else on the port: it is asked during render.
+  // An unknown provider must NOT throw here the way `sourceFor` does — a throw
+  // during render loses the chart the athlete is looking at.
+  it('says no to an unknown provider instead of throwing', () => {
+    expect(canExport({ type: 'id', provider: 'garmin', id: 'g1' })).toBe(false)
+    expect(canExport({ type: 'id', id: 'i1' })).toBe(false)
+  })
+})
+
+describe('readOriginalBytes — the original file, inflated', () => {
+  it('reads a dropped file straight through', async () => {
+    const bytes = await createDefaultSource().readOriginalBytes(fileRef('run.fit', 'hello'))
+    expect(new TextDecoder().decode(bytes)).toBe('hello')
+  })
+
+  it('inflates a .fit.gz, so the caller never learns it was compressed', async () => {
+    const original = await readFile('fixtures/23870166877_ACTIVITY.fit')
+    const bytes = await createDefaultSource().readOriginalBytes(fileRef('run.fit.gz', await gzip(original)))
+
+    expect(bytes.length).toBe(original.length)
+  })
+
+  it('delegates an id ref to its provider', async () => {
+    const fetchImpl = vi.fn(async () => new Response(new Uint8Array([1, 2, 3])))
+    const registry = createDefaultSource({ getIntervalsApiKey: () => 'k', fetchImpl })
+
+    const bytes = await registry.readOriginalBytes({ type: 'id', provider: 'intervals', id: 'i1' })
+
+    expect(Array.from(bytes)).toEqual([1, 2, 3])
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects for a provider that has no original file', async () => {
+    await expect(
+      createDefaultSource().readOriginalBytes({ type: 'id', provider: 'strava', id: 's1' }),
+    ).rejects.toThrow(/original file/i)
+  })
+
+  it('rejects loudly on an unknown provider rather than guessing', async () => {
+    await expect(
+      createDefaultSource().readOriginalBytes({ type: 'id', provider: 'garmin', id: 'g1' }),
+    ).rejects.toThrow(/garmin/)
+  })
+})
+
 // The property App.jsx used to hold and a registry could easily lose: the
 // credential is read through a thunk on every load, never captured while the
 // registry is constructed. Without it, a Disconnect would keep working until

@@ -204,3 +204,16 @@ describe('StravaActivitySource', () => {
     expect(error.message).toMatch(/no longer exists/i)
   })
 })
+
+// The exclusion, stated as a test rather than left as an absence. Strava has no
+// original-file endpoint at all, so exporting a window would mean synthesizing
+// a file out of derived samples — which this codebase has ruled against.
+describe('StravaActivitySource — the export port declines explicitly', () => {
+  it('answers no to canExportWindow', () => {
+    expect(makeSource({}).canExportWindow(REF)).toBe(false)
+  })
+
+  it('rejects readOriginalBytes with the reason, not a TypeError', async () => {
+    await expect(makeSource({}).readOriginalBytes(REF)).rejects.toThrow(/original file/i)
+  })
+})

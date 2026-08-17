@@ -36,6 +36,7 @@
 // registry touches neither. The defaults read the real app-wide stores so
 // App.jsx can call this with no arguments, and tests inject their own —
 // exactly the pattern credentialStore.js documents.
+import { activityExtensionOf } from './activityFilename.js'
 import { detectActivityFormat, gunzipIfNeeded } from './fileFormat.js'
 import { FitActivitySource } from './fit/FitActivitySource.js'
 import { GpxActivitySource } from './gpx/GpxActivitySource.js'
@@ -127,10 +128,27 @@ export function createDefaultSource({
    * @param {import('./ActivitySource.js').FileActivityRef} ref
    * @returns {Promise<{source: ActivitySource, ref: ActivityRef}|null>}
    */
+  /**
+   * **The bytes ARE a file ref** — reading them needs no per-format knowledge
+   * at all, which is why the export path handles file refs here rather than
+   * fanning them out to three three-line adapters.
+   * IntervalsActivitySource.js:12-16 already sets that precedent.
+   *
+   * Shared with `sniffFileRef` below, which opens with exactly this line: the
+   * fallback loader and the export path both want "this file, inflated", and
+   * two copies of it could come to disagree about the gunzip.
+   *
+   * @param {import('./ActivitySource.js').FileActivityRef} ref
+   * @returns {Promise<Uint8Array>}
+   */
+  async function readFileBytes(ref) {
+    return gunzipIfNeeded(new Uint8Array(await ref.file.arrayBuffer()))
+  }
+
   async function sniffFileRef(ref) {
     let bytes
     try {
-      bytes = await gunzipIfNeeded(new Uint8Array(await ref.file.arrayBuffer()))
+      bytes = await readFileBytes(ref)
     } catch {
       // A truncated or corrupt gzip stream. Nothing useful to say here that
       // the parser's own error will not say better about the bytes as given.
@@ -160,6 +178,52 @@ export function createDefaultSource({
       // returns a source for everything else, or throws.
       const sniffed = await sniffFileRef(ref)
       return sniffed ? sniffed.source.load(sniffed.ref) : tcxSource.load(ref)
+    },
+    /**
+     * Does a genuinely recorded original file exist for this ref? Asked during
+     * render, so it answers from the ref alone and never from the bytes.
+     *
+     * ⚠️ **Not routed through `sourceFor`.** That dispatches on an extension
+     * table with no `.fit.gz` in it, so a gzipped file would silently lose the
+     * button it has always had; `activityExtensionOf` matches the optional
+     * `.gz` instead. Naming which adapter parses a file and deciding whether it
+     * can be trimmed are two different questions, and this is the one place
+     * that difference bites.
+     *
+     * Closures on the object literal rather than class methods, so a test can
+     * spread these onto its own double without `this` breaking.
+     *
+     * @param {ActivityRef} ref
+     */
+    canExportWindow: (ref) => {
+      if (ref?.type === 'file') return activityExtensionOf(ref.file.name) != null
+      // Delegated, because only the provider knows. intervals.icu hands back
+      // the athlete's original upload; Strava has no such endpoint at all and
+      // declines explicitly. `?? false` keeps a provider that has not answered
+      // the question from being read as a yes.
+      if (ref?.type === 'id') return SOURCE_BY_PROVIDER[ref.provider]?.canExportWindow?.(ref) ?? false
+      return false
+    },
+    /**
+     * The original file's bytes, **inflated**. The other half of the export
+     * path: `canExportWindow` says a file exists, this produces it.
+     *
+     * For an id ref this is a real network request, issued on click and never
+     * on load — see ExportWindowButton.jsx, which is the app's only non-`load`
+     * network call.
+     *
+     * @param {ActivityRef} ref
+     * @returns {Promise<Uint8Array>}
+     */
+    readOriginalBytes: async (ref) => {
+      if (ref?.type === 'file') return readFileBytes(ref)
+      // `sourceFor` for the same reason `load` uses it: an id ref with an
+      // unknown provider must throw loudly here too rather than guess.
+      const source = sourceFor(ref)
+      if (!source?.readOriginalBytes) {
+        throw new Error("This activity's original file isn't available to download")
+      }
+      return source.readOriginalBytes(ref)
     },
     // Exposed for the registry's own tests, which assert *which* adapter a ref
     // routes to rather than what it eventually loads. Not part of the

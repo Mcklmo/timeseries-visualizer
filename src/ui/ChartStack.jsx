@@ -22,7 +22,7 @@ import { useChartView } from '../state/ChartViewContext.jsx'
 import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
 import { ChartToolbar } from './ChartToolbar.jsx'
 import { Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
-import { ExportFitButton } from './ExportFitButton.jsx'
+import { ExportWindowButton } from './ExportWindowButton.jsx'
 import { MapPanel } from './MapPanel.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
 import { useIsNarrow } from './useIsNarrow.js'
@@ -259,10 +259,11 @@ export function ChartStack({ positionSlot = null }) {
           <button type="button" className="zoom-reset" onClick={() => setZoom(fullDomain(), fullDomain())}>
             Reset zoom
           </button>
-          {/* Renders nothing unless the activity came from a .fit FILE — see
-              its own FIT-ness gate. So on a Strava sync or a .gpx drop this
-              cluster is exactly the single button it has always been. */}
-          <ExportFitButton />
+          {/* Renders nothing unless the SOURCE declares this ref exportable —
+              see its own gate. So on a Strava activity, whose telemetry never
+              came from a file this app holds, the cluster is exactly the single
+              button it has always been. */}
+          <ExportWindowButton />
         </div>
       )}
     </div>
