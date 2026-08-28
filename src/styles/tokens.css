@@ -41,7 +41,12 @@
      carries a head with its name and the crosshair's value in it, and at 4px
      that label crowded the line above. The panels still read as one instrument
      because what makes them one is the pixel alignment of their plot areas
-     (§7), not the size of the gap. */
+     (§7), not the size of the gap.
+
+     MUST equal PANEL_GAP in ui/slotLayout.js — the slot layout subtracts the
+     real gaps when solving panel heights so N panels fill the viewport
+     exactly, and a drift here would leave a sliver of the N+1th graph in
+     every screenshot. The twin comment is on that constant. */
   --panel-gap: 12px;
   /* A floor, not a measurement: .app-header's min-height, sized to the faded
      header with nothing loaded (12px padding × 2 + the 20px h1 line). With an
