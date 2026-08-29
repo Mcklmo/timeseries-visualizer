@@ -18,6 +18,7 @@ import { isMetricForSport, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
 import { MetricToggle } from './MetricToggle.jsx'
+import { ShareActivityButton } from './ShareActivityButton.jsx'
 import { XAxisModeSwitch } from './XAxisModeSwitch.jsx'
 
 export function ChartToolbar() {
@@ -60,6 +61,12 @@ export function ChartToolbar() {
           </li>
         ))}
       </ul>
+      {/* Unconditional while an activity is loaded (the null-activity case is
+          this component's own guard above), so the row never reflows when a
+          state elsewhere flips — the same reason the zoom actions cluster
+          floats over the plot instead of living here. Acts on the whole
+          activity, so it belongs in the one row that is not per-graph. */}
+      <ShareActivityButton />
     </div>
   )
 }

@@ -816,6 +816,24 @@ native Rate Limiting binding (`FEEDBACK_RATE_LIMITER`, 5 requests / 60s keyed on
 `CF-Connecting-IP`) caps the blast radius of a replayed token behind it. The binding needs
 no dashboard provisioning — its `namespace_id` only has to be unique within the account.
 
+### Short share links (optional)
+
+The Share button (`src/ui/ShareActivityButton.jsx`) always works: it encodes the whole
+activity into a self-contained `#a=` URL (`src/data/shared/shareCodec.js`) that needs no
+server at all. What *is* optional is the shortener that turns that multi-KB URL into
+`activitymaxxer.com/s/<10 chars>` so it survives messaging apps — it stores payloads in
+Workers KV (`worker/routes/share.js`), and the binding ships commented out. To enable it:
+
+```bash
+npx wrangler kv namespace create SHARE_LINKS
+```
+
+then paste the printed id into the commented `kv_namespaces` block in `wrangler.jsonc`,
+uncomment it, and deploy. Until then `POST /api/share` answers 503 and the client silently
+shares the long URL instead — the feature degrades, it never breaks. `SHARE_RATE_LIMITER`
+(10 / 60s per IP) caps scripted storage abuse; ids are content-addressed (SHA-256 prefix),
+so re-sharing the same activity re-writes the same key rather than growing the namespace.
+
 ## Contributing / continuing the build
 
 If you're picking this up (human or agent), read

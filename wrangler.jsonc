@@ -42,6 +42,19 @@
     // the *production* app's id and local dev overrides it (see .env).
     "STRAVA_CLIENT_ID": "270832"
   },
+  // Short share links (worker/routes/share.js). COMMENTED OUT until the
+  // namespace exists: `wrangler kv namespace create SHARE_LINKS`, then paste
+  // the id it prints below and uncomment. Until then the share feature still
+  // works — the POST answers 503 and the client shares the long self-contained
+  // `#a=` URL instead. No TTL on entries, deliberately: a shared link should
+  // not rot, and at ~5-30 KB per payload the free KV tier's storage holds
+  // tens of thousands of links; revisit with a TTL if that ever nears.
+  // "kv_namespaces": [
+  //   {
+  //     "binding": "SHARE_LINKS",
+  //     "id": "<paste the id from `wrangler kv namespace create SHARE_LINKS`>"
+  //   }
+  // ],
   // Native rate limiting, keyed by CF-Connecting-IP in the routes.
   // namespace_id only has to be unique within this Cloudflare account; there is
   // nothing to provision in the dashboard for it.
@@ -84,6 +97,18 @@
       "namespace_id": "1003",
       "simple": {
         "limit": 300,
+        "period": 60
+      }
+    },
+    {
+      // Share-link creation (POST /api/share). One click makes one link, so
+      // even a person sharing enthusiastically stays in single digits per
+      // minute; 10 is a burst cap against scripted storage abuse, sized with
+      // KV's own write budget in mind rather than any user's behaviour.
+      "name": "SHARE_RATE_LIMITER",
+      "namespace_id": "1004",
+      "simple": {
+        "limit": 10,
         "period": 60
       }
     }

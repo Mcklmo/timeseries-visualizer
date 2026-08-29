@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MAX_LATITUDE, projectLatLon } from './webMercator.js'
+import { MAX_LATITUDE, projectLatLon, unprojectXY } from './webMercator.js'
 
 describe('projectLatLon', () => {
   it('puts null island at the centre of the unit square', () => {
@@ -53,5 +53,33 @@ describe('projectLatLon', () => {
     const dy = projectLatLon(55.0, 0).y - projectLatLon(55.1, 0).y
     const dx = projectLatLon(55.0, 0.1).x - projectLatLon(55.0, 0).x
     expect(dy / dx).toBeCloseTo(1 / Math.cos((55.05 * Math.PI) / 180), 3)
+  })
+})
+
+describe('unprojectXY', () => {
+  it('inverts projectLatLon to double precision across the usable range', () => {
+    // Equator, mid-latitudes both hemispheres, near the cutoff, and the
+    // antimeridian edges — the places a sign or clamp mistake would show.
+    const coords = [
+      [0, 0],
+      [55.6761, 12.5683],
+      [-33.8688, 151.2093],
+      [84.9, -170.5],
+      [-84.9, 179.999],
+      [0.0001, -179.999],
+    ]
+    for (const [lat, lon] of coords) {
+      const { x, y } = projectLatLon(lat, lon)
+      const back = unprojectXY(x, y)
+      expect(back.lat).toBeCloseTo(lat, 9)
+      expect(back.lon).toBeCloseTo(lon, 9)
+    }
+  })
+
+  it('maps the unit-square corners back to the projection cutoff', () => {
+    expect(unprojectXY(0.5, 0).lat).toBeCloseTo(MAX_LATITUDE, 6)
+    expect(unprojectXY(0.5, 1).lat).toBeCloseTo(-MAX_LATITUDE, 6)
+    expect(unprojectXY(0, 0.5).lon).toBeCloseTo(-180, 12)
+    expect(unprojectXY(1, 0.5).lon).toBeCloseTo(180, 12)
   })
 })

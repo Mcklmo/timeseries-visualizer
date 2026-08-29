@@ -59,3 +59,26 @@ export function projectLatLon(lat, lon) {
 
   return { x: (lon + 180) / 360, y }
 }
+
+/**
+ * The inverse: normalised Web Mercator [0,1] back to lat/lon in degrees.
+ *
+ * Exists because `Track` is the only place an in-memory Activity keeps
+ * positions — pre-projected, per buildTrack.js — while everything that leaves
+ * the app (a share payload, and any future geo export) speaks lat/lon.
+ *
+ * atan(sinh(·)) is the Gudermannian, the exact inverse of the northing above;
+ * round-tripping through projectLatLon is identity to double precision for any
+ * latitude inside ±MAX_LATITUDE (the projection clamps outside, so the inverse
+ * cannot recover what the forward direction already discarded).
+ *
+ * @param {number} x normalised easting in [0,1]
+ * @param {number} y normalised northing in [0,1], NORTH to SOUTH
+ * @returns {{lat: number, lon: number}} degrees
+ */
+export function unprojectXY(x, y) {
+  return {
+    lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) / DEG_TO_RAD,
+    lon: x * 360 - 180,
+  }
+}
