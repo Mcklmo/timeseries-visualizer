@@ -49,12 +49,12 @@
   // `#a=` URL instead. No TTL on entries, deliberately: a shared link should
   // not rot, and at ~5-30 KB per payload the free KV tier's storage holds
   // tens of thousands of links; revisit with a TTL if that ever nears.
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "SHARE_LINKS",
-  //     "id": "<paste the id from `wrangler kv namespace create SHARE_LINKS`>"
-  //   }
-  // ],
+  "kv_namespaces": [
+    {
+      "binding": "SHARE_LINKS",
+      "id": "e8adc342cacd4d2b97a91027970f8cfa"
+    }
+  ],
   // Native rate limiting, keyed by CF-Connecting-IP in the routes.
   // namespace_id only has to be unique within this Cloudflare account; there is
   // nothing to provision in the dashboard for it.
