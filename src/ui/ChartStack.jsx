@@ -7,7 +7,7 @@
 // else; a sideways scroll pans it (useWheelPan). Both write the one zoomDomain
 // every panel's XAxis reads — so all panels zoom and pan together by
 // construction.
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import {
   fullDomain,
   isFullDomain,
@@ -25,25 +25,20 @@ import { Y_AXIS_RIGHT_WIDTH } from './chartGeometry.js'
 import { ExportWindowButton } from './ExportWindowButton.jsx'
 import { MapPanel } from './MapPanel.jsx'
 import { MetricPanel } from './MetricPanel.jsx'
+import { NARROW_NOMINAL_SLOT_HEIGHT, NOMINAL_SLOT_HEIGHT, slotLayoutFor } from './slotLayout.js'
 import { useIsNarrow } from './useIsNarrow.js'
+import { useViewportHeight } from './useViewportHeight.js'
 import { useEdgeDrag } from './useEdgeDrag.js'
 import { useTouchHoverHandoff } from './useTouchHoverHandoff.js'
 import { useWheelPan } from './useWheelPan.js'
 import { useTouchScrub } from './useTouchScrub.js'
 
-const FIRST_PANEL_HEIGHT = 200
-const OTHER_PANEL_HEIGHT = 140
-// §9's "panel heights reduced ~25% below 720px". It can't be a media query:
-// these are JS numbers handed to <ResponsiveContainer height>.
-const NARROW_FIRST_PANEL_HEIGHT = 150
-const NARROW_OTHER_PANEL_HEIGHT = 105
-
-// The map's drawing area. Taller than the first chart panel because a route is
-// two-dimensional — a 140px-tall map of a city loop is a scribble — and the
-// metric heights above are deliberately UNCHANGED by its presence: the map
-// takes its space from the page, not from the charts.
-const MAP_PANEL_HEIGHT = 240
-const NARROW_MAP_PANEL_HEIGHT = 180
+// Every panel — map included — gets the SAME slot height, computed so N whole
+// slots fill the viewport exactly (slotLayout.js). The old design (taller
+// first panel, taller map) is gone on purpose: equal slots are what make the
+// document's scroll snap land N uncropped graphs at every rest position, and
+// an uncropped screenshot is the point. The map lives with a chart-height
+// route because a slot of its own would break that alignment.
 
 /**
  * @param {object} props
@@ -68,6 +63,19 @@ export function ChartStack({ positionSlot = null }) {
     toggleStat,
   } = useChartView()
   const isNarrow = useIsNarrow()
+  const viewportHeight = useViewportHeight()
+
+  // Snap lives on the DOCUMENT scroller — the stack must not become a nested
+  // scroll area (ARCHITECTURE.md §7) — so the property has to go on <html>,
+  // and it is class-gated to exactly the time charts are on screen: the
+  // Intervals/Strava pages and the empty state scroll normally. The rest of
+  // the snap rules (`html.chart-snap` in global.css) key off this class.
+  const hasActivity = activity != null
+  useEffect(() => {
+    if (!hasActivity) return undefined
+    document.documentElement.classList.add('chart-snap')
+    return () => document.documentElement.classList.remove('chart-snap')
+  }, [hasActivity])
 
   // Both the extent the gesture solves against and the window the chips report
   // come from StatsBasisContext, above this component — the header reports the
@@ -96,6 +104,16 @@ export function ChartStack({ positionSlot = null }) {
   )
     ? Y_AXIS_RIGHT_WIDTH
     : 0
+
+  // ONE height for every panel, map included — see slotLayout.js for the
+  // arithmetic and the comment above the imports for why they are equal. The
+  // count feeds back into the layout only through the clamp: fewer panels than
+  // fit the window means those panels stretch, so the stack still fills it.
+  const showMapPanel = activity?.track != null && showMap
+  const panelCount = visibleMetrics.length + (showMapPanel ? 1 : 0)
+  const { slotHeight } = slotLayoutFor(viewportHeight, panelCount, {
+    nominal: isNarrow ? NARROW_NOMINAL_SLOT_HEIGHT : NOMINAL_SLOT_HEIGHT,
+  })
 
   // ONE derivation of where the window's edges sit across the plot, for the
   // whole stack: every panel's overlay draws its handles from these, and the
@@ -191,8 +209,9 @@ export function ChartStack({ positionSlot = null }) {
           x-axis of its own to align to the ticks at the bottom.
           `activity.track != null` is the whole availability rule — see
           domain/normalizeActivity.js for why this is not an availableMetrics
-          entry. The metric panel heights below are untouched by its presence. */}
-      {activity.track != null && showMap && (
+          entry. Its presence DOES change the metric heights now — it is one
+          more panel in the slot count above, like any other. */}
+      {showMapPanel && (
         <MapPanel
           activity={activity}
           xMode={xMode}
@@ -202,17 +221,13 @@ export function ChartStack({ positionSlot = null }) {
           // about where the edges of the zoom are.
           fullExtent={fullExtent}
           rightInset={rightInset}
-          height={isNarrow ? NARROW_MAP_PANEL_HEIGHT : MAP_PANEL_HEIGHT}
+          height={slotHeight}
           basemap={basemap}
           onBasemapChange={setBasemap}
         />
       )}
       {visibleMetrics.map((metricId, i) => {
         const isBottom = i === visibleMetrics.length - 1
-        const height =
-          i === 0
-            ? (isNarrow ? NARROW_FIRST_PANEL_HEIGHT : FIRST_PANEL_HEIGHT)
-            : (isNarrow ? NARROW_OTHER_PANEL_HEIGHT : OTHER_PANEL_HEIGHT)
         return (
           <MetricPanel
             key={metricId}
@@ -230,7 +245,7 @@ export function ChartStack({ positionSlot = null }) {
             onToggleStat={toggleStat}
             rightInset={rightInset}
             showXAxis={isBottom}
-            height={height}
+            height={slotHeight}
             // Every panel is synced to the same sample, so any one of them can
             // drive the shared position readout; the first is the stable choice,
             // and it re-homes by itself when a metric is toggled off.
