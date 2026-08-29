@@ -109,6 +109,26 @@ describe('sourceFor — id refs dispatch on the provider, never on the id', () =
   })
 })
 
+describe('sourceFor — shared refs route to the share decoder', () => {
+  // The regression this pins: the file fall-through returns the TCX adapter
+  // for anything that isn't a file or id ref, so without its own branch a
+  // share payload would be parsed as XML and error with "invalid XML".
+  it('routes a shared ref to the shared adapter, not the TCX fall-through', () => {
+    const source = createDefaultSource().sourceFor({ type: 'shared', payload: '1AbC' })
+    expect(source.kind).toBe('shared')
+  })
+
+  it('a shared ref has no original file to export', () => {
+    expect(createDefaultSource().canExportWindow({ type: 'shared', payload: '1AbC' })).toBe(false)
+  })
+
+  it('readOriginalBytes rejects for a shared ref', async () => {
+    await expect(
+      createDefaultSource().readOriginalBytes({ type: 'shared', payload: '1AbC' }),
+    ).rejects.toThrow(/isn't available to download/)
+  })
+})
+
 describe('canExportWindow — is there a recorded original file behind this ref?', () => {
   const canExport = (ref) => createDefaultSource().canExportWindow(ref)
 

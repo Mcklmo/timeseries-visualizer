@@ -42,6 +42,7 @@ import { FitActivitySource } from './fit/FitActivitySource.js'
 import { GpxActivitySource } from './gpx/GpxActivitySource.js'
 import { credentialStore } from './intervals/credentialStore.js'
 import { IntervalsActivitySource } from './intervals/IntervalsActivitySource.js'
+import { SharedActivitySource } from './shared/SharedActivitySource.js'
 import { readFreshAccessToken } from './strava/stravaApi.js'
 import { StravaActivitySource } from './strava/StravaActivitySource.js'
 import { stravaStreamCache } from './strava/streamCache.js'
@@ -80,6 +81,7 @@ export function createDefaultSource({
   const fitSource = new FitActivitySource()
   const gpxSource = new GpxActivitySource()
   const intervalsSource = new IntervalsActivitySource({ getApiKey: getIntervalsApiKey, fetchImpl })
+  const sharedSource = new SharedActivitySource()
   const stravaSource = new StravaActivitySource({
     getAccessToken: getStravaAccessToken,
     cache: stravaCache,
@@ -102,6 +104,9 @@ export function createDefaultSource({
       }
       return source
     }
+    // Above the file fall-through, which would otherwise hand a share payload
+    // to the TCX parser and report "invalid XML" about a URL.
+    if (ref?.type === 'shared') return sharedSource
     if (ref?.type !== 'file') return tcxSource
     const name = ref.file.name.toLowerCase()
     const extension = Object.keys(SOURCE_BY_EXTENSION).find((ext) => name.endsWith(ext))

@@ -3,6 +3,12 @@
 // convention here, so the API route is matched explicitly and everything else
 // is handed to the static-assets binding, which serves ./dist.
 import { handleFeedbackRequest } from './routes/feedback.js'
+import {
+  SHARE_API_PATH,
+  SHARE_LINK_PREFIX,
+  handleShareLinkRequest,
+  handleShareRequest,
+} from './routes/share.js'
 import { STRAVA_ROUTE_PREFIX, handleStravaRequest } from './routes/strava.js'
 import { TILES_ROUTE_PREFIX, handleTilesRequest } from './routes/tiles.js'
 
@@ -17,6 +23,12 @@ export default {
     // Basemap tiles for the route map panel. Same shape as Strava's: the route
     // owns its own path parsing and validation, so this stays one line.
     if (url.pathname.startsWith(TILES_ROUTE_PREFIX)) return handleTilesRequest(request, env)
+    // Share links: the API creates them, and /s/<id> — the one non-/api path
+    // this Worker answers itself — redirects into the app. It must be matched
+    // here rather than left to fall through: the asset server has no /s/ and
+    // SPA not_found_handling is deliberately off, so falling through is a 404.
+    if (url.pathname === SHARE_API_PATH) return handleShareRequest(request, env)
+    if (url.pathname.startsWith(SHARE_LINK_PREFIX)) return handleShareLinkRequest(request, env)
     return env.ASSETS.fetch(request)
   },
 }

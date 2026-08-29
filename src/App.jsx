@@ -3,6 +3,7 @@
 // nothing else in the tree touches a concrete adapter.
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { AppProviders } from './app/providers.jsx'
+import { clearSharedHash } from './data/shared/shareCodec.js'
 import { createDefaultSource } from './data/sourceRegistry.js'
 import { useActivity } from './state/ActivityContext.jsx'
 import { ActivityHeader } from './ui/ActivityHeader.jsx'
@@ -14,6 +15,7 @@ import { FileDropZone } from './ui/FileDropZone.jsx'
 import { IntervalsPage } from './ui/IntervalsPage.jsx'
 import { StravaPage } from './ui/StravaPage.jsx'
 import { useIsScrolled } from './ui/useIsScrolled.js'
+import { useSharedActivityFromUrl } from './ui/useSharedActivityFromUrl.js'
 import { useStravaOAuthCallback } from './ui/useStravaOAuthCallback.js'
 
 // Recharts — and the @reduxjs/toolkit / immer / d3 tree it drags in, ~400 kB of the
@@ -66,6 +68,11 @@ export function AppShell() {
       // rather than after it. The promise is deliberately unused — React.lazy dedupes
       // the request, so this only moves the fetch earlier, never duplicates it.
       import('./ui/ChartStack.jsx')
+      // A share hash stays in the address bar after its own load (bookmarkable,
+      // re-shareable — see useSharedActivityFromUrl.js), but the moment any
+      // OTHER activity loads it would describe something no longer on screen.
+      // No-op when there is no share hash, so every existing path pays nothing.
+      if (ref?.type !== 'shared') clearSharedHash()
       lastRef.current = ref
       load(ref)
     },
@@ -93,6 +100,13 @@ export function AppShell() {
   // written before that check. A visitor who never touches Strava pays nothing
   // for it. See the module header for the StrictMode double-invoke trap.
   const { status: callbackStatus, message: callbackMessage } = useStravaOAuthCallback()
+
+  // The share-link twin of the hook above, mounted here for the same reason:
+  // an incoming `#a=` payload is a property of the page load, not of any view.
+  // Query and hash are disjoint, and the OAuth strip preserves the hash, so
+  // the two hooks cannot interfere. Sniff-first like its template — an
+  // ordinary load pays one string comparison.
+  useSharedActivityFromUrl(loadRef)
 
   // **Both settled outcomes land on the Strava view, not just success.** A
   // refusal has something to say — "you pressed Cancel", "that sign-in

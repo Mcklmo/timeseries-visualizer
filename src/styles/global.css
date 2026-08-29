@@ -482,6 +482,40 @@ main {
   gap: 8px 16px;
 }
 
+/* Share — the toolbar's one control that acts on the activity as a whole
+   rather than any panel, pushed to the row's far edge to say so. Quieter than
+   .export-window (this row is slim chrome, not a floating action over the
+   plot), same idiom otherwise. */
+.share-activity {
+  margin-left: auto;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.share-activity:hover {
+  border-color: var(--metric-pace);
+}
+
+.share-activity:disabled {
+  color: var(--text-dim);
+  cursor: progress;
+}
+
+/* Inline beside the button, ExportWindowButton's pattern: a failed share
+   leaves a perfectly good activity on screen. */
+.share-activity__error {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  max-width: 30ch;
+}
+
 .metric-toggle {
   display: flex;
   align-items: center;

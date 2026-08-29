@@ -1,10 +1,11 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App, { AppShell } from './App.jsx'
 import { AppProviders } from './app/providers.jsx'
 import { API_KEY_STORAGE_KEY } from './data/intervals/credentialStore.js'
 import { toApiDate } from './data/activityDateRange.js'
+import { encodeActivityToPayload } from './data/shared/shareCodec.js'
 
 // App wires the real credentialStore, which is backed by jsdom's real
 // localStorage — so "not connected" has to be established rather than assumed.
@@ -506,3 +507,67 @@ describe('AppShell (controlled source, for states the real parsers never produce
     expect(load).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('App opened on a share link (#a=..., wired against the real decoder)', () => {
+  afterEach(() => history.replaceState(null, '', '/'))
+
+  // A hand-built Activity the share button could have encoded — enough shape
+  // for the codec, no track so no canvas work in jsdom.
+  const sharedFixture = {
+    id: 'shared-src',
+    sport: 'running',
+    name: 'Shared Tempo',
+    startTime: new Date('2026-08-01T07:00:00Z'),
+    totalTime: 40,
+    totalMovingTime: 40,
+    totalDistance: 200,
+    samplingIntervalS: 10,
+    samples: [
+      { t: 0, d: 0, heartRate: 120, moving: true },
+      { t: 10, d: 50, heartRate: 130, moving: true },
+      { t: 20, d: 100, heartRate: 150, moving: true },
+      { t: 30, d: 150, heartRate: 140, moving: true },
+      { t: 40, d: 200, heartRate: 110, moving: true },
+    ],
+    availableMetrics: ['heartRate'],
+    track: null,
+  }
+
+  it('loads the shared activity end-to-end and keeps the link in the address bar', async () => {
+    const payload = await encodeActivityToPayload(sharedFixture)
+    history.replaceState(null, '', `/#a=${payload}`)
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+    // The shared title survives, not a re-derived one.
+    expect(screen.getByRole('heading', { level: 2, name: 'Shared Tempo' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Heart rate' })).toBeInTheDocument()
+    // Kept, deliberately: reload-safe, bookmarkable, re-shareable.
+    expect(window.location.hash).toBe(`#a=${payload}`)
+  })
+
+  it('lands a mangled link in the error state with the damaged-link copy', async () => {
+    history.replaceState(null, '', '/#a=1thisIsNotAPayload')
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent(/damaged or incomplete/i)
+  })
+
+  it('clears the share hash the moment a different activity loads over it', async () => {
+    const payload = await encodeActivityToPayload(sharedFixture)
+    history.replaceState(null, '', `/#a=${payload}`)
+    const { container } = render(<App />)
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [makeFile()] },
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 2, name: /run$/i })).toBeInTheDocument(),
+    )
+    // The URL no longer describes an activity that is no longer on screen.
+    expect(window.location.hash).toBe('')
+  })
+})
+

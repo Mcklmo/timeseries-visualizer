@@ -33,7 +33,10 @@ export function FeedbackForm() {
       message,
       email,
       turnstileToken: token ?? '',
-      pageUrl: window.location.href,
+      // Origin + path + query, NEVER the hash: a share link (#a=...) carries
+      // the athlete's whole GPS trace, and this field is published verbatim
+      // into a public GitHub issue.
+      pageUrl: `${window.location.origin}${window.location.pathname}${window.location.search}`,
     })
 
     if (result.ok) {

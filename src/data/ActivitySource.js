@@ -38,10 +38,16 @@ import { createContext, createElement, useContext } from 'react'
  * just to learn its sport would be a second request per activity opened. Passed
  * through uninterpreted; each provider's own module knows what its values mean.
  *
+ * `payload` on a shared ref is the share link's encoded activity — the whole
+ * activity IS the ref, no file and no account behind it. That is also why
+ * neither export method ever answers for one: there is no recorded original
+ * to trim, and the registry's `?? false` default is the correct "no".
+ *
  * @typedef {{ type: 'file', file: File }} FileActivityRef
  * @typedef {{ type: 'id', provider: ActivityProvider, id: string, name?: string,
  *             startedAtUtc?: string, sportType?: string }} IdActivityRef
- * @typedef {FileActivityRef | IdActivityRef} ActivityRef
+ * @typedef {{ type: 'shared', payload: string }} SharedActivityRef
+ * @typedef {FileActivityRef | IdActivityRef | SharedActivityRef} ActivityRef
  */
 
 /**
@@ -67,7 +73,7 @@ import { createContext, createElement, useContext } from 'react'
  * than by omission, and a network provider's own error codes propagate.
  *
  * @typedef {object} ActivitySource
- * @property {'tcx'|'fit'|'gpx'|'intervals'|'strava'|'registry'|'mock'} kind
+ * @property {'tcx'|'fit'|'gpx'|'intervals'|'strava'|'shared'|'registry'|'mock'} kind
  * @property {(ref: ActivityRef) => Promise<import('../domain/types.js').Activity>} load
  * @property {(ref: ActivityRef) => boolean} [canExportWindow]
  * @property {(ref: ActivityRef) => Promise<Uint8Array>} [readOriginalBytes]
