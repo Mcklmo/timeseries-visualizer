@@ -79,13 +79,9 @@ const DERIV_DOMAIN_PADDING = 0.08
 // spike draws out to the plot edge and back rather than vanishing.
 const DERIV_DOMAIN_QUANTILE = 0.99
 
-// The label chip overlaid on the chart's top-left: the metric's name, the
-// crosshair's current value beside it, and this graph's own settings behind
-// the unfold arrow. Overlaid (global.css positions it absolutely, on a
-// translucent chip) rather than stacked above the plot, because the panel is
-// now exactly one viewport slot tall (see ChartStack) — chrome in flow would
-// eat chart height, and an opened foldout would reflow the chart and break the
-// snap alignment. Local to this file, same house pattern as StatSummary below.
+// The fixed label band above the chart: the metric's name, the crosshair's
+// current value beside it, and this graph's own settings behind the unfold
+// arrow. Local to this file, same house pattern as StatSummary below.
 //
 // The value is NOT rendered here — `crosshair-slot` is a portal target that
 // CrosshairReadout fills from inside the chart's own hover state, and React
@@ -282,17 +278,8 @@ export function MetricPanel({
     <div
       className="metric-panel"
       style={{
-        // EXACT, not a minimum: the slot layout (slotLayout.js) fills the
-        // viewport with N of these, and the scroll snap assumes every panel is
-        // exactly one slot. The head and the stat chips no longer take flow
-        // space — both are absolutely positioned OVER the plot (global.css) —
-        // so the whole slot belongs to the chart below.
-        height,
+        minHeight: height,
         '--plot-inset': `${PLOT_INSET}px`,
-        // Where the stat chips may reach down to: on the bottom panel the
-        // x-axis band is chart, not plot, and chips over the tick labels would
-        // be chips over text. Same constant the zoom overlay insets by.
-        '--plot-bottom-inset': `${(showXAxis ? X_AXIS_HEIGHT : 0) + CHART_MARGIN.bottom + 4}px`,
         // The other edge of the plot area, for the zoom overlay to inset itself
         // by — the SAME expression MapPanel uses on its canvases, built from the
         // same constants the gesture subtracts.

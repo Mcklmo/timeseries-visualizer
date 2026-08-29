@@ -462,10 +462,7 @@ export function MapPanel({
   }, [])
 
   return (
-    // EXACT height for the same reason MetricPanel's is: the panel is one
-    // viewport slot (slotLayout.js), the head overlays the canvases rather
-    // than stacking above them, and the snap assumes nothing else adds height.
-    <div className="map-panel" style={{ height, '--plot-inset': `${PLOT_INSET}px` }}>
+    <div className="map-panel" style={{ minHeight: height, '--plot-inset': `${PLOT_INSET}px` }}>
       {/* Mirrors MetricPanel's PanelHead, including the native <summary> unfold
           arrow, because per-graph settings live in that graph's own head — see
           §7 Route D. There is deliberately NO crosshair value slot: the app
@@ -514,10 +511,7 @@ export function MapPanel({
       <div
         className="map-panel__canvases"
         ref={hostRef}
-        // No height of its own any more — height: 100% in CSS fills the slot
-        // the panel div above was given, and the ResizeObserver on this host
-        // re-lays-out the canvases whenever that slot changes.
-        style={{ '--plot-right-inset': `${CHART_MARGIN.right + rightInset}px` }}
+        style={{ height, '--plot-right-inset': `${CHART_MARGIN.right + rightInset}px` }}
       >
         {/* aria-hidden on all three: the route is decorative relative to the
             charts, which carry the same activity as real numbers, and there is

@@ -631,19 +631,9 @@ main {
    draggable handle on each boundary. See ui/ZoomWindowOverlay.jsx — the geometry
    is all percentages of the plot area, so nothing here re-measures anything. */
 
-/* Each panel is a positioning context of its own: the head chip and the stat
-   chips are absolutely positioned OVER the plot (below), because the panel is
-   exactly one viewport slot tall (ui/slotLayout.js) — chrome in flow would eat
-   chart height, and an opened foldout would reflow the chart and break the
-   scroll snap's alignment. */
-.metric-panel,
-.map-panel {
-  position: relative;
-}
-
-/* The positioning context for the zoom overlay. It wraps the chart ALONE, so
-   the overlay's 0% and 100% are the chart's own edges rather than the panel's
-   — the head and the stat chips must not be inside it. */
+/* The positioning context. It wraps the chart ALONE, so the overlay's 0% and
+   100% are the chart's own edges rather than the panel's — the head above and
+   the stat chips below must not be inside it. */
 .metric-panel__plot {
   position: relative;
 }
@@ -758,33 +748,16 @@ main {
    the reserve-only panel, which sets no hue because it labels nothing. */
 .metric-panel .recharts-text[orientation='right'] { fill: var(--deriv-hue, var(--text-dim)); }
 
-/* Overlaid on the plot's bottom-left for the same reason the head is overlaid
-   on its top-left: the panel is exactly one slot tall, so a chip row in flow
-   would eat chart height and toggling a stat would reflow the chart.
-   --plot-bottom-inset is set inline by MetricPanel — the x-axis band plus the
-   chart's bottom margin on the panel that carries the shared axis, just the
-   margin elsewhere — so the chips sit on the plot floor, not on the tick
-   labels. pointer-events: none because the chips are read-only: the hover
-   underneath them must still reach the trace and drive the crosshair. */
 .stat-summary {
-  position: absolute;
-  bottom: var(--plot-bottom-inset, 4px);
-  left: var(--plot-inset, 0);
-  right: var(--plot-right-inset, 0);
-  z-index: 2;
-  pointer-events: none;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 4px 4px 0;
 }
 
-/* Translucent like the head's chip, and for the same reason: it sits ON the
-   line it summarises. --grid rather than --panel keeps the two kinds of chip
-   distinguishable — a control you can unfold vs. a value you read. */
 .stat-chip {
   color: var(--text);
-  background: color-mix(in srgb, var(--grid) 80%, transparent);
-  backdrop-filter: blur(8px);
+  background: var(--grid);
   border-radius: var(--radius);
   padding: 2px 8px;
   font-family: var(--font-data);
@@ -792,56 +765,26 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-/* Panel head — each graph's label chip, overlaid on the plot's top-left,
-   replacing the tooltip box that used to follow the cursor.
+/* Panel head — the fixed label band above each chart, replacing the tooltip
+   box that used to follow the cursor.
 
-   OVERLAID, not in flow: the panel is exactly one viewport slot tall
-   (ui/slotLayout.js), so a head above the chart would eat chart height, and —
-   worse — unfolding the settings would push the chart down and break the
-   scroll snap's whole-graph alignment. An absolutely positioned box also
-   shrink-wraps, so the closed head is a small chip and the plot around it
-   still takes the hover; no pointer-events juggling needed.
-
-   ALIGNED TO THE PLOT'S OWN LEFT EDGE, so the label sits over the line it
+   INDENTED TO THE PLOT'S OWN LEFT EDGE, so the label sits over the line it
    names rather than over the y-axis gutter. --plot-inset is set inline by
    MetricPanel from chartGeometry's Y_AXIS_WIDTH + CHART_MARGIN.left — the same
    numbers the pinch gesture subtracts to find the plot. There is deliberately
    no 60px literal here: that module exists so the number has one home, and a
    copy in this file would be free to drift from the one the chart is laid out
-   with. The fallback keeps the head sane if the property ever fails to arrive.
-
-   z-index 3: above the zoom overlay (1), so an unfolded settings sheet draws
-   over the shoulders and handles rather than interleaving with them. Known
-   and accepted: the chip covers the top ~26px of the left handle's hit strip
-   when the window edge sits at the far left — the strip is full-height, so
-   the handle stays draggable below the chip. */
+   with. The fallback keeps the head sane if the property ever fails to arrive. */
 .metric-panel__head,
 .map-panel__head {
-  position: absolute;
-  top: 4px;
-  left: var(--plot-inset, 0);
-  max-width: calc(100% - var(--plot-inset, 0) - var(--plot-right-inset, 0));
-  z-index: 3;
+  padding-left: var(--plot-inset, 0);
   font-size: 13px;
 }
 
-/* The chip the overlaid head sits on: a translucent layer of the panel's own
-   ground with a blur behind it, so the head — and the settings sheet that
-   unfolds inside the same box — stays legible over whatever the trace is
-   doing underneath without hiding it. On the <details>, not the summary, so
-   one chip grows to cover the unfolded body too.
-
-   No `display` on the <details> itself — overriding it is what historically
+/* No `display` on the <details> itself — overriding it is what historically
    broke closed-state content hiding in WebKit, and iOS Safari is exactly the
    browser these per-graph folds have to work in. The flex lives on the
    readout inside the summary and on the __body below it. */
-.metric-settings {
-  background: color-mix(in srgb, var(--panel) 80%, transparent);
-  backdrop-filter: blur(8px);
-  border-radius: var(--radius);
-  padding: 2px 8px;
-}
-
 .metric-settings__summary {
   cursor: pointer;
   /* The unfold arrow is the native marker; this is just a comfortable target
@@ -929,11 +872,6 @@ main {
    out with, and the map would stop lining up with the lines under it. */
 .map-panel__canvases {
   position: relative;
-  /* The whole slot: the panel's height is set inline by ChartStack
-     (ui/slotLayout.js) and the head floats over the canvases, so nothing else
-     in the panel takes flow space. The ResizeObserver on this host re-lays-out
-     the canvases whenever the slot height changes. */
-  height: 100%;
   margin-left: var(--plot-inset, 0);
   margin-right: var(--plot-right-inset, 0);
   /* Its own ground, a step darker than the panel: it delimits the drawing area
@@ -1659,42 +1597,6 @@ main {
   background: var(--panel);
   border: 1px dashed var(--grid);
   border-radius: var(--radius);
-}
-
-/* Scroll snap — the other half of the slot layout (ui/slotLayout.js): the
-   slots make N whole graphs the height of the viewport, and these rules make
-   every rest position start on a slot boundary, so a settled scroll — and a
-   screenshot of it — never shows a cropped graph. Mid-scroll cropping is fine;
-   `mandatory` is what guarantees the rest position.
-
-   On the DOCUMENT scroller, because the page is the only scroller this app has
-   (§7: the stack must not nest one), and gated by a class ChartStack toggles
-   on <html> while an activity is on screen — the Intervals/Strava pages and
-   the empty state scroll normally. Panels snap flush to the viewport top, no
-   scroll-padding: the sticky header has faded to transparent by then, so the
-   graphs own the whole frame. */
-html.chart-snap {
-  scroll-snap-type: y mandatory;
-}
-
-.chart-snap .metric-panel,
-.chart-snap .map-panel {
-  scroll-snap-align: start;
-}
-
-/* Two anti-trap snap areas, or `mandatory` would make the edges of the page
-   unreachable. The toolbar's oversized scroll-margin pulls its snap position
-   up past the viewport, where it clamps to scroll 0 — so the top of the page,
-   header and toolbar included, stays a rest position. The footer's `end`
-   alignment does the same for the bottom, keeping the feedback widget
-   reachable below the last graph. */
-.chart-snap .chart-toolbar {
-  scroll-snap-align: start;
-  scroll-margin-top: 100vh;
-}
-
-.chart-snap .app-footer {
-  scroll-snap-align: end;
 }
 
 @media (max-width: 720px) {

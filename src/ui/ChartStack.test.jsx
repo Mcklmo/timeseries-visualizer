@@ -276,39 +276,13 @@ describe('ChartStack', () => {
     expect(panels[0].textContent).not.toContain('min/km')
   })
 
-  it('gives every panel the same exact slot height, filling the viewport', async () => {
+  it('gives the first panel more height than the rest, and every other panel the same', async () => {
     const { container } = await renderStack()
     const panels = [...container.querySelectorAll('.metric-panel')]
-    // EXACT height (not minHeight) — the head and stat chips overlay the plot
-    // now, so nothing needs the panel to grow, and the scroll snap needs it
-    // not to. jsdom's innerHeight is 768: three 200px nominal slots fit, so
-    // each of the four panels is one (768 − 2·12)/3 = 248px slot.
-    const heights = panels.map((p) => p.style.height)
-    expect(heights).toEqual(['248px', '248px', '248px', '248px'])
-    // The chart is the whole slot: the ResponsiveContainer gets the same
-    // number, not the slot minus a head band.
-    const chart = panels[0].querySelector('.recharts-responsive-container')
-    expect(chart.style.height).toBe('248px')
-  })
-
-  it('shows exactly one full-viewport slot when the window is too short for two', async () => {
-    // The request that motivated the slot layout: a vertically cropped window
-    // shows ONE uncropped graph, not one and a sliver of the next.
-    window.innerHeight = 300
-    try {
-      const { container } = await renderStack()
-      const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.height)
-      expect(heights).toEqual(['300px', '300px', '300px', '300px'])
-    } finally {
-      window.innerHeight = 768
-    }
-  })
-
-  it('turns document scroll snapping on with the stack and off with it', async () => {
-    const { unmount } = await renderStack()
-    expect(document.documentElement.classList.contains('chart-snap')).toBe(true)
-    unmount()
-    expect(document.documentElement.classList.contains('chart-snap')).toBe(false)
+    // minHeight (not height) so the panel can grow past the chart's own
+    // height to fit the stat-chip row below it, instead of clipping it.
+    const heights = panels.map((p) => p.style.minHeight)
+    expect(heights).toEqual(['200px', '140px', '140px', '140px'])
   })
 
   it('shows x-axis tick labels only on the bottom panel', async () => {
@@ -1091,16 +1065,11 @@ describe('ChartStack with a route', () => {
     expect(screen.queryByRole('checkbox', { name: 'Route' })).not.toBeInTheDocument()
   })
 
-  it('gives the map the same slot height as every metric panel', async () => {
-    // The map is one slot like any other — its old private heights are gone,
-    // because a differently sized panel is exactly what would let the scroll
-    // snap land a cropped graph. The slot height itself is unchanged by its
-    // presence: how many slots fit is the viewport's decision, not the panel
-    // count's (768px still fits three 200px nominals → 248px slots).
+  it('leaves the metric panels’ heights untouched', async () => {
     const { container } = await renderStack({ activity: routedActivity })
-    const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.height)
-    expect(heights).toEqual(['248px', '248px', '248px', '248px'])
-    expect(mapPanel(container).style.height).toBe('248px')
+    const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.minHeight)
+    expect(heights).toEqual(['200px', '140px', '140px', '140px'])
+    expect(mapPanel(container).style.minHeight).toBe('240px')
   })
 
   it('hides and restores the map from the toolbar', async () => {
@@ -1205,19 +1174,19 @@ describe('ChartStack on a narrow viewport', () => {
     window.matchMedia = realMatchMedia
   })
 
-  it('sizes the map from the same narrow slot as the others', async () => {
+  it('shrinks the map panel too, since it is a JS number like the others', async () => {
     goNarrow()
     const { container } = await renderStack({ activity: routedActivity })
-    expect(container.querySelector('.map-panel').style.height).toBe('183px')
+    expect(container.querySelector('.map-panel').style.minHeight).toBe('180px')
   })
 
-  it('fits more, shorter slots below 720px, keeping the §9 reduction as a smaller nominal', async () => {
+  it('cuts panel heights by ~25%, keeping the §9 promise the Brush-era constants never did', async () => {
     goNarrow()
 
     const { container } = await renderStack()
-    const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.height)
-    // The 150px narrow nominal fits four slots in jsdom's 768px viewport where
-    // the 200px one fits three: (768 − 3·12)/4 = 183px each, map included.
-    expect(heights).toEqual(['183px', '183px', '183px', '183px'])
+    const heights = [...container.querySelectorAll('.metric-panel')].map((p) => p.style.minHeight)
+    // 200→150 and 140→105: exactly 25% off both, and no Brush allowance on the
+    // bottom panel any more.
+    expect(heights).toEqual(['150px', '105px', '105px', '105px'])
   })
 })
