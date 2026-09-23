@@ -81,10 +81,10 @@ npm run deploy
 ```
 
 This builds and uploads the Worker plus `dist/`, and serves it at
-**`https://activitymaxxer.com`** — the custom domain is declared in
+**`https://activitymaxxer.moritzmarcus.com`** — the custom domain is declared in
 `wrangler.jsonc`'s `routes`, and `"workers_dev": false` there means there is no
 `*.workers.dev` hostname to fall back on. If the deploy fails on the route, the
-zone's nameservers are not yet delegated to Cloudflare; finish that first.
+`moritzmarcus.com` zone is not active on Cloudflare in this account; finish that first.
 
 The site will work; the feedback form won't submit yet. That's expected.
 
@@ -97,7 +97,7 @@ Dashboard → **Turnstile** in the left-hand nav → **Add widget**.
 | Field | Value |
 | --- | --- |
 | Widget name | anything, e.g. `activitymaxxer feedback` |
-| Hostnames | `activitymaxxer.com` |
+| Hostnames | `activitymaxxer.moritzmarcus.com` |
 | Widget mode | **Managed** |
 
 You get a **Site Key** (public) and a **Secret Key** (not public). Keep the tab

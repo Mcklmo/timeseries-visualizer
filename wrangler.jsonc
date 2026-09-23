@@ -5,15 +5,21 @@
   "name": "activitymaxxer",
   "compatibility_date": "2026-08-07",
   "main": "worker/index.js",
-  // The one canonical origin. Apex, no `www` — every canonical tag, sitemap
-  // entry and og:url in the build output hardcodes exactly this form, so a
-  // second hostname serving the same bytes is a duplicate-content split, not a
-  // convenience. `custom_domain` makes Cloudflare provision the DNS record and
-  // certificate itself; it requires the zone's nameservers to be delegated to
-  // Cloudflare (a registrar CNAME at the apex will not do).
+  // The one canonical origin — every canonical tag, sitemap entry and og:url
+  // in the build output hardcodes exactly this form, so a second hostname
+  // serving the same bytes is a duplicate-content split, not a convenience.
+  // `custom_domain` makes Cloudflare provision the DNS record and certificate
+  // itself; it requires the moritzmarcus.com zone to be on Cloudflare in this
+  // account.
+  //
+  // The former origin, activitymaxxer.com, is deliberately NOT listed here. It
+  // is a 301 Redirect Rule on its own zone (doc/DOMAIN_MIGRATION.md) until the
+  // domain expires. A redirect in worker/index.js would not work: static
+  // assets are served before the Worker runs, so `/` and every prerendered
+  // page would be served on the old host instead of redirected.
   "routes": [
     {
-      "pattern": "activitymaxxer.com",
+      "pattern": "activitymaxxer.moritzmarcus.com",
       "custom_domain": true
     }
   ],

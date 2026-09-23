@@ -16,8 +16,8 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 # its browser-side twin is VITE_STRAVA_CLIENT_ID in .env / .env.local.
 #
 # REGISTER TWO STRAVA APPS. A Strava app has exactly one "Authorization
-# Callback Domain", so one app cannot serve both activitymaxxer.com and
-# localhost. Use the localhost app's credentials here, the production app's in
+# Callback Domain", so one app cannot serve both
+# activitymaxxer.moritzmarcus.com and localhost. Use the localhost app's credentials here, the production app's in
 # wrangler.jsonc + `wrangler secret put STRAVA_CLIENT_SECRET`.
 #
 # Note also that Standard Tier caps an app at 10 connected athletes and

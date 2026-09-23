@@ -15,7 +15,7 @@
 // signal these pages exist to avoid — recheck before editing, don't guess.
 
 /** Canonical origin. Overridable for a staging build; never for a real deploy. */
-export const SITE_URL = (process.env.SITE_URL || 'https://activitymaxxer.com').replace(/\/$/, '')
+export const SITE_URL = (process.env.SITE_URL || 'https://activitymaxxer.moritzmarcus.com').replace(/\/$/, '')
 
 export const BRAND = 'ActivityMaxxer'
 
@@ -111,7 +111,7 @@ export const pages = [
           <strong>Switching on the map background</strong> under a route. It ships
           <strong>off</strong>, so an activity you open shows its route drawn on a plain
           background and asks the network for nothing. Turn it on and your browser requests map
-          tiles — small square images, addressed by coordinate and zoom — from activitymaxxer.com,
+          tiles — small square images, addressed by coordinate and zoom — from activitymaxxer.moritzmarcus.com,
           which fetches them from the tile provider and passes them back. That indirection is the
           entire reason it exists: fetching tiles straight from a map host would tell that host
           which coordinates your device is looking at and when, which is a location record of your

@@ -501,9 +501,9 @@ export function MapPanel({
                 form's public-issue warning and the intervals.icu key notice:
                 it must not read as a throwaway hint. */}
             <p className="basemap-control__notice">
-              Off by default. With a background switched on, your browser asks activitymaxxer.com for map tiles by
-              coordinate and this app passes the request on, so the tile provider never sees your IP address. Your
-              activity file is still never sent anywhere.
+              Off by default. With a background switched on, your browser asks activitymaxxer.moritzmarcus.com for
+              map tiles by coordinate and this app passes the request on, so the tile provider never sees your IP
+              address. Your activity file is still never sent anywhere.
             </p>
           </div>
         </details>

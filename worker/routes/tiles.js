@@ -62,7 +62,7 @@ const CACHE_SECONDS = 604800
  * OSM's and CARTO's terms forbid anonymous bulk use, and a missing or generic
  * User-Agent is the documented reason for being blocked outright.
  */
-const USER_AGENT = 'ActivityMaxxer/1.0 (+https://activitymaxxer.com)'
+const USER_AGENT = 'ActivityMaxxer/1.0 (+https://activitymaxxer.moritzmarcus.com)'
 
 /** `content-type` so the image decodes, and the two cache headers so a
  *  revalidating client can be answered 304. Deliberately NOT `set-cookie`, and

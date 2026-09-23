@@ -10,8 +10,8 @@
 // fought for a callback URL.
 //
 // **A Strava app has exactly one Authorization Callback Domain**, so one app
-// cannot serve both activitymaxxer.com and localhost. Two apps are registered;
-// which one this build talks to is VITE_STRAVA_CLIENT_ID (see .env).
+// cannot serve both activitymaxxer.moritzmarcus.com and localhost. Two apps are
+// registered; which one this build talks to is VITE_STRAVA_CLIENT_ID (see .env).
 //
 // **Scope is `activity:read_all`, and it is disclosed on the button.**
 // `activity:read` silently excludes private activities, and "my run isn't in

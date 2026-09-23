@@ -1,5 +1,9 @@
 # Launching ActivityMaxxer in search — what's left
 
+> **Superseded host.** This runbook was written for `activitymaxxer.com`, which is now a
+> redirect to `activitymaxxer.moritzmarcus.com` — see [DOMAIN_MIGRATION.md](DOMAIN_MIGRATION.md).
+> The steps still apply; read every `activitymaxxer.com` below as the new host.
+
 The code is done, committed (`292228c`), and deployed. `activitymaxxer.com` is live and
 serving the new build. What remains is dashboard work, external tools and link building,
 spread over days to weeks.

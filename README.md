@@ -1,6 +1,6 @@
 # ActivityMaxxer
 
-**[activitymaxxer.com](https://activitymaxxer.com)**
+**[activitymaxxer.moritzmarcus.com](https://activitymaxxer.moritzmarcus.com)**
 
 A web UI, in the spirit of Intervals.ICU / Garmin Connect, for inspecting a single running
 or cycling activity — or a plain GPS track — as vertically stacked, time-synced charts
@@ -309,7 +309,7 @@ app has to implement — and Disconnect clears both explicitly before deauthoriz
 - **This feature needs `npx wrangler dev`, not `npm run dev`.** Nothing about it works
   against the Vite dev server alone, because `/api/strava/*` does not exist there.
 - **A Strava app has exactly one Authorization Callback Domain**, so one app cannot serve
-  both `activitymaxxer.com` and `localhost` — there are two registered. The production id is
+  both `activitymaxxer.moritzmarcus.com` and `localhost` — there are two registered. The production id is
   in the committed `.env`; put the dev app's in a gitignored `.env.local` and its secret in
   `.dev.vars`. Both files carry a cross-reference comment.
 - **Pace on this route is Strava's number, not this app's.** The `velocity_smooth` stream is
@@ -776,13 +776,18 @@ Then, for every deploy:
 npm run deploy   # == npm run build && wrangler deploy
 ```
 
-The site serves from **https://activitymaxxer.com** and nowhere else. Both halves of that
-live in `wrangler.jsonc`, not the dashboard: `routes` attaches the apex as a custom domain
-(Cloudflare provisions the DNS record and certificate itself, which needs the zone's
-nameservers delegated to Cloudflare), and `"workers_dev": false` retires the
+The site serves from **https://activitymaxxer.moritzmarcus.com** and nowhere else. Both
+halves of that live in `wrangler.jsonc`, not the dashboard: `routes` attaches the host as a
+custom domain (Cloudflare provisions the DNS record and certificate itself, which needs the
+`moritzmarcus.com` zone on Cloudflare), and `"workers_dev": false` retires the
 `*.workers.dev` hostname. Keep them together — two hostnames serving the same bytes is a
 duplicate-content split, and toggling workers.dev off in the dashboard alone is undone by
 the next deploy. Auto-deploy-on-push is deliberately out of scope — this is the manual flow.
+
+The former domain, `activitymaxxer.com`, is **not** served by the Worker: it is a 301
+Redirect Rule on its own Cloudflare zone until the domain expires (~July 2027). See
+[doc/DOMAIN_MIGRATION.md](doc/DOMAIN_MIGRATION.md) for the cutover and why the redirect is
+not in `worker/index.js`.
 
 No `base` path needs setting in `vite.config.ts` — the Worker serves from the domain root
 (unlike GitHub Pages, which would need a repo-subpath `base` if used instead).
@@ -821,7 +826,7 @@ no dashboard provisioning — its `namespace_id` only has to be unique within th
 The Share button (`src/ui/ShareActivityButton.jsx`) always works: it encodes the whole
 activity into a self-contained `#a=` URL (`src/data/shared/shareCodec.js`) that needs no
 server at all. What *is* optional is the shortener that turns that multi-KB URL into
-`activitymaxxer.com/s/<10 chars>` so it survives messaging apps — it stores payloads in
+`activitymaxxer.moritzmarcus.com/s/<10 chars>` so it survives messaging apps — it stores payloads in
 Workers KV (`worker/routes/share.js`), and the binding ships commented out. To enable it:
 
 ```bash

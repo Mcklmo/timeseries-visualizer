@@ -92,7 +92,7 @@ describe('SEO page content model', () => {
     }
   })
 
-  it('canonicalises to the apex, with no trailing slash to double up on', () => {
-    expect(SITE_URL).toBe('https://activitymaxxer.com')
+  it('canonicalises to the one production host, with no trailing slash to double up on', () => {
+    expect(SITE_URL).toBe('https://activitymaxxer.moritzmarcus.com')
   })
 })

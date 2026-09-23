@@ -21,7 +21,7 @@ function fakeStorage(initial = {}) {
 
 describe('buildAuthorizeUrl', () => {
   const url = () =>
-    new URL(buildAuthorizeUrl({ clientId: '99999', origin: 'https://activitymaxxer.com', state: 's-1' }))
+    new URL(buildAuthorizeUrl({ clientId: '99999', origin: 'https://activitymaxxer.moritzmarcus.com', state: 's-1' }))
 
   it('points at Strava’s own authorize endpoint', () => {
     expect(url().origin + url().pathname).toBe('https://www.strava.com/oauth/authorize')
@@ -30,7 +30,7 @@ describe('buildAuthorizeUrl', () => {
   // Strava pins only the domain, so any path is legal — and `/` is already
   // served, so this adds nothing to the Worker or the prerendered SEO pages.
   it('redirects back to the site root', () => {
-    expect(url().searchParams.get('redirect_uri')).toBe('https://activitymaxxer.com/')
+    expect(url().searchParams.get('redirect_uri')).toBe('https://activitymaxxer.moritzmarcus.com/')
   })
 
   // activity:read silently excludes private activities, and "my run isn't in
@@ -53,7 +53,7 @@ describe('beginAuthorization', () => {
 
     const authorizeUrl = beginAuthorization({
       clientId: '99999',
-      origin: 'https://activitymaxxer.com',
+      origin: 'https://activitymaxxer.moritzmarcus.com',
       storage,
     })
 
