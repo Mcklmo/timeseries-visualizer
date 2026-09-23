@@ -49,10 +49,10 @@ export const pages = [
     slug: 'about',
     title: `About ${BRAND} — Your Files Never Leave Your Browser`,
     description:
-      'ActivityMaxxer parses .fit, .tcx and .gpx files in your own browser. No upload, no account, no analytics. Here is exactly what reaches the network, and when.',
+      'ActivityMaxxer parses .fit, .tcx and .gpx files in your own browser. No upload, no account, no cookies. Here is exactly what reaches the network, and when.',
     heading: 'About ActivityMaxxer',
     intro:
-      'ActivityMaxxer runs entirely in your browser. Your files are never sent to a server — they stay on your machine, so a file you open here never leaves your device. There are no cookies, no tracking, and no analytics. This is a non-profit project: nothing is recorded, collected, or sold.',
+      'ActivityMaxxer runs entirely in your browser. Your files are never sent to a server — they stay on your machine, so a file you open here never leaves your device. There are no cookies, no accounts, and nothing that can tell one visitor from another: the site keeps anonymous totals of page views and of which features get used, and that is all. This is a non-profit project: nothing about you is recorded, collected, or sold.',
     body: `
       <h2>What happens when you open a file</h2>
       <p>
@@ -122,9 +122,32 @@ export const pages = [
           coordinates", never anything about the line drawn on top of it.
         </li>
       </ul>
+
+      <h2>What the site counts, and why it cannot tell who you are</h2>
       <p>
-        Nothing else. No analytics script, no cookies, no accounts, no session, no server-side
-        log of what you opened. The site's search performance is measured through Google Search
+        To know whether anyone uses this at all, and which parts are worth the time it takes to
+        keep them working, the site keeps anonymous totals. When a browser opens one of its
+        pages, the server adds one to that page's count, together with three coarse facts it
+        already has: the country Cloudflare's network saw the request come from, the name of the
+        site that linked here if there was one (reddit.com, never the page on it), and whether
+        the device is a phone or a computer. Then, as you leave or switch away from the tab, the
+        page sends one short list of which features were touched during that visit — "a .fit file
+        was opened, the charts were zoomed, the map was hidden" — as yes-or-no flags.
+      </p>
+      <p>
+        What is never part of it: your IP address, your browser's identifying string, a cookie,
+        anything stored on your device, a file name, a single number from an activity, or an
+        identifier of any kind. Two visits from you are indistinguishable from one visit each by
+        two strangers, so there is no profile to build and nothing that links one visit to the
+        next. Opening a file still sends nothing at the moment you open it; the list goes as the
+        visit ends and says only which switches were used. The totals are deleted after three
+        months. If your browser sends Global Privacy Control or Do Not Track, the feature list is
+        never sent at all — the page count remains, because a server cannot serve a page without
+        seeing that it was asked for one.
+      </p>
+      <p>
+        Nothing else. No third-party analytics script, no cookies, no accounts, no session, no
+        server-side log of what you opened. The site's search performance is measured through Google Search
         Console, which reports from Google's own crawl and serving logs and puts no code on the
         page — so it tells the operator which search queries showed the site, and nothing at all
         about you.

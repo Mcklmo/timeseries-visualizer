@@ -26,6 +26,7 @@ import { stripActivityExtension } from '../data/activityFilename.js'
 import { trimActivityFile } from '../data/trimActivityFile.js'
 import { isFullDomain } from '../domain/zoomDomain.js'
 import { downloadBytes } from '../lib/downloadBytes.js'
+import { markUsed } from '../lib/usage.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 import { useChartView } from '../state/ChartViewContext.jsx'
 import { useStatsBasis } from '../stats/StatsBasisContext.jsx'
@@ -104,6 +105,7 @@ export function ExportWindowButton() {
       const { bytes, extension } = await trimActivityFile(original, { from, to })
 
       downloadBytes(bytes, trimmedFilenameFor(ref, extension))
+      markUsed('export')
     } catch (err) {
       // Rendered inline beside the button rather than replacing the chart: the
       // activity on screen is still perfectly good, and a failed export is not

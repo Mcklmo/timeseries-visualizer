@@ -6,6 +6,7 @@ import { AppProviders } from './app/providers.jsx'
 import { API_KEY_STORAGE_KEY } from './data/intervals/credentialStore.js'
 import { toApiDate } from './data/activityDateRange.js'
 import { encodeActivityToPayload } from './data/shared/shareCodec.js'
+import { flushUsage, resetUsageForTests } from './lib/usage.js'
 
 // App wires the real credentialStore, which is backed by jsdom's real
 // localStorage — so "not connected" has to be established rather than assumed.
@@ -303,11 +304,17 @@ describe('App (wired against the real TCX/FIT sources)', () => {
   // nothing about booting the app, or about the file path, may touch the
   // network. Safe today because Turnstile loads via a <script> tag and only
   // once the feedback dialog is opened.
+  //
+  // The anonymous usage beacon (lib/usage.js) does not change this: it is
+  // sendBeacon, not fetch, and it fires only as the page is hidden — so it is
+  // asserted silent here too, and its one payload is pinned by the next test.
   it('issues no network request at boot, or when a file is dropped', async () => {
     const fetchSpy = vi.fn(() => {
       throw new Error('the offline path must not reach the network')
     })
+    const beaconSpy = vi.fn(() => true)
     vi.stubGlobal('fetch', fetchSpy)
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beaconSpy })
     try {
       const { container } = render(<App />)
       expect(fetchSpy).not.toHaveBeenCalled()
@@ -318,9 +325,25 @@ describe('App (wired against the real TCX/FIT sources)', () => {
       await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
 
       expect(fetchSpy).not.toHaveBeenCalled()
+      expect(beaconSpy).not.toHaveBeenCalled()
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  // What the usage beacon would say about that same visit, and nothing more:
+  // which route and parser were used — never the filename, never a value.
+  it('marks only anonymous flags for a dropped file, to be sent when the page is hidden', async () => {
+    resetUsageForTests()
+    const { container } = render(<App />)
+    fireEvent.change(screen.getByLabelText(/drop a tcx file|click to browse/i), {
+      target: { files: [makeFile()] },
+    })
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0))
+
+    const sendBeacon = vi.fn(() => true)
+    expect(flushUsage({ nav: { sendBeacon } })).toEqual(['format:tcx', 'load:file', 'sport:running'])
+    resetUsageForTests()
   })
 
   it('loads a dropped TCX file end-to-end through the real parser', async () => {

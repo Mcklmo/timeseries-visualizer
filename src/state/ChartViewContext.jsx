@@ -18,7 +18,8 @@
 //     it. That is a fix, not a side effect; zoomDomain is deliberately the one
 //     piece of this state that is neither persisted nor carried over.
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { fullDomain } from '../domain/zoomDomain.js'
+import { fullDomain, isFullDomain } from '../domain/zoomDomain.js'
+import { markUsed } from '../lib/usage.js'
 import { DEFAULT_BASEMAP } from '../map/basemapRegistry.js'
 import { derivativeStatKinds, metricOrder } from '../metrics/metricRegistry.js'
 import { useActivity } from './ActivityContext.jsx'
@@ -109,59 +110,67 @@ export function ChartViewProvider({ children }) {
 
   // A numeric zoomDomain is meaningless across modes (seconds vs metres), so
   // switching axes resets zoom rather than silently misreading stale bounds.
-  const setXMode = useCallback(
-    (xMode) => setState((s) => ({ ...s, xMode, zoomDomain: fullDomain(), viewDomain: fullDomain() })),
-    [],
-  )
+  //
+  // The markUsed calls below record, anonymously, that a control was touched
+  // this page load (lib/usage.js). They sit outside the updaters, which React
+  // may run twice and which must stay pure.
+  const setXMode = useCallback((xMode) => {
+    if (xMode === 'distance') markUsed('xaxis:distance')
+    setState((s) => ({ ...s, xMode, zoomDomain: fullDomain(), viewDomain: fullDomain() }))
+  }, [])
   // ONE setState FOR BOTH, and that is the reason this is a single setter
   // rather than two: the window must never be committed without the view it
   // sits inside. Two setters — even called back to back — would let a render
   // land between them and draw a window outside its own plotted range, which
   // is a handle off the edge of the chart.
-  const setZoom = useCallback(
-    (zoomDomain, viewDomain) => setState((s) => ({ ...s, zoomDomain, viewDomain })),
-    [],
-  )
+  const setZoom = useCallback((zoomDomain, viewDomain) => {
+    if (!isFullDomain(zoomDomain)) markUsed('zoom')
+    setState((s) => ({ ...s, zoomDomain, viewDomain }))
+  }, [])
 
-  const toggleMetric = useCallback(
-    (metricId) =>
-      setState((s) => {
-        const next = s.enabledMetrics.includes(metricId)
-          ? s.enabledMetrics.filter((id) => id !== metricId)
-          : [...s.enabledMetrics, metricId]
-        // Keep canonical metricOrder regardless of toggle sequence, so
-        // anything iterating enabledMetrics directly gets a stable order.
-        return { ...s, enabledMetrics: metricOrder.filter((id) => next.includes(id)) }
-      }),
-    [],
-  )
+  const toggleMetric = useCallback((metricId) => {
+    markUsed('metric:toggle')
+    setState((s) => {
+      const next = s.enabledMetrics.includes(metricId)
+        ? s.enabledMetrics.filter((id) => id !== metricId)
+        : [...s.enabledMetrics, metricId]
+      // Keep canonical metricOrder regardless of toggle sequence, so
+      // anything iterating enabledMetrics directly gets a stable order.
+      return { ...s, enabledMetrics: metricOrder.filter((id) => next.includes(id)) }
+    })
+  }, [])
 
-  const toggleStat = useCallback(
-    (metricId, statKind) =>
-      setState((s) => {
-        const current = s.enabledStats[metricId] ?? []
-        let next
-        if (current.includes(statKind)) {
-          next = current.filter((k) => k !== statKind)
-        } else if (derivativeStatKinds.includes(statKind)) {
-          // AT MOST ONE DERIVATIVE PER METRIC: switching d²/dt² on switches
-          // d/dt off, and vice versa. The panel's right-hand axis carries one
-          // unit and one gutter width, and two of them would eat ~88px of a
-          // 375px phone's chrome — so the exclusion is enforced here, in the
-          // one place stat state is written, rather than defended against in
-          // every reader. Scalar kinds are untouched and still toggle freely.
-          next = [...current.filter((k) => !derivativeStatKinds.includes(k)), statKind]
-        } else {
-          next = [...current, statKind]
-        }
-        return { ...s, enabledStats: { ...s.enabledStats, [metricId]: next } }
-      }),
-    [],
-  )
+  const toggleStat = useCallback((metricId, statKind) => {
+    markUsed(derivativeStatKinds.includes(statKind) ? 'derivative' : 'stats')
+    setState((s) => {
+      const current = s.enabledStats[metricId] ?? []
+      let next
+      if (current.includes(statKind)) {
+        next = current.filter((k) => k !== statKind)
+      } else if (derivativeStatKinds.includes(statKind)) {
+        // AT MOST ONE DERIVATIVE PER METRIC: switching d²/dt² on switches
+        // d/dt off, and vice versa. The panel's right-hand axis carries one
+        // unit and one gutter width, and two of them would eat ~88px of a
+        // 375px phone's chrome — so the exclusion is enforced here, in the
+        // one place stat state is written, rather than defended against in
+        // every reader. Scalar kinds are untouched and still toggle freely.
+        next = [...current.filter((k) => !derivativeStatKinds.includes(k)), statKind]
+      } else {
+        next = [...current, statKind]
+      }
+      return { ...s, enabledStats: { ...s.enabledStats, [metricId]: next } }
+    })
+  }, [])
 
-  const toggleMap = useCallback(() => setState((s) => ({ ...s, showMap: !s.showMap })), [])
+  const toggleMap = useCallback(() => {
+    if (state.showMap) markUsed('map:hidden')
+    setState((s) => ({ ...s, showMap: !s.showMap }))
+  }, [state.showMap])
 
-  const setBasemap = useCallback((basemap) => setState((s) => ({ ...s, basemap })), [])
+  const setBasemap = useCallback((basemap) => {
+    if (basemap !== DEFAULT_BASEMAP) markUsed('basemap')
+    setState((s) => ({ ...s, basemap }))
+  }, [])
 
   const value = {
     ...state,

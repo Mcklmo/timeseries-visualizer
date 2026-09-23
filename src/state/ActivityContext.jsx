@@ -3,10 +3,32 @@
 // ActivitySource (data/ActivitySource.js) — never to a concrete adapter.
 import { createContext, useCallback, useContext, useState } from 'react'
 import { useActivitySource } from '../data/ActivitySource.js'
+import { activityExtensionOf } from '../data/activityFilename.js'
+import { markUsed } from '../lib/usage.js'
 
 const ActivityContext = createContext(undefined)
 
 const IDLE = { activity: null, ref: null, status: 'idle', error: null }
+
+/**
+ * The anonymous usage flags a successful load sets (lib/usage.js): which route,
+ * which parser a dropped file needed, which sport. Read from the ref's *shape*
+ * and the file's extension only — never its name, an id, or anything parsed.
+ *
+ * @param {import('../data/ActivitySource.js').ActivityRef} ref
+ * @param {{ sport?: string }} activity
+ */
+function markLoaded(ref, activity) {
+  if (ref?.type === 'file') {
+    markUsed('load:file')
+    markUsed(`format:${activityExtensionOf(ref.file?.name) ?? 'sniffed'}`)
+  } else if (ref?.type === 'id' && ref.provider) {
+    markUsed(`load:${ref.provider}`)
+  } else if (ref?.type === 'shared') {
+    markUsed('load:shared')
+  }
+  if (activity?.sport) markUsed(`sport:${activity.sport}`)
+}
 
 export function ActivityProvider({ children }) {
   const source = useActivitySource()
@@ -28,8 +50,14 @@ export function ActivityProvider({ children }) {
         // reason — domain/activityKey.js fingerprints Activity into its id, and
         // provenance is precisely what was left out of that key so a dropped
         // file and its intervals.icu download share one identity.
-        (activity) => setState({ activity, ref, status: 'ready', error: null }),
-        (error) => setState({ activity: null, ref: null, status: 'error', error }),
+        (activity) => {
+          markLoaded(ref, activity)
+          setState({ activity, ref, status: 'ready', error: null })
+        },
+        (error) => {
+          markUsed('load:error')
+          setState({ activity: null, ref: null, status: 'error', error })
+        },
       )
     },
     [source],

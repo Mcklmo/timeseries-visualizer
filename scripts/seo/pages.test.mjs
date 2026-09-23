@@ -67,6 +67,21 @@ describe('SEO page content model', () => {
     expect(about.body).toMatch(/never pass through this app's server/i)
   })
 
+  // The anonymous usage counting (doc/USAGE_ANALYTICS.md) is disclosed in
+  // full, and its limits are stated as limits. If the wire format or the row
+  // layout ever gains a field, this copy — and so this test — has to change
+  // with it, which is the point.
+  it('discloses the anonymous usage counts, and what they never contain', () => {
+    const about = pages.find((page) => page.slug === 'about')
+    expect(about.intro).toMatch(/anonymous totals of page views and of which features get used/i)
+    expect(about.body).toMatch(/What the site counts/i)
+    expect(about.body).toMatch(/never part of it: your IP address/i)
+    expect(about.body).toMatch(/Opening a file still sends nothing at the moment you open it/i)
+    expect(about.body).toMatch(/Global Privacy Control or Do Not Track/i)
+    // "No analytics" would now be false, so it must not come back.
+    expect(`${about.description} ${about.intro} ${about.body}`).not.toMatch(/no analytics/i)
+  })
+
   // The two account routes are NOT the same story, and the page must not let
   // them read as one. intervals.icu is browser-direct; Strava goes through this
   // app's server because its OAuth needs a secret a web page cannot hold. The

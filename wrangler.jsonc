@@ -26,8 +26,24 @@
     "directory": "./dist",
     // Bound so worker/index.js can hand every non-API request straight back
     // to the static asset server.
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Pages reach the Worker before the asset server so it can count them
+    // (worker/lib/usageAnalytics.js). Vite's content-hashed bundles under
+    // /assets/ skip it — they are most of the requests and are never a page
+    // view. html_handling still applies: the Worker hands pages back through
+    // env.ASSETS.fetch, which serves about.html at /about exactly as before.
+    "run_worker_first": ["/*", "!/assets/*"]
   },
+  // Anonymous usage counts — page views and per-page-load feature flags, no
+  // identifiers of any kind. See doc/USAGE_ANALYTICS.md for what a row holds
+  // and how to query it. The dataset is created on first write; there is
+  // nothing to provision.
+  "analytics_engine_datasets": [
+    {
+      "binding": "USAGE",
+      "dataset": "activitymaxxer_usage"
+    }
+  ],
   // Non-secret. The three secrets (GITHUB_TOKEN, TURNSTILE_SECRET_KEY,
   // STRAVA_CLIENT_SECRET) are set with `wrangler secret put` in prod and live
   // in .dev.vars locally.
@@ -109,6 +125,17 @@
       "namespace_id": "1004",
       "simple": {
         "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      // Usage beacons (POST /api/usage). A page load sends one, occasionally
+      // two (hide, come back, hide again), so 20/60s is far above any real
+      // visitor and only stops a script inflating the counts.
+      "name": "USAGE_RATE_LIMITER",
+      "namespace_id": "1005",
+      "simple": {
+        "limit": 20,
         "period": 60
       }
     }

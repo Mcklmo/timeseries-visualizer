@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SHARE_HASH_PREFIX, encodeActivityToPayload } from '../data/shared/shareCodec.js'
 import { createShortShareLink } from '../lib/shareClient.js'
+import { markUsed } from '../lib/usage.js'
 import { useActivity } from '../state/ActivityContext.jsx'
 
 const COPIED_RESET_MS = 2000
@@ -40,6 +41,7 @@ export function ShareActivityButton() {
     setBusy(true)
     setError(null)
     setCopied(false)
+    markUsed('share')
     try {
       const payload = await encodeActivityToPayload(activity)
       const short = await createShortShareLink(payload)

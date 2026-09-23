@@ -365,7 +365,7 @@ subreddit's self-promotion rule first; several require you to be a participating
 > easily browse to. Both are opt-in and off by default. intervals.icu goes browser-direct;
 > Strava routes through my server, because its login needs a secret a web page can't hold.
 >
-> https://activitymaxxer.com — free, no account, no ads, no analytics.
+> https://activitymaxxer.com — free, no account, no ads, no cookies.
 
 ### D3. Show HN — *lead with the architecture*
 
@@ -379,8 +379,9 @@ the first two hours** — an unanswered thread dies.
 First comment, posted by you immediately after submitting:
 
 > Author here. This parses Garmin FIT, TCX and GPX files entirely in the browser — no
-> upload, no accounts, no analytics, no cookies. The server serves the page, files feedback
-> as a GitHub issue, and proxies Strava (which is the one route that needs it — see below).
+> upload, no accounts, no cookies, no third-party scripts. The server serves the page, files
+> feedback as a GitHub issue, proxies Strava (which is the one route that needs it — see
+> below), and keeps anonymous page-view and feature-use totals with no identifier in them.
 >
 > The FIT parsing uses Garmin's own SDK in the tab. Everything normalizes to one internal
 > sample shape, so a GPX with nothing but lat/lon/ele/time still gets a speed and elevation
@@ -477,8 +478,8 @@ Decisions that are load-bearing and easy to undo by accident.
   the tempting default once you add routes, and it would answer every typo'd URL with 200 +
   the app shell — soft 404s at scale. Real 404s work today; `/nope` is in the audit block for
   exactly this reason.
-- **Never add an analytics script.** `/about` states there is none, and a test pins that
-  claim. Search performance is measured through Search Console, which reports from Google's
+- **Never add an analytics script.** `/about` describes the one anonymous usage counter the
+  Worker keeps (doc/USAGE_ANALYTICS.md), and a test pins that description. Search performance is measured through Search Console, which reports from Google's
   own crawl logs and puts no code on the page. Adding one makes that page a lie.
 - **The 400-word floor and the vocabulary-overlap ceiling in `pages.test.mjs` are the
   doorway-page rule.** If an edit fails them, the edit is wrong — do not relax the

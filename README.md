@@ -412,9 +412,20 @@ Three things about this are load-bearing and easy to undo by accident:
   the app shell — soft 404s at scale. Real 404s are correct and already work; nothing else
   in the assets config needs changing, since the default `auto-trailing-slash` handling
   already serves `about.html` at `/about`.
-- **Do not add an analytics script.** `/about` states there is none, and search performance
-  is measured through Search Console, which reports from Google's own crawl logs and puts
-  no code on the page. Adding one makes that page a lie.
+- **Do not add an analytics script.** Usage is counted anonymously by the app's own Worker
+  (see "Usage counts" below), and `/about` describes exactly what that counts, pinned by a
+  test. A third-party script, a cookie, or any field added to a usage row makes that page a
+  lie. Search performance is measured through Search Console, which reports from Google's
+  own crawl logs and puts no code on the page.
+
+## Usage counts
+
+`npm run usage [days]` prints how many people open the app, from where, on what kind of
+device, and which features they actually use — as anonymous totals with no identifier of
+any kind. Page views are counted server-side by the Worker; feature use is one
+`sendBeacon` of yes/no flags as a tab is hidden. Setup, the exact row layout, what is
+deliberately *not* recorded, and how to read the numbers are in
+[doc/USAGE_ANALYTICS.md](doc/USAGE_ANALYTICS.md).
 
 `sitemap.xml` and `robots.txt` are generated from the same page list, so they cannot fall
 out of sync with what actually exists.

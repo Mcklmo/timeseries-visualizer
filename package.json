@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "usage": "node scripts/usage-report.mjs"
   },
   "dependencies": {
     "@garmin/fitsdk": "^21.212.0",
