@@ -32,6 +32,7 @@ Garmin's API returns an activity's original file as a ZIP, and so does Garmin Co
 
 - Sniff the ZIP local-file-header magic (`PK\x03\x04`) beside the gzip check in `fileFormat.js`.
 - Take the first entry whose inflated bytes `detectActivityFormat` recognises. Support compression method 0 (stored) and 8 (deflate, via `DecompressionStream('deflate-raw')`). No new dependency.
+- Read entry sizes and offsets from the central directory, not the local headers. Garmin's ZIPs set the data-descriptor flag (bit 3), so their local headers say size 0. Each holds one deflated `<activityId>_ACTIVITY.fit`.
 - A ZIP with no recognisable entry gets the same error as any unparseable file.
 
 ## Size cap
