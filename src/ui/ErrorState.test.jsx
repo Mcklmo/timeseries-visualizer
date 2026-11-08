@@ -18,4 +18,9 @@ describe('ErrorState', () => {
 
     expect(onRetry).toHaveBeenCalled()
   })
+
+  it('offers no retry when there is no onRetry', () => {
+    render(<ErrorState error={new Error('boom')} />)
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
+  })
 })

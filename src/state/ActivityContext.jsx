@@ -35,7 +35,10 @@ export function ActivityProvider({ children }) {
     [source],
   )
 
-  return <ActivityContext.Provider value={{ ...state, load }}>{children}</ActivityContext.Provider>
+  // For a failure that happens before there is a ref to load, like a file link that isn't base64url.
+  const fail = useCallback((error) => setState({ ...IDLE, status: 'error', error }), [])
+
+  return <ActivityContext.Provider value={{ ...state, load, fail }}>{children}</ActivityContext.Provider>
 }
 
 export function useActivity() {

@@ -760,6 +760,7 @@ Quality floor: visible keyboard focus rings, all toggles reachable by keyboard, 
   status: 'idle'|'loading'|'ready'|'error',
   error: Error|null,
   load(ref),
+  fail(error),                            // straight to 'error' with no ref, e.g. a file link that isn't base64url
 }
 ```
 

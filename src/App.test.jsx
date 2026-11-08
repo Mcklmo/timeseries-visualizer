@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -6,6 +7,7 @@ import { AppProviders } from './app/providers.jsx'
 import { API_KEY_STORAGE_KEY } from './data/intervals/credentialStore.js'
 import { toApiDate } from './data/activityDateRange.js'
 import { encodeActivityToPayload } from './data/shared/shareCodec.js'
+import { toBase64Url } from './lib/base64url.js'
 
 // App wires the real credentialStore, which is backed by jsdom's real
 // localStorage — so "not connected" has to be established rather than assumed.
@@ -571,3 +573,35 @@ describe('App opened on a share link (#a=..., wired against the real decoder)', 
   })
 })
 
+
+describe('App opened on a file link (#f=..., wired against the real loader)', () => {
+  afterEach(() => history.replaceState(null, '', '/'))
+
+  // A real FIT parse plus the lazy chart chunk; slower than the hand-built fixtures.
+  it("opens Garmin's original-file ZIP and clears the link from the address bar", { timeout: 20_000 }, async () => {
+    const zip = new Uint8Array(readFileSync('fixtures/23870166877_ACTIVITY.zip'))
+    history.replaceState(null, '', `/#f=${toBase64Url(zip)}`)
+    const { container } = render(<App />)
+
+    await waitFor(() => expect(container.querySelectorAll('.metric-panel').length).toBeGreaterThan(0), {
+      timeout: 15_000,
+    })
+    expect(window.location.hash).toBe('')
+  })
+
+  it('shows the unreadable-link copy for bad base64url, with no retry', async () => {
+    history.replaceState(null, '', '/#f=not+base64')
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent("This link's activity couldn't be read."))
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the usual parse error for bytes that are no activity, with no retry', async () => {
+    history.replaceState(null, '', `/#f=${toBase64Url(new TextEncoder().encode('not an activity'))}`)
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/isn't valid XML/))
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
+  })
+})

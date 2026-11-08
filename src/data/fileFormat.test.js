@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { detectActivityFormat, gunzipIfNeeded } from './fileFormat.js'
+import { detectActivityFormat, inflateIfNeeded, InflateLimitError, MAX_INFLATED_BYTES } from './fileFormat.js'
 
 const FIXTURE_DIR = join(process.cwd(), 'fixtures')
 const encoder = new TextEncoder()
@@ -72,7 +72,7 @@ describe('detectActivityFormat', () => {
   })
 })
 
-describe('gunzipIfNeeded', () => {
+describe('inflateIfNeeded', () => {
   it('round-trips a gzipped fixture back to detectable bytes', async () => {
     const fit = new Uint8Array(readFileSync(join(FIXTURE_DIR, '23870166877_ACTIVITY.fit')))
     const compressed = await gzip(fit)
@@ -82,7 +82,7 @@ describe('gunzipIfNeeded', () => {
     expect(compressed[1]).toBe(0x8b)
     expect(detectActivityFormat(compressed)).toBeNull()
 
-    const inflated = await gunzipIfNeeded(compressed)
+    const inflated = await inflateIfNeeded(compressed)
     expect(inflated).toEqual(fit)
     expect(detectActivityFormat(inflated)).toBe('fit')
   })
@@ -91,11 +91,103 @@ describe('gunzipIfNeeded', () => {
   // browser) or as opaque gzip bytes is unverified, so both must work.
   it('passes plain bytes through untouched', async () => {
     const plain = encoder.encode('<gpx version="1.1"/>')
-    await expect(gunzipIfNeeded(plain)).resolves.toBe(plain)
+    await expect(inflateIfNeeded(plain)).resolves.toBe(plain)
   })
 
   it('passes a buffer too short to carry the magic through untouched', async () => {
     const tiny = new Uint8Array([0x1f])
-    await expect(gunzipIfNeeded(tiny)).resolves.toBe(tiny)
+    await expect(inflateIfNeeded(tiny)).resolves.toBe(tiny)
+  })
+})
+
+describe('inflateIfNeeded on a ZIP', () => {
+  // Garmin's "Export original" ZIP: one deflated entry, data-descriptor flag
+  // set, so the local header's compressed size is 0.
+  it("opens Garmin's original-file ZIP from its central directory", async () => {
+    const zip = new Uint8Array(readFileSync(join(FIXTURE_DIR, '23870166877_ACTIVITY.zip')))
+    const fit = new Uint8Array(readFileSync(join(FIXTURE_DIR, '23870166877_ACTIVITY.fit')))
+    expect(zip[6] & 0x08).toBe(0x08)
+    expect(zip.subarray(18, 22)).toEqual(new Uint8Array(4))
+
+    // Buffer.compare, not toEqual: a failing toEqual on 200 KB arrays builds a diff for minutes.
+    expect(Buffer.compare(await inflateIfNeeded(zip), fit)).toBe(0)
+  })
+})
+
+async function deflateRaw(bytes) {
+  return new Uint8Array(
+    await new Response(new Response(bytes).body.pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer(),
+  )
+}
+
+/**
+ * A minimal ZIP, local headers zeroed like Garmin's. CRCs are left 0: the
+ * reader never checks them.
+ * @param {{name: string, data: Uint8Array, method: 0|8, size: number}[]} entries
+ */
+function zipOf(entries) {
+  const parts = []
+  const central = []
+  let offset = 0
+  for (const { name, data, method, size } of entries) {
+    const nameBytes = encoder.encode(name)
+    const local = new DataView(new ArrayBuffer(30))
+    local.setUint32(0, 0x04034b50, true)
+    local.setUint16(6, 0x08, true)
+    local.setUint16(8, method, true)
+    local.setUint16(26, nameBytes.length, true)
+    parts.push(new Uint8Array(local.buffer), nameBytes, data)
+
+    const header = new DataView(new ArrayBuffer(46))
+    header.setUint32(0, 0x02014b50, true)
+    header.setUint16(10, method, true)
+    header.setUint32(20, data.length, true)
+    header.setUint32(24, size, true)
+    header.setUint16(28, nameBytes.length, true)
+    header.setUint32(42, offset, true)
+    central.push(new Uint8Array(header.buffer), nameBytes)
+    offset += 30 + nameBytes.length + data.length
+  }
+  const centralSize = central.reduce((sum, part) => sum + part.length, 0)
+  const end = new DataView(new ArrayBuffer(22))
+  end.setUint32(0, 0x06054b50, true)
+  end.setUint16(10, entries.length, true)
+  end.setUint32(12, centralSize, true)
+  end.setUint32(16, offset, true)
+  return new Uint8Array(Buffer.concat([...parts, ...central, new Uint8Array(end.buffer)]))
+}
+
+describe('inflateIfNeeded on a hand-built ZIP', () => {
+  const gpx = encoder.encode('<gpx version="1.1"></gpx>')
+
+  it('skips entries that are not activities and reads a stored one', async () => {
+    const readme = encoder.encode('hello')
+    const zip = zipOf([
+      { name: 'readme.txt', data: await deflateRaw(readme), method: 8, size: readme.length },
+      { name: 'track.gpx', data: gpx, method: 0, size: gpx.length },
+    ])
+    expect(new TextDecoder().decode(await inflateIfNeeded(zip))).toBe('<gpx version="1.1"></gpx>')
+  })
+
+  it('returns a ZIP with no activity in it unchanged', async () => {
+    const readme = encoder.encode('hello')
+    const zip = zipOf([{ name: 'readme.txt', data: readme, method: 0, size: readme.length }])
+    expect(await inflateIfNeeded(zip)).toBe(zip)
+  })
+})
+
+// 64 MiB of real inflating; the default 5 s is too tight on a busy machine.
+describe('the 64 MiB inflate cap', { timeout: 30_000 }, () => {
+  const bomb = new Uint8Array(MAX_INFLATED_BYTES + 1)
+  // Caught to a value so a failure prints `null`, not 64 MiB of zeros.
+  const errorOf = (promise) => promise.then(() => null, (error) => error)
+
+  it('stops a gzip bomb', async () => {
+    expect(await errorOf(inflateIfNeeded(await gzip(bomb)))).toBeInstanceOf(InflateLimitError)
+  })
+
+  it('stops a ZIP bomb', async () => {
+    const zip = zipOf([{ name: 'a.fit', data: await deflateRaw(bomb), method: 8, size: bomb.length }])
+    expect((await errorOf(inflateIfNeeded(zip)))?.message).toBe("This link's activity couldn't be read.")
   })
 })

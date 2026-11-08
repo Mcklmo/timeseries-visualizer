@@ -1,4 +1,4 @@
-// Which parser does this buffer want? Pure — bytes in, format out.
+// Which parser does this buffer want, after unpacking any gzip or ZIP around it?
 //
 // It lives at the top of `data/` rather than under one provider's folder
 // because nothing in it is that provider's: it names no wire field, and any
@@ -30,18 +30,100 @@ const XML_SNIFF_BYTES = 8192
 
 const FORMAT_BY_ROOT_ELEMENT = { TrainingCenterDatabase: 'tcx', gpx: 'gpx' }
 
+const ZIP_LOCAL_HEADER = 0x04034b50
+const ZIP_CENTRAL_HEADER = 0x02014b50
+const ZIP_END_OF_CENTRAL_DIR = 0x06054b50
+const ZIP_END_OF_CENTRAL_DIR_BYTES = 22
+const ZIP_MAX_COMMENT_BYTES = 0xffff
+const ZIP_STORED = 0
+const ZIP_DEFLATE = 8
+
+// A crafted file link is an easy way to deliver a decompression bomb; see
+// doc/file-link.md.
+export const MAX_INFLATED_BYTES = 64 * 1024 * 1024
+
+export const UNREADABLE_LINK_MESSAGE = "This link's activity couldn't be read."
+
+/** Inflating would pass MAX_INFLATED_BYTES. */
+export class InflateLimitError extends Error {
+  constructor() {
+    super(UNREADABLE_LINK_MESSAGE)
+    this.name = 'InflateLimitError'
+  }
+}
+
 function isGzip(bytes) {
   return bytes.length >= 2 && bytes[0] === GZIP_MAGIC_0 && bytes[1] === GZIP_MAGIC_1
 }
 
+function isZip(bytes) {
+  return bytes.length >= 4 && new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0, true) === ZIP_LOCAL_HEADER
+}
+
 /**
- * Inflates a gzip stream — intervals.icu's /file endpoint returns one — if it
- * is still compressed by the time it reaches us.
+ * Inflates a gzip stream (intervals.icu's /file endpoint returns one) or picks
+ * the first activity file out of a ZIP (Garmin's original-file export).
+ * Anything else, including a ZIP with no activity in it, comes back unchanged.
  *
  * Checks the magic bytes rather than a header: it is unverified whether the
  * response arrives as `Content-Encoding: gzip` (the browser auto-inflates,
  * and we get plain bytes) or as an opaque gzip payload. Sniffing handles both
  * without caring which.
+ *
+ * @param {Uint8Array} bytes
+ * @returns {Promise<Uint8Array>}
+ * @throws {InflateLimitError} past MAX_INFLATED_BYTES; any other error means corrupt input
+ */
+export async function inflateIfNeeded(bytes) {
+  if (isGzip(bytes)) return inflateCapped(bytes, 'gzip', MAX_INFLATED_BYTES)
+  if (isZip(bytes)) return (await firstActivityInZip(bytes)) ?? bytes
+  return bytes
+}
+
+// Sizes and offsets come from the central directory: Garmin's ZIPs set the
+// data-descriptor flag, so their local headers say size 0.
+// Field offsets are PKWARE APPNOTE.TXT §4.3.7 (local header), §4.3.12 (central
+// directory) and §4.3.16 (end of central directory).
+// ponytail: no ZIP64; an activity file is nowhere near 4 GiB.
+async function firstActivityInZip(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const end = findEndOfCentralDirectory(view)
+  const entryCount = view.getUint16(end + 10, true)
+  let entry = view.getUint32(end + 16, true)
+  let budget = MAX_INFLATED_BYTES
+
+  for (let i = 0; i < entryCount; i++) {
+    if (view.getUint32(entry, true) !== ZIP_CENTRAL_HEADER) throw new Error('corrupt ZIP')
+    const method = view.getUint16(entry + 10, true)
+    const compressedSize = view.getUint32(entry + 20, true)
+    const localHeader = view.getUint32(entry + 42, true)
+    entry += 46 + view.getUint16(entry + 28, true) + view.getUint16(entry + 30, true) + view.getUint16(entry + 32, true)
+
+    const dataStart = localHeader + 30 + view.getUint16(localHeader + 26, true) + view.getUint16(localHeader + 28, true)
+    const data = bytes.subarray(dataStart, dataStart + compressedSize)
+    let inflated
+    if (method === ZIP_STORED) inflated = data
+    else if (method === ZIP_DEFLATE) inflated = await inflateCapped(data, 'deflate-raw', budget)
+    else continue
+    // One budget for the whole archive, so many small bombs can't add up.
+    budget -= inflated.length
+    if (detectActivityFormat(inflated)) return inflated
+  }
+  return null
+}
+
+function findEndOfCentralDirectory(view) {
+  const last = view.byteLength - ZIP_END_OF_CENTRAL_DIR_BYTES
+  for (let i = last; i >= Math.max(0, last - ZIP_MAX_COMMENT_BYTES); i--) {
+    if (view.getUint32(i, true) === ZIP_END_OF_CENTRAL_DIR) return i
+  }
+  throw new Error('corrupt ZIP')
+}
+
+/**
+ * Inflate with a running byte cap, chunk by chunk: `arrayBuffer()` on the
+ * whole stream would hand a 40-byte bomb however much memory it asks for
+ * before anything could refuse it.
  *
  * **Response, never Blob.** Under jsdom, `Blob` is jsdom's while
  * `DecompressionStream` and `Response` are Node's — jsdom implements neither
@@ -49,14 +131,32 @@ function isGzip(bytes) {
  * a Node stream breaks; going through `Response` keeps everything on one side.
  *
  * @param {Uint8Array} bytes
+ * @param {'gzip'|'deflate-raw'} format
+ * @param {number} maxBytes
  * @returns {Promise<Uint8Array>}
+ * @throws {InflateLimitError} past maxBytes; a corrupt stream rejects out of `read()`
  */
-export async function gunzipIfNeeded(bytes) {
-  if (!isGzip(bytes)) return bytes
-  const inflated = await new Response(
-    new Response(bytes).body.pipeThrough(new DecompressionStream('gzip')),
-  ).arrayBuffer()
-  return new Uint8Array(inflated)
+export async function inflateCapped(bytes, format, maxBytes) {
+  const reader = new Response(bytes).body.pipeThrough(new DecompressionStream(format)).getReader()
+  const chunks = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.length
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw new InflateLimitError()
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  return out
 }
 
 function hasFitMagic(bytes) {
@@ -89,7 +189,7 @@ function rootElementNameOf(text) {
 }
 
 /**
- * @param {Uint8Array} bytes - already inflated; see gunzipIfNeeded
+ * @param {Uint8Array} bytes - already inflated; see inflateIfNeeded
  * @returns {'fit'|'tcx'|'gpx'|null} null means "nothing this app can parse"
  */
 export function detectActivityFormat(bytes) {

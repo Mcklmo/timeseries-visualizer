@@ -12,7 +12,7 @@
 //   - **A file ref dispatches on the filename extension, and falls back to
 //     sniffing its bytes.** A recognised extension is trusted and costs
 //     nothing: `.fit`, `.gpx` and `.tcx` route straight to their parser as they
-//     always did. Anything else is read, gunzipped if it is gzipped, and put
+//     always did. Anything else is read, inflated if it is a gzip or ZIP, and put
 //     through the same `fileFormat.js` the network path uses — which is what
 //     makes a `.fit.gz` work instead of dying on "invalid XML" with the inflate
 //     code sitting one directory away. Bytes that match nothing still fall
@@ -37,7 +37,7 @@
 // App.jsx can call this with no arguments, and tests inject their own —
 // exactly the pattern credentialStore.js documents.
 import { activityExtensionOf } from './activityFilename.js'
-import { detectActivityFormat, gunzipIfNeeded } from './fileFormat.js'
+import { detectActivityFormat, InflateLimitError, inflateIfNeeded } from './fileFormat.js'
 import { FitActivitySource } from './fit/FitActivitySource.js'
 import { GpxActivitySource } from './gpx/GpxActivitySource.js'
 import { credentialStore } from './intervals/credentialStore.js'
@@ -141,21 +141,23 @@ export function createDefaultSource({
    *
    * Shared with `sniffFileRef` below, which opens with exactly this line: the
    * fallback loader and the export path both want "this file, inflated", and
-   * two copies of it could come to disagree about the gunzip.
+   * two copies of it could come to disagree about the inflate.
    *
    * @param {import('./ActivitySource.js').FileActivityRef} ref
    * @returns {Promise<Uint8Array>}
    */
   async function readFileBytes(ref) {
-    return gunzipIfNeeded(new Uint8Array(await ref.file.arrayBuffer()))
+    return inflateIfNeeded(new Uint8Array(await ref.file.arrayBuffer()))
   }
 
   async function sniffFileRef(ref) {
     let bytes
     try {
       bytes = await readFileBytes(ref)
-    } catch {
-      // A truncated or corrupt gzip stream. Nothing useful to say here that
+    } catch (error) {
+      // Over the cap is a likely bomb; the parser has nothing better to say.
+      if (error instanceof InflateLimitError) throw error
+      // A truncated or corrupt gzip or ZIP. Nothing useful to say here that
       // the parser's own error will not say better about the bytes as given.
       return null
     }

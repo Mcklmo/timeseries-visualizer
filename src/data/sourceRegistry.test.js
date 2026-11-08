@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
+import { MAX_INFLATED_BYTES } from './fileFormat.js'
 import { createDefaultSource } from './sourceRegistry.js'
 
 /** A ref for a file with the given name; the bytes only matter in the sniffing
@@ -77,6 +78,20 @@ describe('load — an unrecognised extension falls back to sniffing the bytes', 
   // real parser error rather than a shrug from the registry.
   it('falls through to TCX when the bytes match nothing either', async () => {
     await expect(createDefaultSource().load(fileRef('run.kml', 'not an activity'))).rejects.toThrow()
+  })
+
+  it("parses Garmin's original-file ZIP dropped as .zip", async () => {
+    const zip = await readFile('fixtures/23870166877_ACTIVITY.zip')
+    const activity = await createDefaultSource().load(fileRef('23870166877.zip', zip))
+    expect(activity.sport).toBe('running')
+  })
+
+  it('rejects an over-cap gzip with the unreadable-link message, not a parser error', { timeout: 30_000 }, async () => {
+    const bomb = await gzip(new Uint8Array(MAX_INFLATED_BYTES + 1))
+    const error = await createDefaultSource()
+      .load(fileRef('activity', bomb))
+      .then(() => null, (e) => e)
+    expect(error?.message).toBe("This link's activity couldn't be read.")
   })
 
   it('falls through rather than crashing on a truncated gzip stream', async () => {

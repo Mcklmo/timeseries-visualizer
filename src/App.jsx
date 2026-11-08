@@ -15,6 +15,7 @@ import { FileDropZone } from './ui/FileDropZone.jsx'
 import { IntervalsPage } from './ui/IntervalsPage.jsx'
 import { StravaPage } from './ui/StravaPage.jsx'
 import { useIsScrolled } from './ui/useIsScrolled.js'
+import { useFileFromUrl } from './ui/useFileFromUrl.js'
 import { useSharedActivityFromUrl } from './ui/useSharedActivityFromUrl.js'
 import { useStravaOAuthCallback } from './ui/useStravaOAuthCallback.js'
 
@@ -29,8 +30,10 @@ const ChartStack = lazy(() => import('./ui/ChartStack.jsx').then((m) => ({ defau
 // real parsers never produce on demand — e.g. a load stuck pending — by
 // wrapping it in AppProviders with a source double instead. See App.test.jsx.
 export function AppShell() {
-  const { activity, status, error, load } = useActivity()
+  const { activity, status, error, load, fail } = useActivity()
   const lastRef = useRef(null)
+  // False after a file link: retrying repeats the same bytes and the same failure.
+  const [canRetry, setCanRetry] = useState(true)
   const isScrolled = useIsScrolled()
   // Still no router — the third view arrived and did not change that. Each
   // picker overlays <main> via state, leaving the status-driven branches
@@ -73,6 +76,7 @@ export function AppShell() {
       // OTHER activity loads it would describe something no longer on screen.
       // No-op when there is no share hash, so every existing path pays nothing.
       if (ref?.type !== 'shared') clearSharedHash()
+      setCanRetry(true)
       lastRef.current = ref
       load(ref)
     },
@@ -108,6 +112,22 @@ export function AppShell() {
   // ordinary load pays one string comparison.
   useSharedActivityFromUrl(loadRef)
 
+  const loadFromFileLink = useCallback(
+    (ref) => {
+      loadRef(ref)
+      setCanRetry(false)
+    },
+    [loadRef],
+  )
+  const failFromFileLink = useCallback(
+    (linkError) => {
+      fail(linkError)
+      setCanRetry(false)
+    },
+    [fail],
+  )
+  useFileFromUrl(loadFromFileLink, failFromFileLink)
+
   // **Both settled outcomes land on the Strava view, not just success.** A
   // refusal has something to say — "you pressed Cancel", "that sign-in
   // couldn't be verified" — and the connect half is the only screen where
@@ -116,10 +136,9 @@ export function AppShell() {
   useEffect(() => {
     if (callbackStatus === 'connected' || callbackStatus === 'refused') setView('strava')
   }, [callbackStatus])
-  // ErrorState only renders after a load(), and every load() goes through
-  // loadRef, which sets lastRef.current first — so the guard is unreachable in
-  // practice. It still beats seeding the ref with a ref shape the app might
-  // not be able to produce.
+  // Every retryable error comes from a load() through loadRef, which sets
+  // lastRef.current first — so the guard is unreachable in practice. It still
+  // beats seeding the ref with a ref shape the app might not be able to produce.
   const handleRetry = useCallback(() => {
     if (lastRef.current) load(lastRef.current)
   }, [load])
@@ -186,7 +205,7 @@ export function AppShell() {
                 Loading activity…
               </p>
             )}
-            {status === 'error' && <ErrorState error={error} onRetry={handleRetry} />}
+            {status === 'error' && <ErrorState error={error} onRetry={canRetry ? handleRetry : undefined} />}
             {/* ActivityHeader is in <header> now, not here — it is what a
                 scrolled screenshot is missing, and <main> scrolls away. The
                 settings window that used to sit above the stack is gone too:

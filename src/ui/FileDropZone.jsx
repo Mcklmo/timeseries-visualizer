@@ -51,7 +51,7 @@ export function FileDropZone({ onFileSelected, variant = 'compact' }) {
           'Click to browse, or drop a TCX/FIT/GPX file'
         )}
       </label>
-      <input id={inputId} type="file" accept=".tcx,.fit,.gpx" onChange={handleChange} />
+      <input id={inputId} type="file" accept=".tcx,.fit,.gpx,.zip" onChange={handleChange} />
     </div>
   )
 }

@@ -23,7 +23,7 @@ import { trimTcx } from './tcx/trimTcx.js'
 /**
  * A Uint8Array's OWN bytes as an ArrayBuffer.
  *
- * `gunzipIfNeeded`'s output can be a view into a larger buffer, and the FIT
+ * `inflateIfNeeded`'s output can be a view into a larger buffer, and the FIT
  * decoder reads whole buffers — handing it the backing store would feed it
  * whatever else lives in there. Canonical here because this was its third
  * copy-paste site; IntervalsActivitySource.js keeps its own for the read path.

@@ -6,9 +6,11 @@ export function ErrorState({ error, onRetry }) {
     <div className="error-state" role="alert">
       <h2>Couldn't load that activity</h2>
       <p>{error.message}</p>
-      <button type="button" onClick={onRetry}>
-        Try again
-      </button>
+      {onRetry && (
+        <button type="button" onClick={onRetry}>
+          Try again
+        </button>
+      )}
     </div>
   )
 }

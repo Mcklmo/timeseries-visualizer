@@ -51,6 +51,7 @@
 // reject.
 import { unprojectXY } from '../../domain/webMercator.js'
 import { fromBase64Url, toBase64Url } from '../../lib/base64url.js'
+import { inflateCapped } from '../fileFormat.js'
 
 /**
  * Cap on the whole payload (`1` + base64url), and therefore in effect on the
@@ -297,7 +298,7 @@ export async function decodePayload(payload) {
 
   let body
   try {
-    body = await gunzipCapped(fromBase64Url(payload.slice(1)), MAX_DECODED_BYTES)
+    body = await inflateCapped(fromBase64Url(payload.slice(1)), 'gzip', MAX_DECODED_BYTES)
   } catch {
     throw damagedError()
   }
@@ -476,35 +477,6 @@ async function gzipBytes(bytes) {
     new Response(bytes).body.pipeThrough(new CompressionStream('gzip')),
   ).arrayBuffer()
   return new Uint8Array(zipped)
-}
-
-/**
- * Inflate with a running byte cap, chunk by chunk — `arrayBuffer()` on the
- * whole stream would hand a 40-byte gzip bomb however much memory it asks
- * for before anything could refuse it. A corrupt stream rejects out of
- * `read()`, which the caller maps to the damaged-link copy.
- */
-async function gunzipCapped(bytes, maxBytes) {
-  const reader = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip')).getReader()
-  const chunks = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.length
-    if (total > maxBytes) {
-      await reader.cancel()
-      throw damagedError()
-    }
-    chunks.push(value)
-  }
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.length
-  }
-  return out
 }
 
 // ---------------------------------------------------------------------------
