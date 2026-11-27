@@ -33,14 +33,19 @@ export function useSharedActivityFromUrl(onLoad) {
   const handled = useRef(false)
 
   useEffect(() => {
-    if (handled.current) return
-    // Overwhelmingly the common case: an ordinary page load. One string
-    // comparison, nothing read or written — a visitor who never follows a
-    // share link must not pay for this hook being mounted.
-    const payload = readSharedPayloadFromHash(globalThis.location?.hash)
-    if (payload === null) return
-
-    handled.current = true
-    onLoad({ type: 'shared', payload })
+    const consume = () => {
+      // Overwhelmingly the common case: an ordinary page load. One string
+      // comparison, nothing read or written — a visitor who never follows a
+      // share link must not pay for this hook being mounted.
+      const payload = readSharedPayloadFromHash(globalThis.location?.hash)
+      if (payload !== null) onLoad({ type: 'shared', payload })
+    }
+    if (!handled.current) {
+      handled.current = true
+      consume()
+    }
+    // A link opened in a tab already on the app changes only the hash: no reload.
+    window.addEventListener('hashchange', consume)
+    return () => window.removeEventListener('hashchange', consume)
   }, [onLoad])
 }

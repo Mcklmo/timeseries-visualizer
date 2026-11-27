@@ -19,7 +19,7 @@ Decided in [training-plan#20](https://github.com/Mcklmo/training-plan/issues/20)
 
 ## Receiving
 
-A hook beside `useSharedActivityFromUrl`, mounted once in `AppShell`, on page load:
+A hook beside `useSharedActivityFromUrl`, mounted once in `AppShell`, on page load and on `hashchange` (a link opened in a tab already on the app):
 
 1. If `location.hash` doesn't start with `#f=`, do nothing (one string comparison).
 2. Remove the hash with `history.replaceState` straight away, before decoding. A 100K+ character GPS track must not stay in the address bar, history or bookmarks. Reloading shows the empty drop zone.
