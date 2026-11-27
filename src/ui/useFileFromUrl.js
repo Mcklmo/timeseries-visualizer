@@ -16,18 +16,24 @@ const FILE_HASH_PREFIX = '#f='
  */
 export function useFileFromUrl(onLoad, onFail) {
   useEffect(() => {
-    const hash = globalThis.location?.hash
-    if (!hash?.startsWith(FILE_HASH_PREFIX)) return
-    history.replaceState(history.state, '', location.pathname + location.search)
+    const consume = () => {
+      const hash = globalThis.location?.hash
+      if (!hash?.startsWith(FILE_HASH_PREFIX)) return
+      history.replaceState(history.state, '', location.pathname + location.search)
 
-    let bytes
-    try {
-      bytes = fromBase64Url(hash.slice(FILE_HASH_PREFIX.length))
-    } catch {
-      onFail(new Error(UNREADABLE_LINK_MESSAGE))
-      return
+      let bytes
+      try {
+        bytes = fromBase64Url(hash.slice(FILE_HASH_PREFIX.length))
+      } catch {
+        onFail(new Error(UNREADABLE_LINK_MESSAGE))
+        return
+      }
+      // No extension, so the registry sniffs the bytes: inflate, detect, parse.
+      onLoad({ type: 'file', file: new File([bytes], 'activity') })
     }
-    // No extension, so the registry sniffs the bytes: inflate, detect, parse.
-    onLoad({ type: 'file', file: new File([bytes], 'activity') })
+    consume()
+    // A link opened in a tab already on the app changes only the hash: no reload.
+    window.addEventListener('hashchange', consume)
+    return () => window.removeEventListener('hashchange', consume)
   }, [onLoad, onFail])
 }

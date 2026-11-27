@@ -11,15 +11,16 @@ export const SHARE_ENDPOINT = '/api/share'
 
 /**
  * @param {string} payload the encoded share payload (shareCodec.js)
+ * @param {string|null} [image] base64 PNG for the link preview
  * @param {typeof fetch} [fetchImpl]
  * @returns {Promise<{ok: true, id: string} | {ok: false}>}
  */
-export async function createShortShareLink(payload, fetchImpl = fetch) {
+export async function createShortShareLink(payload, image = null, fetchImpl = fetch) {
   try {
     const response = await fetchImpl(SHARE_ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ payload }),
+      body: JSON.stringify(image ? { payload, image } : { payload }),
     })
     const body = await response.json()
     if (response.ok && body?.ok === true && typeof body.id === 'string' && body.id.length > 0) {

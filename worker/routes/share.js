@@ -22,10 +22,10 @@
 // charset and size cap, a body cap, and a per-IP rate limit, in feedback.js's
 // cheap-rejections-first order.
 //
-// **GET redirects instead of serving the payload as a body.** A miss and a hit
-// both land the person inside the app (`/#a=<payload>` or `/#a=missing`), so
-// the client has exactly one loading mechanism and this route has no HTML of
-// its own to maintain.
+// **GET lands inside the app** (`/#a=<payload>` or `/#a=missing`), so the
+// client has exactly one loading mechanism. A link with a stored preview image
+// answers with a stub page instead of a 302: scrapers never see the hash, so
+// the og:image has to come from this URL, and the script moves people on.
 import { errorResponse, jsonResponse } from '../lib/httpResponses.js'
 import { isWithinRateLimit } from '../lib/rateLimit.js'
 
@@ -43,8 +43,14 @@ const MAX_PAYLOAD_CHARS = 32000
 // `1` so a future payload version needs no Worker deploy to become storable.
 const PAYLOAD_PATTERN = /^[0-9][A-Za-z0-9_-]+$/
 
-// The JSON envelope around a maxed-out payload, with headroom.
-const MAX_BODY_BYTES = 40 * 1024
+// A 1200x630 line chart is ~100-200 KB of PNG.
+const MAX_IMAGE_CHARS = 500 * 1024
+const IMAGE_PATTERN = /^iVBORw0KGg[A-Za-z0-9+/]+={0,2}$/ // PNG magic, base64
+const IMAGE_KEY_PREFIX = 'img:'
+const IMAGE_SUFFIX = '.png'
+
+// The JSON envelope around a maxed-out payload and image, with headroom.
+const MAX_BODY_BYTES = MAX_IMAGE_CHARS + 40 * 1024
 
 const ID_LENGTH = 10
 const ID_PATTERN = /^[A-Za-z0-9_-]{10}$/
@@ -121,6 +127,14 @@ export async function handleShareRequest(request, env) {
 
     const id = await shareIdFor(payload)
     await env.SHARE_LINKS.put(id, payload)
+
+    const image = parsed.image
+    if (typeof image === 'string' && image.length <= MAX_IMAGE_CHARS && IMAGE_PATTERN.test(image)) {
+      // First write wins: the image is not part of the id, so anyone holding the
+      // link could otherwise replace its preview.
+      const key = IMAGE_KEY_PREFIX + id
+      if (!(await env.SHARE_LINKS.get(key))) await env.SHARE_LINKS.put(key, image)
+    }
     return jsonResponse(201, { ok: true, id })
   } catch (error) {
     console.error('share: unhandled error', error)
@@ -129,8 +143,8 @@ export async function handleShareRequest(request, env) {
 }
 
 /**
- * GET /s/<id> -> 302 into the app, carrying the payload (or `missing`) in the
- * hash. Every outcome is a redirect to `/` — see the module header.
+ * GET /s/<id> -> into the app, carrying the payload (or `missing`) in the
+ * hash. GET /s/<id>.png -> that link's preview image. See the module header.
  * @param {Request} request
  * @param {object} env
  */
@@ -142,7 +156,11 @@ export async function handleShareLinkRequest(request, env) {
       })
     }
 
-    const id = new URL(request.url).pathname.slice(SHARE_LINK_PREFIX.length)
+    const url = new URL(request.url)
+    const path = url.pathname.slice(SHARE_LINK_PREFIX.length)
+    if (path.endsWith(IMAGE_SUFFIX)) return previewImage(path.slice(0, -IMAGE_SUFFIX.length), env)
+
+    const id = path
     const payload = ID_PATTERN.test(id) ? await env?.SHARE_LINKS?.get(id) : null
 
     if (typeof payload !== 'string' || !PAYLOAD_PATTERN.test(payload)) {
@@ -152,6 +170,15 @@ export async function handleShareLinkRequest(request, env) {
       return new Response(null, {
         status: 302,
         headers: { location: '/#a=missing', 'cache-control': 'no-store' },
+      })
+    }
+
+    if (await env.SHARE_LINKS.get(IMAGE_KEY_PREFIX + id)) {
+      return new Response(previewPage(`${url.origin}${SHARE_LINK_PREFIX}${id}`, payload), {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': `public, max-age=${HIT_CACHE_SECONDS}`,
+        },
       })
     }
 
@@ -166,4 +193,42 @@ export async function handleShareLinkRequest(request, env) {
     console.error('share: unhandled error', error)
     return errorResponse(500, 'internal_error', 'Something went wrong on our side. Please try again later.')
   }
+}
+
+async function previewImage(id, env) {
+  const image = ID_PATTERN.test(id) ? await env?.SHARE_LINKS?.get(IMAGE_KEY_PREFIX + id) : null
+  if (!image) return errorResponse(404, 'not_found', 'There is no preview for that link.')
+  return new Response(Uint8Array.from(atob(image), (c) => c.charCodeAt(0)), {
+    headers: {
+      'content-type': 'image/png',
+      'x-content-type-options': 'nosniff',
+      'cache-control': `public, max-age=${HIT_CACHE_SECONDS}`,
+    },
+  })
+}
+
+/** `payload` has passed PAYLOAD_PATTERN, so it is inert inside the markup. */
+function previewPage(linkUrl, payload) {
+  const title = 'Activity on ActivityMaxxer'
+  const description = 'Pace, heart rate, cadence, power and elevation as stacked, time-synced charts.'
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<meta name="robots" content="noindex">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ActivityMaxxer">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:url" content="${linkUrl}">
+<meta property="og:image" content="${linkUrl}${IMAGE_SUFFIX}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script>location.replace('/#a=${payload}')</script>
+</head>
+<body><a href="/#a=${payload}">Open this activity</a></body>
+</html>
+`
 }

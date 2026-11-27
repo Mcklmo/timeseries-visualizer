@@ -53,6 +53,14 @@ describe('useFileFromUrl', () => {
     expect(location.hash).toBe('#a=1AbCdEf')
   })
 
+  it('loads a link opened in an already-open tab', () => {
+    const onLoad = vi.fn()
+    render(<Probe onLoad={onLoad} />)
+    history.replaceState(null, '', '/#f=PGdweC8-')
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    expect(onLoad).toHaveBeenCalledTimes(1)
+  })
+
   // main.jsx mounts the tree in StrictMode, which double-invokes effects.
   it('fires exactly once under StrictMode double-invoke', () => {
     history.replaceState(null, '', '/#f=PGdweC8-')

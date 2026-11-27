@@ -833,6 +833,8 @@ uncomment it, and deploy. Until then `POST /api/share` answers 503 and the clien
 shares the long URL instead — the feature degrades, it never breaks. `SHARE_RATE_LIMITER`
 (10 / 60s per IP) caps scripted storage abuse; ids are content-addressed (SHA-256 prefix),
 so re-sharing the same activity re-writes the same key rather than growing the namespace.
+The Share button also uploads a chart image, used as the short link's preview (one extra KV
+write per new link).
 
 ## Contributing / continuing the build
 

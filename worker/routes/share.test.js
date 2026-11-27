@@ -86,7 +86,7 @@ describe('POST /api/share', () => {
 
   it('rejects a declared-oversize body before reading it', async () => {
     const response = await handleShareRequest(
-      postRequest({ payload: validPayload }, { headers: { 'content-length': String(50 * 1024) } }),
+      postRequest({ payload: validPayload }, { headers: { 'content-length': String(600 * 1024) } }),
       makeEnv(),
     )
     expect(response.status).toBe(400)
@@ -161,5 +161,35 @@ describe('GET /s/<id>', () => {
   it('rejects non-GET', async () => {
     const response = await handleShareLinkRequest(getRequest('AbCdEfGh12', { method: 'DELETE' }), makeEnv())
     expect(response.status).toBe(405)
+  })
+})
+
+describe('link preview', () => {
+  const image = btoa('\x89PNG\r\n\x1a\nfake')
+
+  it('serves og tags and the image for a link shared with one, first image winning', async () => {
+    const env = makeEnv()
+    const { id } = await (await handleShareRequest(postRequest({ payload: validPayload, image }), env)).json()
+    const other = btoa('\x89PNG\r\n\x1a\nother')
+    await handleShareRequest(postRequest({ payload: validPayload, image: other }), env)
+
+    const page = await (await handleShareLinkRequest(getRequest(id), env)).text()
+    expect(page).toContain(`content="https://example.com/s/${id}.png"`)
+    expect(page).toContain(`location.replace('/#a=${validPayload}')`)
+
+    const png = await handleShareLinkRequest(getRequest(`${id}.png`), env)
+    expect(png.headers.get('content-type')).toBe('image/png')
+    expect(new Uint8Array(await png.arrayBuffer())).toEqual(
+      Uint8Array.from(atob(image), (c) => c.charCodeAt(0)),
+    )
+  })
+
+  it('ignores an image that is not a PNG and keeps the plain redirect', async () => {
+    const env = makeEnv()
+    const request = postRequest({ payload: validPayload, image: btoa('<svg/>') })
+    const { id } = await (await handleShareRequest(request, env)).json()
+
+    expect((await handleShareLinkRequest(getRequest(id), env)).status).toBe(302)
+    expect((await handleShareLinkRequest(getRequest(`${id}.png`), env)).status).toBe(404)
   })
 })
